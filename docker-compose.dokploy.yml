@@ -1,0 +1,87 @@
+# ============================================================
+# Docker Compose — Despliegue en Dokploy (nube)
+# ============================================================
+# En Dokploy: Stack > Create Stack > pegar este archivo
+# Las variables ${...} se configuran en la sección Environment de Dokploy
+# ============================================================
+
+services:
+
+  # ── Base de datos MySQL ────────────────────────────────────
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend Node.js ────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      CORS_ORIGIN: ${FRONTEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      BACKEND_URL: ${BACKEND_URL}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      IS_LOCAL_INSTANCE: "false"
+    ports:
+      - "3001:3001"
+    networks:
+      - default
+      - dokploy-network
+
+  # ── Frontend Next.js ───────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+        NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+        NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET: ${CLOUDINARY_UPLOAD_PRESET:-}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: /api
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "3002:3000"
+    networks:
+      - default
+      - dokploy-network
+
+volumes:
+  db_data:
+
+networks:
+  dokploy-network:
+    external: true

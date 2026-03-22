@@ -1,0 +1,223 @@
+import { Response, NextFunction } from 'express';
+import { productsService, ProductFilters } from './products.service';
+import { Category, StockStatus, ProductType } from '../../common/types';
+import { AuthRequest } from '../../common/middleware';
+
+export class ProductsController {
+  async findAll(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      const filters: ProductFilters = {};
+
+      if (req.query.category) {
+        filters.category = req.query.category as Category;
+      }
+
+      if (req.query.productType) {
+        filters.productType = req.query.productType as ProductType;
+      }
+
+      if (req.query.stockStatus) {
+        filters.stockStatus = req.query.stockStatus as StockStatus;
+      }
+
+      if (req.query.search) {
+        filters.search = req.query.search as string;
+      }
+
+      if (req.query.minPrice) {
+        filters.minPrice = parseFloat(req.query.minPrice as string);
+      }
+
+      if (req.query.maxPrice) {
+        filters.maxPrice = parseFloat(req.query.maxPrice as string);
+      }
+
+      if (req.query.sedeId) {
+        filters.sedeId = req.query.sedeId as string;
+      }
+
+      const result = await productsService.findAll(tenantId, page, limit, filters);
+
+      res.json({
+        success: true,
+        ...result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async findById(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const product = await productsService.findById(req.params.id, tenantId);
+
+      res.json({
+        success: true,
+        data: product,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async findBySku(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const product = await productsService.findBySku(req.params.sku, tenantId);
+
+      res.json({
+        success: true,
+        data: product,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async findByBarcode(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const product = await productsService.findByBarcode(req.params.barcode, tenantId);
+
+      res.json({
+        success: true,
+        data: product,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async create(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const product = await productsService.create(tenantId, req.body);
+
+      res.status(201).json({
+        success: true,
+        data: product,
+        message: 'Producto creado exitosamente',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const product = await productsService.update(req.params.id, req.body, tenantId);
+
+      res.json({
+        success: true,
+        data: product,
+        message: 'Producto actualizado exitosamente',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async delete(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      await productsService.delete(req.params.id, tenantId);
+
+      res.json({
+        success: true,
+        message: 'Producto eliminado exitosamente',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async bulkCreate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const { products } = req.body;
+
+      if (!Array.isArray(products) || products.length === 0) {
+        res.status(400).json({
+          success: false,
+          error: 'Se requiere un array de productos no vacío',
+        });
+        return;
+      }
+
+      if (products.length > 500) {
+        res.status(400).json({
+          success: false,
+          error: 'El máximo de productos por lote es 500',
+        });
+        return;
+      }
+
+      const result = await productsService.bulkCreate(tenantId, products);
+
+      res.status(result.totalFailed > 0 ? 207 : 201).json({
+        success: true,
+        data: result,
+        message: `${result.totalCreated} productos creados, ${result.totalFailed} fallaron`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getLowStock(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const products = await productsService.getLowStock(tenantId);
+
+      res.json({
+        success: true,
+        data: products,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getOutOfStock(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const products = await productsService.getOutOfStock(tenantId);
+
+      res.json({
+        success: true,
+        data: products,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async exportCsv(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+
+      const filters: ProductFilters = {};
+      if (req.query.category) filters.category = req.query.category as Category;
+      if (req.query.productType) filters.productType = req.query.productType as ProductType;
+      if (req.query.stockStatus) filters.stockStatus = req.query.stockStatus as StockStatus;
+      if (req.query.search) filters.search = req.query.search as string;
+
+      const csv = await productsService.exportCsv(tenantId, filters);
+
+      const date = new Date().toISOString().split('T')[0];
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="inventario_${date}.csv"`);
+      res.send('\uFEFF' + csv); // BOM para que Excel abra con tildes correctas
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+export const productsController = new ProductsController();

@@ -1,0 +1,90 @@
+# ============================================================
+# Docker Compose — Instalación LOCAL en PC del cliente
+# ============================================================
+# El cliente solo necesita ESTOS 3 ARCHIVOS (sin código fuente):
+#   - docker-compose.client.yml  (este archivo)
+#   - .env                       (renombrar desde .env.client y configurar)
+#   - schema.sql                 (esquema de la base de datos)
+#
+# Instrucciones:
+#   1. Instalar Docker Desktop: https://www.docker.com/products/docker-desktop
+#   2. Poner los 3 archivos en una carpeta (ej: C:\lopbuk\)
+#   3. Renombrar .env.client a .env y completar los valores
+#   4. Abrir PowerShell en esa carpeta y ejecutar:
+#        docker compose -f docker-compose.client.yml up -d
+#   5. Abrir el navegador en http://localhost:3000
+#
+# Para ACTUALIZAR cuando salga una nueva versión:
+#   docker compose -f docker-compose.client.yml pull
+#   docker compose -f docker-compose.client.yml up -d
+# ============================================================
+
+services:
+
+  # ── Base de datos MySQL local ──────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: lopbuk_db_local
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      # Datos persistentes: aunque se reinicie Docker los datos no se pierden
+      - lopbuk_db_data:/var/lib/mysql
+      # Script inicial: crea las tablas la PRIMERA vez (solo si el volumen está vacío)
+      - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    # Puerto NO expuesto al host — solo accesible dentro de Docker (más seguro)
+    # El backend se conecta por la red interna usando el hostname "db"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend Node.js local ─────────────────────────────────
+  backend:
+    image: 1006946898/lopbuk-backend:latest
+    container_name: lopbuk_backend_local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      CORS_ORIGIN: http://localhost:3000
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      # ── Sync offline → nube ──
+      IS_LOCAL_INSTANCE: "true"
+      CLOUD_API_URL: ${CLOUD_API_URL}
+      SYNC_SECRET: ${SYNC_SECRET}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-30000}
+      # UUID del tenant que identifica esta sede (ver panel superadmin en la nube)
+      SYNC_TENANT_ID: ${SYNC_TENANT_ID}
+    ports:
+      - "3001:3001"
+
+  # ── Frontend Next.js local ────────────────────────────────
+  frontend:
+    image: 1006946898/lopbuk-frontend:latest
+    container_name: lopbuk_frontend_local
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+    ports:
+      - "3000:3000"
+
+volumes:
+  lopbuk_db_data:
+    name: lopbuk_db_data

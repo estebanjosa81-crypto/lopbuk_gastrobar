@@ -38,6 +38,10 @@ import {
   ShoppingCart,
   ToggleLeft,
   Search,
+  Smartphone,
+  Wifi,
+  WifiOff,
+  QrCode,
 } from 'lucide-react'
 import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
 import { departamentosMunicipios } from '@/constants'
@@ -95,6 +99,7 @@ interface StoreExtendedInfo {
   allowContraentrega: boolean
   showInfoModule: boolean
   infoModuleDescription: string
+  metaPixelId: string
 }
 
 interface AnnouncementBar {
@@ -103,6 +108,7 @@ interface AnnouncementBar {
   bgColor: string
   textColor: string
   isActive: boolean
+  scrollSpeed: number
 }
 
 interface Drop {
@@ -135,7 +141,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     paymentMethods: '', socialInstagram: '', socialFacebook: '',
     socialTiktok: '', socialWhatsapp: '',
     department: '', municipality: '', productCardStyle: 'style1',
-    allowContraentrega: true, showInfoModule: false, infoModuleDescription: '',
+    allowContraentrega: true, showInfoModule: false, infoModuleDescription: '', metaPixelId: '',
   })
 
   // Chatbot config
@@ -154,8 +160,19 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
   const [isSavingChatbot, setIsSavingChatbot] = useState(false)
   const [chatbotMsg, setChatbotMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
 
+  // WhatsApp state
+  const [waStatus, setWaStatus] = useState<{
+    connected: boolean; state: string;
+    whatsappNumber: string | null; evolutionInstance: string | null
+  }>({ connected: false, state: 'not_configured', whatsappNumber: null, evolutionInstance: null })
+  const [waQr, setWaQr] = useState<string | null>(null)
+  const [waLoading, setWaLoading] = useState(false)
+  const [waMsg, setWaMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
+  const [waPhone, setWaPhone] = useState('')
+
   // Cart settings
   const [cartMinPurchase, setCartMinPurchase] = useState(0)
+  const [cartDeliveryFee, setCartDeliveryFee] = useState(0)
   const [isSavingCartSettings, setIsSavingCartSettings] = useState(false)
   const [cartSettingsMsg, setCartSettingsMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
 
@@ -177,7 +194,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
   const [editingBannerId, setEditingBannerId] = useState<number | null>(null)
 
   // Announcement bar
-  const [announcement, setAnnouncement] = useState<AnnouncementBar>({ text: '', linkUrl: '', bgColor: '#f59e0b', textColor: '#000000', isActive: false })
+  const [announcement, setAnnouncement] = useState<AnnouncementBar>({ text: '', linkUrl: '', bgColor: '#f59e0b', textColor: '#000000', isActive: false, scrollSpeed: 3 })
 
   // Drops
   const [drops, setDrops] = useState<Drop[]>([])
@@ -212,6 +229,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             bgColor: result.data.announcementBar.bgColor || '#f59e0b',
             textColor: result.data.announcementBar.textColor || '#000000',
             isActive: !!result.data.announcementBar.isActive,
+            scrollSpeed: result.data.announcementBar.scrollSpeed ?? 3,
           })
         }
         if (result.data.drops) {
@@ -219,6 +237,9 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
         }
         if (result.data.cartMinPurchase !== undefined) {
           setCartMinPurchase(Number(result.data.cartMinPurchase) || 0)
+        }
+        if (result.data.cartDeliveryFee !== undefined) {
+          setCartDeliveryFee(Number(result.data.cartDeliveryFee) || 0)
         }
 
         if (result.data.storeInfo) {
@@ -240,6 +261,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             allowContraentrega: result.data.storeInfo.allowContraentrega !== false,
             showInfoModule: !!result.data.storeInfo.showInfoModule,
             infoModuleDescription: result.data.storeInfo.infoModuleDescription || '',
+            metaPixelId: result.data.storeInfo.metaPixelId || '',
           })
         }
       }
@@ -267,6 +289,15 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
         })
       }
     } catch { /* chatbot table may not exist yet */ }
+
+    // Load WhatsApp status
+    try {
+      const waResult = await api.getWhatsAppStatus()
+      if (waResult.success && waResult.data) {
+        setWaStatus(waResult.data)
+        setWaPhone(waResult.data.whatsappNumber || '')
+      }
+    } catch { /* evolution api not configured */ }
 
     // Load cart settings and order bump
     try {
@@ -308,6 +339,56 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     }
     setIsSavingChatbot(false)
     setTimeout(() => setChatbotMsg(null), 4000)
+  }
+
+  // ========== WHATSAPP HANDLERS ==========
+  const handleConnectWhatsApp = async () => {
+    setWaLoading(true)
+    setWaMsg(null)
+    try {
+      const result = await api.connectWhatsApp({ whatsappNumber: waPhone || undefined })
+      if (result.success) {
+        setWaQr(result.data?.qrcode || null)
+        setWaMsg({ type: 'ok', text: 'Escanea el QR con WhatsApp para conectar' })
+        // Poll status after 20 seconds
+        setTimeout(async () => {
+          try {
+            const st = await api.getWhatsAppStatus()
+            if (st.success) setWaStatus(st.data)
+          } catch {}
+        }, 20000)
+      } else {
+        setWaMsg({ type: 'error', text: result.error || 'Error al iniciar conexión' })
+      }
+    } catch {
+      setWaMsg({ type: 'error', text: 'Error de conexión con el servidor' })
+    }
+    setWaLoading(false)
+    setTimeout(() => setWaMsg(null), 6000)
+  }
+
+  const handleDisconnectWhatsApp = async () => {
+    setWaLoading(true)
+    try {
+      const result = await api.disconnectWhatsApp()
+      if (result.success) {
+        setWaStatus({ connected: false, state: 'not_configured', whatsappNumber: null, evolutionInstance: null })
+        setWaQr(null)
+        setWaPhone('')
+        setWaMsg({ type: 'ok', text: 'WhatsApp desconectado correctamente' })
+      }
+    } catch {}
+    setWaLoading(false)
+    setTimeout(() => setWaMsg(null), 3000)
+  }
+
+  const handleRefreshQR = async () => {
+    setWaLoading(true)
+    try {
+      const result = await api.getWhatsAppQR()
+      if (result.success) setWaQr(result.data?.qrcode || null)
+    } catch {}
+    setWaLoading(false)
   }
 
   // ========== BANNER HANDLERS ==========
@@ -502,9 +583,9 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
   const handleSaveCartSettings = async () => {
     setIsSavingCartSettings(true)
     try {
-      const result = await api.updateCartSettings({ cartMinPurchase })
+      const result = await api.updateCartSettings({ cartMinPurchase, cartDeliveryFee })
       if (result.success) {
-        setCartSettingsMsg({ type: 'ok', text: 'Mínimo de compra guardado' })
+        setCartSettingsMsg({ type: 'ok', text: 'Configuración de domicilio guardada' })
       } else {
         setCartSettingsMsg({ type: 'error', text: result.error || 'Error al guardar' })
       }
@@ -1042,12 +1123,46 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
                   </div>
                 </div>
               </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">
+                  Velocidad del desplazamiento
+                  <span className="ml-2 text-muted-foreground font-normal">
+                    {['', 'Muy lento', 'Lento', 'Normal', 'Rápido', 'Muy rápido'][announcement.scrollSpeed]}
+                  </span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground shrink-0">Lento</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={announcement.scrollSpeed}
+                    onChange={e => setAnnouncement(prev => ({ ...prev, scrollSpeed: Number(e.target.value) }))}
+                    className="flex-1 h-2 accent-primary cursor-pointer"
+                  />
+                  <span className="text-xs text-muted-foreground shrink-0">Rápido</span>
+                </div>
+                <div className="flex justify-between mt-1">
+                  {[1,2,3,4,5].map(v => (
+                    <span key={v} className={`text-xs ${announcement.scrollSpeed === v ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>|</span>
+                  ))}
+                </div>
+              </div>
               {announcement.text && (
                 <div>
                   <label className="text-sm font-medium mb-2 block">Vista previa:</label>
                   <div className="rounded-lg overflow-hidden">
-                    <div className="py-2 px-4 text-center text-sm font-medium" style={{ backgroundColor: announcement.bgColor, color: announcement.textColor }}>
-                      {announcement.text}
+                    <style>{`@keyframes preview-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+                    <div className="py-2 overflow-hidden text-sm font-medium" style={{ backgroundColor: announcement.bgColor, color: announcement.textColor }}>
+                      <div
+                        className="flex whitespace-nowrap"
+                        style={{ animation: `preview-marquee ${[0, 90, 50, 30, 15, 7][announcement.scrollSpeed]}s linear infinite` }}
+                      >
+                        {[...Array(8)].map((_, i) => (
+                          <span key={i} className="inline-block mx-10 shrink-0">{announcement.text}</span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1618,6 +1733,32 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             </CardContent>
           </Card>
 
+          {/* Meta Pixel */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ExternalLink className="h-4 w-4" />
+                Meta Pixel (Facebook Ads)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Ingresa tu ID de píxel de Meta para rastrear eventos como visitas, compras y clics en WhatsApp en tu tienda online.
+              </p>
+              <div>
+                <label className="text-sm font-medium mb-1 block">ID del Pixel de Meta</label>
+                <Input
+                  placeholder="Ej: 1234567890123456"
+                  value={storeInfo.metaPixelId}
+                  onChange={e => setStoreInfo(prev => ({ ...prev, metaPixelId: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Encuéntralo en Administrador de eventos → Fuentes de datos → Pixel en Meta Business Suite.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={handleSaveStoreInfo} disabled={saving} className="w-full sm:w-auto">
               <Save className="h-4 w-4 mr-2" />
@@ -1799,6 +1940,115 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             </CardContent>
           </Card>
 
+          {/* ── WhatsApp Connection ── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Smartphone className="h-4 w-4 text-green-600" />
+                Agente en WhatsApp
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Status badge */}
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border ${
+                waStatus.connected
+                  ? 'bg-green-500/10 text-green-700 border-green-500/20'
+                  : waStatus.state === 'connecting'
+                    ? 'bg-amber-500/10 text-amber-700 border-amber-500/20'
+                    : 'bg-muted text-muted-foreground border-border'
+              }`}>
+                {waStatus.connected
+                  ? <Wifi className="h-3.5 w-3.5" />
+                  : waStatus.state === 'connecting'
+                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    : <WifiOff className="h-3.5 w-3.5" />}
+                {waStatus.connected
+                  ? `Conectado${waStatus.whatsappNumber ? ` · ${waStatus.whatsappNumber}` : ''}`
+                  : waStatus.state === 'connecting'
+                    ? 'Conectando…'
+                    : 'Sin conectar'}
+              </div>
+
+              {/* Phone input (only when not connected) */}
+              {!waStatus.connected && (
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Número de WhatsApp del negocio</label>
+                  <Input
+                    placeholder="+57 300 000 0000"
+                    value={waPhone}
+                    onChange={e => setWaPhone(e.target.value)}
+                    className="max-w-xs"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">El número que vas a vincular (opcional, solo para referencia)</p>
+                </div>
+              )}
+
+              {/* QR code */}
+              {waQr && !waStatus.connected && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <QrCode className="h-4 w-4" />
+                    Escanea este QR con WhatsApp
+                  </p>
+                  <div className="border rounded-lg p-3 w-fit bg-white">
+                    <img src={waQr} alt="QR WhatsApp" className="w-52 h-52 object-contain" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    WhatsApp → Dispositivos vinculados → Vincular dispositivo → Escanear QR
+                  </p>
+                  <Button variant="outline" size="sm" onClick={handleRefreshQR} disabled={waLoading} className="gap-2">
+                    <RefreshCw className={`h-3.5 w-3.5 ${waLoading ? 'animate-spin' : ''}`} />
+                    Actualizar QR
+                  </Button>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 flex-wrap">
+                {!waStatus.connected ? (
+                  <Button
+                    onClick={handleConnectWhatsApp}
+                    disabled={waLoading}
+                    variant="outline"
+                    className="gap-2 border-green-500/40 hover:bg-green-500/10 text-green-700"
+                  >
+                    {waLoading
+                      ? <RefreshCw className="h-4 w-4 animate-spin" />
+                      : <Smartphone className="h-4 w-4" />}
+                    Conectar WhatsApp
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleDisconnectWhatsApp}
+                    disabled={waLoading}
+                    variant="outline"
+                    className="gap-2 border-red-500/30 hover:bg-red-500/10 text-red-600"
+                  >
+                    {waLoading
+                      ? <RefreshCw className="h-4 w-4 animate-spin" />
+                      : <WifiOff className="h-4 w-4" />}
+                    Desconectar
+                  </Button>
+                )}
+              </div>
+
+              {waMsg && (
+                <p className={`text-sm font-medium flex items-center gap-1.5 ${waMsg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+                  {waMsg.type === 'ok' ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                  {waMsg.text}
+                </p>
+              )}
+
+              <div className="bg-muted/40 rounded-md p-3 text-xs text-muted-foreground space-y-1.5">
+                <p className="font-medium text-foreground/70">¿Cómo funciona?</p>
+                <p>1. Clic en <strong>Conectar WhatsApp</strong> — aparece un QR</p>
+                <p>2. En tu celular: WhatsApp → Dispositivos vinculados → Vincular → Escanear</p>
+                <p>3. El agente IA empieza a responder mensajes automáticamente</p>
+                <p className="pt-1 text-amber-600/80">Requiere <strong>Evolution API</strong> instalado en el servidor. Consulta la guía de configuración.</p>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={handleSaveChatbot} disabled={isSavingChatbot} className="w-full sm:w-auto gap-2">
               {isSavingChatbot ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1854,11 +2104,25 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
 
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium">Tarifa de domicilio (COP)</label>
+                <p className="text-xs text-muted-foreground">Se cobra cuando el pedido no alcanza el mínimo. Pon <strong>0</strong> para no cobrar tarifa.</p>
+                <input
+                  type="number"
+                  min={0}
+                  step={500}
+                  value={cartDeliveryFee}
+                  onChange={e => setCartDeliveryFee(Math.max(0, parseInt(e.target.value) || 0))}
+                  placeholder="Ej: 5000"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+
               {cartMinPurchase > 0 && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
                   <p className="text-xs text-emerald-700">
-                    La barra de progreso se mostrará en el carrito. Al alcanzar{' '}
-                    <strong>{formatCurrency(cartMinPurchase)}</strong>, se desbloqueará el domicilio con asignación automática de vehículo de flota.
+                    Al alcanzar <strong>{formatCurrency(cartMinPurchase)}</strong> se desbloqueará el domicilio gratis.
+                    {cartDeliveryFee > 0 && <> Por debajo del mínimo se aplicará una tarifa de <strong>{formatCurrency(cartDeliveryFee)}</strong>.</>}
                   </p>
                 </div>
               )}
@@ -1866,7 +2130,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
               <div className="flex items-center gap-3 flex-wrap">
                 <Button onClick={handleSaveCartSettings} disabled={isSavingCartSettings} className="gap-2">
                   {isSavingCartSettings ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Guardar Mínimo
+                  Guardar Configuración
                 </Button>
                 {cartSettingsMsg && (
                   <span className={`text-sm font-medium flex items-center gap-1 ${cartSettingsMsg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>

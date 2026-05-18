@@ -407,6 +407,11 @@ export function InventoryList() {
                               {product.brand || ''}{product.brand && product.color ? ' | ' : ''}{product.color || ''}
                               {product.size ? ` | ${product.size}` : ''}
                             </p>
+                            {product.productType === 'ferreteria' && product.weight != null && product.weight > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400 mt-0.5">
+                                ⚖ {product.weight} {product.hardwareWeightUnit || 'kg'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </TableCell>

@@ -67,10 +67,10 @@ router.get(
       const params: any[] = [];
 
       if (showAll || !tenantId) {
-        // Show products from all active tenants
-        whereClause = `WHERE p.stock > 0 AND p.published_in_store = 1 AND p.tenant_id IN (SELECT id FROM tenants WHERE status = 'activo')`;
+        // Show products from all active tenants (preorder products bypass stock check)
+        whereClause = `WHERE (p.stock > 0 OR p.is_preorder = 1) AND p.published_in_store = 1 AND p.tenant_id IN (SELECT id FROM tenants WHERE status = 'activo')`;
       } else {
-        whereClause = 'WHERE p.tenant_id = ? AND p.stock > 0 AND p.published_in_store = 1';
+        whereClause = 'WHERE p.tenant_id = ? AND (p.stock > 0 OR p.is_preorder = 1) AND p.published_in_store = 1';
         params.push(tenantId);
       }
 
@@ -142,18 +142,24 @@ router.get(
             p.product_type as productType,
             p.weight as weight,
             p.hardware_weight_unit as hardwareWeightUnit,
-            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug
+            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug,
+            IF(p.is_preorder, 1, 0) as isPreorder,
+            p.preorder_window_end as preorderWindowEnd,
+            p.preorder_ship_start as preorderShipStart,
+            p.preorder_ship_end as preorderShipEnd,
+            p.preorder_badge_text as preorderBadgeText,
+            p.preorder_policy_text as preorderPolicyText
           FROM products p
           LEFT JOIN tenants t ON t.id = p.tenant_id
           ${joinStoreInfo}
           ${whereClause}
-          ORDER BY p.is_on_offer DESC, p.name ASC
+          ORDER BY p.is_on_offer DESC, p.is_preorder DESC, p.name ASC
           LIMIT ? OFFSET ?`,
           [...params, limit, offset]
         ) as any;
         rows = r;
       } catch {
-        // Fallback: delivery_type / municipality columns may not exist in running DB yet
+        // Fallback: delivery_type / municipality / preorder columns may not exist in running DB yet
         const [r] = await pool.query(
           `SELECT
             p.id, p.name, p.category, p.brand, p.description,
@@ -168,7 +174,13 @@ router.get(
             p.product_type as productType,
             p.weight as weight,
             NULL as hardwareWeightUnit,
-            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug
+            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug,
+            0 as isPreorder,
+            NULL as preorderWindowEnd,
+            NULL as preorderShipStart,
+            NULL as preorderShipEnd,
+            'Pre-orden' as preorderBadgeText,
+            NULL as preorderPolicyText
           FROM products p
           LEFT JOIN tenants t ON t.id = p.tenant_id
           ${fallbackWhereClause}
@@ -435,7 +447,7 @@ router.get(
 
       let rows: any[];
       try {
-        // Full query with all new columns (delivery_type, is_new_launch, launch_date)
+        // Full query with all new columns (delivery_type, is_new_launch, launch_date, preorder)
         const [r] = await pool.query(
           `SELECT id, name, category, brand, sale_price as salePrice, image_url as imageUrl,
                   stock, IF(published_in_store, 1, 0) as publishedInStore,
@@ -443,7 +455,12 @@ router.get(
                   offer_price as offerPrice, offer_label as offerLabel, offer_end as offerEnd,
                   IF(available_for_delivery, 1, 0) as availableForDelivery,
                   delivery_type as deliveryType,
-                  IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate
+                  IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate,
+                  IF(is_preorder, 1, 0) as isPreorder,
+                  preorder_window_end as preorderWindowEnd,
+                  preorder_ship_start as preorderShipStart,
+                  preorder_ship_end as preorderShipEnd,
+                  preorder_badge_text as preorderBadgeText
            FROM products
            WHERE tenant_id = ?
            ORDER BY name ASC`,
@@ -460,7 +477,12 @@ router.get(
                     offer_price as offerPrice, offer_label as offerLabel, offer_end as offerEnd,
                     IF(available_for_delivery, 1, 0) as availableForDelivery,
                     NULL as deliveryType,
-                    IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate
+                    IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate,
+                    IF(is_preorder, 1, 0) as isPreorder,
+                    preorder_window_end as preorderWindowEnd,
+                    preorder_ship_start as preorderShipStart,
+                    preorder_ship_end as preorderShipEnd,
+                    preorder_badge_text as preorderBadgeText
              FROM products
              WHERE tenant_id = ?
              ORDER BY name ASC`,
@@ -468,7 +490,7 @@ router.get(
           ) as any;
           rows = r;
         } catch {
-          // Fallback 2: without delivery_type, is_new_launch, or launch_date
+          // Fallback 2: without delivery_type, is_new_launch, launch_date, or preorder
           const [r] = await pool.query(
             `SELECT id, name, category, brand, sale_price as salePrice, image_url as imageUrl,
                     stock, IF(published_in_store, 1, 0) as publishedInStore,
@@ -476,7 +498,10 @@ router.get(
                     offer_price as offerPrice, offer_label as offerLabel, offer_end as offerEnd,
                     IF(available_for_delivery, 1, 0) as availableForDelivery,
                     NULL as deliveryType,
-                    0 as isNewLaunch, NULL as launchDate
+                    0 as isNewLaunch, NULL as launchDate,
+                    0 as isPreorder, NULL as preorderWindowEnd,
+                    NULL as preorderShipStart, NULL as preorderShipEnd,
+                    NULL as preorderBadgeText
              FROM products
              WHERE tenant_id = ?
              ORDER BY name ASC`,
@@ -493,6 +518,7 @@ router.get(
         isOnOffer: Number(r.isOnOffer) === 1,
         availableForDelivery: Number(r.availableForDelivery) === 1,
         isNewLaunch: Number(r.isNewLaunch) === 1,
+        isPreorder: Number(r.isPreorder) === 1,
       }));
 
       res.json({ success: true, data });
@@ -772,13 +798,21 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
         ) as any;
         if (ageGateRows[0]) Object.assign(storeInfoData, ageGateRows[0]);
       } catch { /* columns not yet added */ }
+      // Meta Pixel
+      try {
+        const [pixelRows] = await pool.query(
+          `SELECT meta_pixel_id as metaPixelId FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (pixelRows[0]) Object.assign(storeInfoData, pixelRows[0]);
+      } catch { /* column not yet added */ }
     }
 
     // Announcement bar
     let announcementBar: any = null;
     try {
       const [rows] = await pool.query(
-        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive
+        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive, scroll_speed as scrollSpeed
          FROM store_announcement_bar WHERE tenant_id = ? AND is_active = 1`,
         [tenantId]
       ) as any;
@@ -858,8 +892,9 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
       customSections = csRows || [];
     } catch { /* table may not exist yet */ }
 
-    // Cart min purchase (public — needed for progress bar in landing page)
+    // Cart settings (public — needed for progress bar and delivery fee in landing page)
     let cartMinPurchase = 0;
+    let cartDeliveryFee = 0;
     try {
       const [cartRows] = await pool.query(
         'SELECT cart_min_purchase as cartMinPurchase FROM store_info WHERE tenant_id = ?',
@@ -867,6 +902,15 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
       ) as any;
       if (cartRows.length > 0 && cartRows[0].cartMinPurchase != null) {
         cartMinPurchase = Number(cartRows[0].cartMinPurchase);
+      }
+    } catch { /* column not yet added */ }
+    try {
+      const [feeRows] = await pool.query(
+        'SELECT cart_delivery_fee as cartDeliveryFee FROM store_info WHERE tenant_id = ?',
+        [tenantId]
+      ) as any;
+      if (feeRows.length > 0 && feeRows[0].cartDeliveryFee != null) {
+        cartDeliveryFee = Number(feeRows[0].cartDeliveryFee);
       }
     } catch { /* column not yet added */ }
 
@@ -888,6 +932,7 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
         publicMenuEnabled,
         customSections,
         cartMinPurchase,
+        cartDeliveryFee,
       },
     });
   } catch (error) {
@@ -1070,10 +1115,19 @@ router.get('/customization', authenticate, requirePlan('empresarial'), async (re
         ) as any;
         if (ageGateRows[0]) Object.assign(storeInfoRow, ageGateRows[0]);
       } catch { /* columns not yet added */ }
+      // Meta Pixel
+      try {
+        const [pixelRows] = await pool.query(
+          `SELECT meta_pixel_id as metaPixelId FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (pixelRows[0]) Object.assign(storeInfoRow, pixelRows[0]);
+      } catch { /* column not yet added */ }
     }
 
-    // Cart min purchase
+    // Cart settings
     let cartMinPurchase = 0;
+    let cartDeliveryFee = 0;
     try {
       const [cartRows] = await pool.query(
         'SELECT cart_min_purchase as cartMinPurchase FROM store_info WHERE tenant_id = ?',
@@ -1081,6 +1135,15 @@ router.get('/customization', authenticate, requirePlan('empresarial'), async (re
       ) as any;
       if (cartRows.length > 0 && cartRows[0].cartMinPurchase != null) {
         cartMinPurchase = Number(cartRows[0].cartMinPurchase);
+      }
+    } catch { /* column not yet added */ }
+    try {
+      const [feeRows] = await pool.query(
+        'SELECT cart_delivery_fee as cartDeliveryFee FROM store_info WHERE tenant_id = ?',
+        [tenantId]
+      ) as any;
+      if (feeRows.length > 0 && feeRows[0].cartDeliveryFee != null) {
+        cartDeliveryFee = Number(feeRows[0].cartDeliveryFee);
       }
     } catch { /* column not yet added */ }
 
@@ -1096,7 +1159,7 @@ router.get('/customization', authenticate, requirePlan('empresarial'), async (re
     let announcementBar: any = null;
     try {
       const [abRows] = await pool.query(
-        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive
+        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive, scroll_speed as scrollSpeed
          FROM store_announcement_bar WHERE tenant_id = ?`,
         [tenantId]
       ) as any;
@@ -1142,6 +1205,7 @@ router.get('/customization', authenticate, requirePlan('empresarial'), async (re
         announcementBar,
         drops,
         cartMinPurchase,
+        cartDeliveryFee,
       },
     });
   } catch (error) {
@@ -1343,7 +1407,7 @@ router.put('/store-extended-info', authenticate, requirePlan('empresarial'), asy
       logoUrl, schedule, locationMapUrl, termsContent, privacyContent, shippingTerms, paymentMethods,
       socialInstagram, socialFacebook, socialTiktok, socialWhatsapp,
       department, municipality, productCardStyle, allowContraentrega,
-      showInfoModule, infoModuleDescription,
+      showInfoModule, infoModuleDescription, metaPixelId,
     } = req.body;
 
     const allowCod = allowContraentrega === false ? 0 : 1;
@@ -1357,14 +1421,14 @@ router.put('/store-extended-info', authenticate, requirePlan('empresarial'), asy
           payment_methods = ?, social_instagram = ?, social_facebook = ?,
           social_tiktok = ?, social_whatsapp = ?,
           department = ?, municipality = ?, product_card_style = ?, allow_contraentrega = ?,
-          show_info_module = ?, info_module_description = ?
+          show_info_module = ?, info_module_description = ?, meta_pixel_id = ?
          WHERE tenant_id = ?`,
         [
           logoUrl || null, schedule || null, locationMapUrl || null, termsContent || null, privacyContent || null, shippingTerms || null,
           paymentMethods || null, socialInstagram || null, socialFacebook || null,
           socialTiktok || null, socialWhatsapp || null,
           department || null, municipality || null, productCardStyle || 'style1', allowCod,
-          infoModule, infoModuleDescription || null,
+          infoModule, infoModuleDescription || null, metaPixelId || null,
           tenantId,
         ]
       ) as any;
@@ -1550,7 +1614,8 @@ router.put('/age-gate', authenticate, requirePlan('empresarial'), async (req: Re
 router.put('/announcement-bar', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
-    const { text, linkUrl, bgColor, textColor, isActive } = req.body;
+    const { text, linkUrl, bgColor, textColor, isActive, scrollSpeed } = req.body;
+    const speed = Math.min(5, Math.max(1, Number(scrollSpeed) || 3));
 
     // Upsert: try update first, then insert
     const [existing] = await pool.query(
@@ -1559,13 +1624,13 @@ router.put('/announcement-bar', authenticate, requirePlan('empresarial'), async 
 
     if (existing.length > 0) {
       await pool.query(
-        `UPDATE store_announcement_bar SET text = ?, link_url = ?, bg_color = ?, text_color = ?, is_active = ? WHERE tenant_id = ?`,
-        [text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0, tenantId]
+        `UPDATE store_announcement_bar SET text = ?, link_url = ?, bg_color = ?, text_color = ?, is_active = ?, scroll_speed = ? WHERE tenant_id = ?`,
+        [text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0, speed, tenantId]
       );
     } else {
       await pool.query(
-        `INSERT INTO store_announcement_bar (tenant_id, text, link_url, bg_color, text_color, is_active) VALUES (?, ?, ?, ?, ?, ?)`,
-        [tenantId, text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0]
+        `INSERT INTO store_announcement_bar (tenant_id, text, link_url, bg_color, text_color, is_active, scroll_speed) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [tenantId, text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0, speed]
       );
     }
 
@@ -1769,32 +1834,38 @@ router.put('/cart-settings', authenticate, requirePlan('empresarial'), async (re
       return;
     }
 
-    const { cartMinPurchase } = req.body;
+    const { cartMinPurchase, cartDeliveryFee } = req.body;
     const safeMin = Math.max(0, parseInt(cartMinPurchase) || 0);
+    const safeFee = Math.max(0, parseInt(cartDeliveryFee) || 0);
 
-    // Ensure column exists (migration for existing DBs)
+    // Ensure columns exist (migration for existing DBs)
     try {
       await pool.query(
         `ALTER TABLE store_info ADD COLUMN cart_min_purchase INT NOT NULL DEFAULT 0 COMMENT 'Monto mínimo COP para domicilio con flota'`
       );
     } catch { /* column already exists — ignore */ }
+    try {
+      await pool.query(
+        `ALTER TABLE store_info ADD COLUMN cart_delivery_fee INT NOT NULL DEFAULT 0 COMMENT 'Tarifa de domicilio COP cuando no alcanza el mínimo'`
+      );
+    } catch { /* column already exists — ignore */ }
 
     // Try UPDATE first (row already exists)
     const [updateResult] = await pool.query(
-      `UPDATE store_info SET cart_min_purchase = ? WHERE tenant_id = ?`,
-      [safeMin, tenantId]
+      `UPDATE store_info SET cart_min_purchase = ?, cart_delivery_fee = ? WHERE tenant_id = ?`,
+      [safeMin, safeFee, tenantId]
     ) as any;
 
     // If no row existed yet, create it pulling the name from tenants
     if (updateResult.affectedRows === 0) {
       await pool.query(
-        `INSERT INTO store_info (tenant_id, name, cart_min_purchase)
-         SELECT ?, t.name, ? FROM tenants t WHERE t.id = ?`,
-        [tenantId, safeMin, tenantId]
+        `INSERT INTO store_info (tenant_id, name, cart_min_purchase, cart_delivery_fee)
+         SELECT ?, t.name, ?, ? FROM tenants t WHERE t.id = ?`,
+        [tenantId, safeMin, safeFee, tenantId]
       );
     }
 
-    res.json({ success: true, data: { cartMinPurchase: safeMin } });
+    res.json({ success: true, data: { cartMinPurchase: safeMin, cartDeliveryFee: safeFee } });
   } catch (error) {
     console.error('Update cart settings error:', error);
     res.status(500).json({ success: false, error: 'Error al guardar configuración del carrito' });
@@ -2285,7 +2356,7 @@ router.get('/links/:slug', async (req: Request, res: Response) => {
     const { slug } = req.params;
 
     const [tenants] = await pool.query(
-      'SELECT id FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
+      'SELECT id, reservations_enabled FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
       ['activo', slug]
     ) as any;
 
@@ -2295,6 +2366,7 @@ router.get('/links/:slug', async (req: Request, res: Response) => {
     }
 
     const tenantId = tenants[0].id;
+    const reservationsEnabled = !!tenants[0].reservations_enabled;
 
     // Base store info
     const [siRows] = await pool.query(
@@ -2360,7 +2432,8 @@ router.get('/links/:slug', async (req: Request, res: Response) => {
       const baseSelect = `SELECT id, name, category, brand, description,
                   sale_price as salePrice, image_url as imageUrl,
                   stock, color, size,
-                  is_on_offer as isOnOffer, offer_price as offerPrice, offer_label as offerLabel`;
+                  is_on_offer as isOnOffer, offer_price as offerPrice, offer_label as offerLabel,
+                  product_type as productType, weight, hardware_weight_unit as hardwareWeightUnit`;
 
       // Helper: try with image_urls, fallback without it
       const queryProducts = async (where: string, params: any[]): Promise<any[]> => {
@@ -2426,6 +2499,7 @@ router.get('/links/:slug', async (req: Request, res: Response) => {
         contactPageImage: contactData.contactPageImage || null,
         contactPageLinks: contactData.contactPageLinks || null,
         contactPageLinkTheme: contactData.contactPageLinkTheme || 'theme1',
+        reservationsEnabled,
         shopProducts,
       },
     });

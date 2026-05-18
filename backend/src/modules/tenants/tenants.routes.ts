@@ -132,4 +132,22 @@ router.post(
   tenantsController.activateTrial.bind(tenantsController)
 );
 
+// GET /api/tenants/:id/modules - Get enabled modules for a tenant
+router.get(
+  '/:id/modules',
+  [param('id').notEmpty().withMessage('ID requerido'), validateRequest],
+  tenantsController.getModules.bind(tenantsController)
+);
+
+// PUT /api/tenants/:id/modules - Update enabled modules for a tenant
+router.put(
+  '/:id/modules',
+  [
+    param('id').notEmpty().withMessage('ID requerido'),
+    body('modules').isArray().withMessage('modules debe ser un array de strings'),
+    validateRequest,
+  ],
+  tenantsController.updateModules.bind(tenantsController)
+);
+
 export default router;

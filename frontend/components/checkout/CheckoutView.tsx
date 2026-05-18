@@ -74,6 +74,10 @@ interface CheckoutViewProps {
   onPagarConSistecredito?: () => Promise<void>;
   // Contraentrega toggle
   allowContraentrega?: boolean;
+  // Mínimo para domicilio gratis
+  freeDeliveryMin?: number;
+  // Tarifa cobrada cuando no alcanza el mínimo
+  deliveryFee?: number;
 }
 
 export function CheckoutView({
@@ -106,6 +110,8 @@ export function CheckoutView({
   onPagarConAddi,
   onPagarConSistecredito,
   allowContraentrega = true,
+  freeDeliveryMin = 0,
+  deliveryFee = 0,
 }: CheckoutViewProps) {
   const [inputCupon, setInputCupon] = useState(cuponCodigo);
   const [validandoCupon, setValidandoCupon] = useState(false);
@@ -301,7 +307,7 @@ export function CheckoutView({
     );
   };
 
-  const totalFinal = totalConDescuento ?? totalCarrito;
+  const totalFinal = (totalConDescuento ?? totalCarrito) + deliveryFee;
   const descuentoAplicado = cuponAplicado?.valido ? cuponAplicado.descuento || 0 : 0;
 
   return (
@@ -574,6 +580,11 @@ export function CheckoutView({
                       <div className="flex-1 min-w-0 flex justify-between items-start">
                         <div className="min-w-0">
                           <div className="font-light text-gray-900 text-sm leading-snug">{item.nombre}</div>
+                          {item.isPreorder && (
+                            <span className="inline-block text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold mt-0.5">
+                              {item.preorderBadgeText || 'Pre-orden'}
+                            </span>
+                          )}
                           {(item.tallaSeleccionada || item.colorSeleccionado) && (
                             <div className="text-xs text-gray-500 mt-0.5">
                               {item.tallaSeleccionada && <span>Talla: {item.tallaSeleccionada}</span>}
@@ -638,7 +649,7 @@ export function CheckoutView({
                       {orderBumpProducts.map(bp => {
                         const isAdded = addedBumpIds.has(bp.id);
                         const displayPrice = (bp.isOnOffer && bp.offerPrice) ? bp.offerPrice : bp.salePrice;
-                        const hasDiscount = bp.isOnOffer && bp.offerPrice && bp.offerPrice < bp.salePrice;
+                        const hasDiscount = !!(bp.isOnOffer && bp.offerPrice && bp.offerPrice < bp.salePrice);
                         return (
                           <div
                             key={bp.id}
@@ -752,16 +763,29 @@ export function CheckoutView({
                 )}
 
                 <div className="pt-6 border-t border-gray-300">
-                  {descuentoAplicado > 0 && (
+                  {(descuentoAplicado > 0 || deliveryFee > 0) && (
                     <>
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-light text-gray-600">Subtotal</span>
                         <span className="text-sm font-light text-gray-600">{formatCOP(totalCarrito)}</span>
                       </div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-light text-green-600">Descuento</span>
-                        <span className="text-sm font-light text-green-600">-{formatCOP(descuentoAplicado)}</span>
-                      </div>
+                      {descuentoAplicado > 0 && (
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-light text-green-600">Descuento</span>
+                          <span className="text-sm font-light text-green-600">-{formatCOP(descuentoAplicado)}</span>
+                        </div>
+                      )}
+                      {deliveryFee > 0 && (
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-sm font-light text-gray-600 flex items-center gap-1">
+                            <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2 2h7M13 16l2 2h5l2-2V9a1 1 0 00-1-1h-5a1 1 0 00-1 1v7z" />
+                            </svg>
+                            Costo de domicilio
+                          </span>
+                          <span className="text-sm font-light text-gray-900">+{formatCOP(deliveryFee)}</span>
+                        </div>
+                      )}
                     </>
                   )}
                   <div className="flex justify-between items-center">
@@ -769,6 +793,40 @@ export function CheckoutView({
                     <span className="text-xl font-light text-gray-900">{formatCOP(totalFinal)}</span>
                   </div>
                 </div>
+
+                {/* ── Banner domicilio gratis ── */}
+                {isDeliveryOrder && freeDeliveryMin > 0 && (() => {
+                  const unlocked = totalCarrito >= freeDeliveryMin
+                  const progress = Math.min(100, (totalCarrito / freeDeliveryMin) * 100)
+                  const remaining = Math.max(0, freeDeliveryMin - totalCarrito)
+                  return (
+                    <div className={`mt-4 rounded-lg p-3 border ${unlocked ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <svg className={`w-3.5 h-3.5 flex-shrink-0 ${unlocked ? 'text-emerald-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2 2h7M13 16l2 2h5l2-2V9a1 1 0 00-1-1h-5a1 1 0 00-1 1v7z" />
+                          </svg>
+                          {unlocked ? (
+                            <span className="text-xs font-semibold text-emerald-600">¡Domicilio gratis desbloqueado!</span>
+                          ) : (
+                            <span className="text-xs text-gray-500">
+                              Agrega <strong className="text-gray-800">{new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(remaining)}</strong> más para domicilio gratis
+                            </span>
+                          )}
+                        </div>
+                        <span className={`text-[10px] font-bold ml-2 shrink-0 ${unlocked ? 'text-emerald-600' : 'text-gray-400'}`}>
+                          {Math.round(progress)}%
+                        </span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden bg-gray-200">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 ease-out"
+                          style={{ width: `${progress}%`, backgroundColor: unlocked ? '#10b981' : '#111827' }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 <div className="mt-8">
                   <label className="block text-xs font-medium text-gray-700 mb-2 tracking-wide">
@@ -923,6 +981,42 @@ export function CheckoutView({
                 {currentPaymentError && (
                   <p className="text-xs text-red-500 mt-3 text-center">{currentPaymentError}</p>
                 )}
+
+                {/* Aviso Pre-orden */}
+                {(() => {
+                  const preorderItems = carrito.filter(i => i.isPreorder)
+                  if (preorderItems.length === 0) return null
+                  const hasRegular = carrito.some(i => !i.isPreorder)
+                  return (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+                      <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Aviso de pre-orden</p>
+                      {hasRegular && (
+                        <p className="text-xs text-amber-700">
+                          Tu carrito tiene productos de envío normal y pre-órdenes. Llegarán en fechas distintas.
+                        </p>
+                      )}
+                      <ul className="space-y-1">
+                        {preorderItems.map((item, i) => {
+                          const range = item.preorderShipStart
+                            ? (() => {
+                                const fmt = (d: string) => new Date(d).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
+                                return item.preorderShipEnd ? `${fmt(item.preorderShipStart)} – ${fmt(item.preorderShipEnd)}` : fmt(item.preorderShipStart)
+                              })()
+                            : null
+                          return (
+                            <li key={i} className="text-xs text-amber-700">
+                              <span className="font-semibold">{item.nombre}</span>
+                              {range && <span className="text-amber-600"> — envío est. {range}</span>}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                      <p className="text-[11px] text-amber-600 leading-relaxed">
+                        Al confirmar, aceptas que el envío de los ítems en pre-orden se realizará dentro del rango estimado.
+                      </p>
+                    </div>
+                  )
+                })()}
 
                 {/* Botón único */}
                 <button

@@ -52,8 +52,18 @@ import {
   Info,
   UtensilsCrossed,
   Link,
+  Pencil,
+  Trash2,
+  MessageCircle,
+  PlayCircle,
+  Globe,
+  Send,
+  Music,
+  Linkedin,
 } from 'lucide-react'
+import { getCloudinaryConfig } from '@/components/ui/cloudinary-upload'
 import { CheckoutView } from '@/components/checkout/CheckoutView'
+import { MiniMap } from '@/components/MiniMap'
 import { ServiceBookingModal } from '@/components/service-booking-modal'
 import { ChatWidget } from '@/components/ChatWidget'
 import { ContactModal } from '@/components/contact-modal'
@@ -106,6 +116,12 @@ interface StorefrontProduct {
   availableForDelivery?: boolean | number
   deliveryType?: 'domicilio' | 'envio' | 'ambos' | null
   sedeId?: string | null
+  // Pre-orden
+  isPreorder?: boolean | number | null
+  preorderWindowEnd?: string | null
+  preorderShipStart?: string | null
+  preorderShipEnd?: string | null
+  preorderBadgeText?: string | null
 }
 
 function CustomSectionFrame({ name, html }: { name: string; html: string }) {
@@ -132,6 +148,36 @@ function CustomSectionFrame({ name, html }: { name: string; html: string }) {
       }}
     />
   )
+}
+
+// ── Detecta el ícono y color apropiado para un link externo ───────────────────
+function getLinkIcon(url: string, label: string): {
+  Icon: React.ElementType; color: string; bg: string
+} {
+  const u = (url || '').toLowerCase()
+  const l = (label || '').toLowerCase()
+
+  if (u.includes('wa.me') || u.includes('whatsapp') || l.includes('whatsapp'))
+    return { Icon: Phone,          color: 'text-green-400',  bg: 'bg-green-500/15' }
+  if (u.includes('instagram') || l.includes('instagram'))
+    return { Icon: Instagram,      color: 'text-pink-400',   bg: 'bg-pink-500/15' }
+  if (u.includes('facebook') || l.includes('facebook'))
+    return { Icon: Facebook,       color: 'text-blue-400',   bg: 'bg-blue-500/15' }
+  if (u.includes('tiktok') || l.includes('tiktok'))
+    return { Icon: Music,          color: 'text-white',      bg: 'bg-white/10' }
+  if (u.includes('youtube') || u.includes('youtu.be') || l.includes('youtube'))
+    return { Icon: PlayCircle,     color: 'text-red-400',    bg: 'bg-red-500/15' }
+  if (u.includes('t.me') || u.includes('telegram') || l.includes('telegram'))
+    return { Icon: Send,           color: 'text-sky-400',    bg: 'bg-sky-500/15' }
+  if (u.includes('twitter') || u.includes('x.com') || l.includes('twitter'))
+    return { Icon: MessageCircle,  color: 'text-white/70',   bg: 'bg-white/10' }
+  if (u.includes('linkedin') || l.includes('linkedin'))
+    return { Icon: Linkedin,       color: 'text-blue-300',   bg: 'bg-blue-500/15' }
+  if (u.startsWith('mailto:') || l.includes('email') || l.includes('correo'))
+    return { Icon: Mail,           color: 'text-blue-400',   bg: 'bg-blue-500/15' }
+  if (u.startsWith('tel:') || l.includes('teléfono') || l.includes('telefono') || l.includes('llamar') || l.includes('cel'))
+    return { Icon: Phone,          color: 'text-green-400',  bg: 'bg-green-500/15' }
+  return   { Icon: Globe,          color: 'text-white/60',   bg: 'bg-white/10' }
 }
 
 export function LandingPage({ onGoToLogin }: LandingPageProps) {
@@ -221,13 +267,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       termsContent: string | null; privacyContent: string | null; shippingTerms: string | null
       paymentMethods: string | null; socialInstagram: string | null; socialFacebook: string | null
       socialTiktok: string | null; socialWhatsapp: string | null; productCardStyle?: string | null
+      metaPixelId?: string | null
       showInfoModule?: boolean | null; infoModuleDescription?: string | null
       contactPageEnabled?: boolean | number | null
       contactPageTitle?: string | null; contactPageDescription?: string | null
       contactPageImage?: string | null; contactPageLinks?: string | null
       ageGateEnabled?: boolean | number | null; ageGateDescription?: string | null
     } | null
-    announcementBar: { text: string; linkUrl: string | null; bgColor: string; textColor: string; isActive: boolean } | null
+    announcementBar: { text: string; linkUrl: string | null; bgColor: string; textColor: string; isActive: boolean; scrollSpeed?: number } | null
     activeDrop: {
       id: number; name: string; description: string | null; bannerUrl: string | null
       globalDiscount: number; startsAt: string; endsAt: string
@@ -238,6 +285,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     publicMenuEnabled?: boolean
     customSections?: Array<{ id: number; name: string; slug: string; htmlContent?: string }>
     cartMinPurchase?: number
+    cartDeliveryFee?: number
   } | null>(null)
 
   // ====== PRODUCT DETAIL MODAL STATE ======
@@ -254,10 +302,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [productReviews, setProductReviews] = useState<any[]>([])
   const [reviewsLoading, setReviewsLoading] = useState(false)
   const [showReviewForm, setShowReviewForm] = useState(false)
-  const [reviewForm, setReviewForm] = useState({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '' })
+  const [reviewForm, setReviewForm] = useState({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '', imageUrl1: '' })
+  const [reviewImageUploading, setReviewImageUploading] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [reviewSuccess, setReviewSuccess] = useState(false)
   const [reviewError, setReviewError] = useState('')
+  const [helpfulVotes, setHelpfulVotes] = useState<Set<string>>(new Set())
 
   // ====== DECANT STATE ======
   const [showDecantModal, setShowDecantModal] = useState(false)
@@ -371,6 +421,25 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     }
   }, [])
 
+  // Meta Pixel — inicializar cuando se cargue el storeConfig con pixelId
+  useEffect(() => {
+    const pixelId = storeConfig?.storeInfo?.metaPixelId
+    if (!pixelId || typeof window === 'undefined') return
+    const w = window as any
+    if (w.fbq) return
+    const n: any = (w.fbq = function (...args: any[]) {
+      n.callMethod ? n.callMethod.apply(n, args) : n.queue.push(args)
+    })
+    if (!w._fbq) w._fbq = n
+    n.push = n; n.loaded = true; n.version = '2.0'; n.queue = []
+    const s = document.createElement('script')
+    s.async = true
+    s.src = 'https://connect.facebook.net/en_US/fbevents.js'
+    document.head.appendChild(s)
+    w.fbq('init', pixelId)
+    w.fbq('track', 'PageView')
+  }, [storeConfig?.storeInfo?.metaPixelId])
+
   // Handle MercadoPago return URL (?mp=success|failure|pending&order=<id>)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -384,6 +453,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
     if (mp === 'success') {
       setMpReturnMsg({ type: 'success', text: '¡Pago exitoso! Tu pedido fue confirmado. Pronto recibirás novedades.' })
+      // Pixel: Purchase event
+      const fbq = (window as any).fbq
+      if (typeof fbq === 'function') fbq('track', 'Purchase', { value: 1, currency: 'COP', content_name: 'Pedido completado' })
     } else if (mp === 'failure') {
       setMpReturnMsg({ type: 'failure', text: 'El pago no fue completado. Tu pedido fue cancelado.' })
       // Cancel the pending order so it doesn't appear in merchant dashboard
@@ -571,8 +643,20 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     phone: '', cedula: '', department: '', municipality: '', address: '', neighborhood: '',
   })
   const [savingProfile, setSavingProfile] = useState(false)
+  const [profileSaveError, setProfileSaveError] = useState('')
   const [profileLat, setProfileLat] = useState<number | null>(null)
   const [profileLng, setProfileLng] = useState<number | null>(null)
+
+  // ====== SAVED ADDRESSES ======
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([])
+  const [loadingAddresses, setLoadingAddresses] = useState(false)
+  const [showAddressForm, setShowAddressForm] = useState(false)
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null)
+  const [addressForm, setAddressForm] = useState({ label: '', department: '', municipality: '', address: '', neighborhood: '' })
+  const [addressFormLat, setAddressFormLat] = useState<number | null>(null)
+  const [addressFormLng, setAddressFormLng] = useState<number | null>(null)
+  const [savingAddress, setSavingAddress] = useState(false)
+  const [addressFormError, setAddressFormError] = useState('')
 
   // ====== DELIVERY ORDER STATE ======
   const [showDeliveryLoginAlert, setShowDeliveryLoginAlert] = useState(false)
@@ -615,6 +699,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   // ── MÍNIMO DE COMPRA PARA DOMICILIO CON FLOTA ──────────────────────────────
   // Configurable desde el módulo Tienda → pestaña Carrito
   const DELIVERY_FREE_MIN = storeConfig?.cartMinPurchase || 0
+  const DELIVERY_FEE = storeConfig?.cartDeliveryFee || 0
   const deliveryProgress = (DELIVERY_FREE_MIN > 0 && carrito.length > 0) ? Math.min(100, (totalCarrito / DELIVERY_FREE_MIN) * 100) : 0
   const deliveryUnlocked = DELIVERY_FREE_MIN > 0 && totalCarrito >= DELIVERY_FREE_MIN
   const deliveryRemaining = Math.max(0, DELIVERY_FREE_MIN - totalCarrito)
@@ -1181,22 +1266,135 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             let resumeTimer: ReturnType<typeof setTimeout>
             let rafId: number
 
-            const onTouchStart: EventListener = () => { paused = true; clearTimeout(resumeTimer) }
-            const onTouchEnd: EventListener = () => { resumeTimer = setTimeout(() => { paused = false }, 2000) }
-            const onMouseEnter: EventListener = () => {
+            // ── drag / momentum state (shared by mouse & touch) ────────────
+            let isDragging     = false
+            let dragStartX     = 0
+            let dragStartPos   = 0
+            let dragVelX       = 0
+            let dragLastX      = 0
+            let dragLastTime   = 0
+            let momentumRaf    = 0
+
+            let touchStartX    = 0
+            let touchStartPos  = 0
+            let touchVelX      = 0
+            let touchLastX     = 0
+            let touchLastTime  = 0
+            let touchIsHoriz   = false
+            let touchDecided   = false
+
+            // horizontal pan-y allows the browser to still scroll the page
+            // vertically while we handle horizontal drags ourselves
+            el.style.touchAction = 'pan-y'
+            el.style.cursor = 'grab'
+
+            const normPos = (p: number) => ((p % oneSetWidth) + oneSetWidth) % oneSetWidth
+
+            const applyMomentum = (vel: number) => {
+              cancelAnimationFrame(momentumRaf)
+              let v = vel
+              const step = () => {
+                if (Math.abs(v) < 0.35) {
+                  resumeTimer = setTimeout(() => { paused = false }, 1000)
+                  return
+                }
+                pos = normPos(pos + v)
+                el.style.transform = `translateX(${-pos}px)`
+                v *= 0.93
+                momentumRaf = requestAnimationFrame(step)
+              }
+              momentumRaf = requestAnimationFrame(step)
+            }
+
+            // ── MOUSE ──────────────────────────────────────────────────────
+            const onMouseDown: EventListener = (ev) => {
+              const e = ev as MouseEvent
+              isDragging = true
+              dragStartX = e.pageX
+              dragStartPos = pos
+              dragVelX = 0
+              dragLastX = e.pageX
+              dragLastTime = Date.now()
               paused = true
               clearTimeout(resumeTimer)
+              cancelAnimationFrame(momentumRaf)
+              el.style.cursor = 'grabbing'
+              el.style.userSelect = 'none'
+            }
+            const onMouseMoveGlobal = (e: MouseEvent) => {
+              if (!isDragging) return
+              const now = Date.now()
+              const dt = Math.max(now - dragLastTime, 1)
+              dragVelX = (dragLastX - e.pageX) / dt * 16
+              dragLastX = e.pageX
+              dragLastTime = now
+              pos = normPos(dragStartPos - (e.pageX - dragStartX))
+              el.style.transform = `translateX(${-pos}px)`
+            }
+            const onMouseUpGlobal = () => {
+              if (!isDragging) return
+              isDragging = false
+              el.style.cursor = 'grab'
+              el.style.userSelect = ''
+              applyMomentum(dragVelX)
+            }
+            const onMouseEnter: EventListener = () => {
+              if (!isDragging) { paused = true; clearTimeout(resumeTimer) }
               // Snap out of clone zone so user always interacts with original items
               if (pos > safeZoneEnd) {
                 pos = safeZoneEnd
                 el.style.transform = `translateX(${-pos}px)`
               }
             }
-            const onMouseLeave: EventListener = () => { resumeTimer = setTimeout(() => { paused = false }, 600) }
-            el.addEventListener('touchstart', onTouchStart, { passive: true })
-            el.addEventListener('touchend', onTouchEnd, { passive: true })
+            const onMouseLeave: EventListener = () => {
+              if (!isDragging) resumeTimer = setTimeout(() => { paused = false }, 600)
+            }
+
+            // ── TOUCH ──────────────────────────────────────────────────────
+            const onTouchStart: EventListener = (ev) => {
+              const e = ev as TouchEvent
+              touchStartX    = e.touches[0].pageX
+              touchStartPos  = pos
+              touchVelX      = 0
+              touchLastX     = touchStartX
+              touchLastTime  = Date.now()
+              touchDecided   = false
+              touchIsHoriz   = false
+              paused = true
+              clearTimeout(resumeTimer)
+              cancelAnimationFrame(momentumRaf)
+            }
+            const onTouchMove: EventListener = (ev) => {
+              const e = ev as TouchEvent
+              const t = e.touches[0]
+              const dx = t.pageX - touchStartX
+              if (!touchDecided) {
+                const dy = Math.abs((e.touches[0] as any).clientY - (e.touches[0] as any).startY ?? 0)
+                touchIsHoriz = Math.abs(dx) > 6
+                touchDecided = true
+              }
+              if (!touchIsHoriz) return
+              const now = Date.now()
+              const dt = Math.max(now - touchLastTime, 1)
+              touchVelX  = (touchLastX - t.pageX) / dt * 16
+              touchLastX = t.pageX
+              touchLastTime = now
+              pos = normPos(touchStartPos - dx)
+              el.style.transform = `translateX(${-pos}px)`
+            }
+            const onTouchEnd: EventListener = () => {
+              if (!touchIsHoriz) { resumeTimer = setTimeout(() => { paused = false }, 2000); return }
+              applyMomentum(touchVelX)
+            }
+
+            el.addEventListener('mousedown', onMouseDown)
             el.addEventListener('mouseenter', onMouseEnter)
             el.addEventListener('mouseleave', onMouseLeave)
+            el.addEventListener('touchstart', onTouchStart, { passive: true })
+            el.addEventListener('touchmove',  onTouchMove,  { passive: true })
+            el.addEventListener('touchend',   onTouchEnd,   { passive: true })
+            window.addEventListener('mousemove', onMouseMoveGlobal)
+            window.addEventListener('mouseup',   onMouseUpGlobal)
 
             const tick = (now: number) => {
               const dt = lastTime !== null ? (now - lastTime) / 1000 : 0
@@ -1212,15 +1410,22 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
             cleanups.push(() => {
               cancelAnimationFrame(rafId)
+              cancelAnimationFrame(momentumRaf)
               clearTimeout(resumeTimer)
-              el.removeEventListener('touchstart', onTouchStart)
-              el.removeEventListener('touchend', onTouchEnd)
+              el.removeEventListener('mousedown',  onMouseDown)
               el.removeEventListener('mouseenter', onMouseEnter)
               el.removeEventListener('mouseleave', onMouseLeave)
+              el.removeEventListener('touchstart', onTouchStart)
+              el.removeEventListener('touchmove',  onTouchMove)
+              el.removeEventListener('touchend',   onTouchEnd)
+              window.removeEventListener('mousemove', onMouseMoveGlobal)
+              window.removeEventListener('mouseup',   onMouseUpGlobal)
               clones.forEach(c => c.remove())
-              el.style.overflow = ''
-              el.style.transform = ''
-              el.style.willChange = ''
+              el.style.overflow    = ''
+              el.style.transform   = ''
+              el.style.willChange  = ''
+              el.style.cursor      = ''
+              el.style.touchAction = ''
               if (parent) parent.style.overflow = prevOverflow
             })
           })
@@ -1265,7 +1470,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     window.history.pushState({}, '', `${window.location.pathname}?product=${product.id}`)
     setReviewSuccess(false)
     setShowReviewForm(false)
-    setReviewForm({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '' })
+    setReviewForm({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '', imageUrl1: '' })
     setReviewError('')
     // Load approved reviews for this product
     const tid = product.tenantId || stores.find(s => s.slug === selectedStore)?.id
@@ -1451,6 +1656,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           ? toKgClient(product.weight, product.hardwareWeightUnit) || null
           : null,
         productType: product.productType || undefined,
+        isPreorder: Boolean(product.isPreorder) || undefined,
+        preorderShipStart: product.isPreorder ? (product.preorderShipStart || null) : undefined,
+        preorderShipEnd: product.isPreorder ? (product.preorderShipEnd || null) : undefined,
+        preorderBadgeText: product.isPreorder ? (product.preorderBadgeText || 'Pre-orden') : undefined,
       }]
     })
     setShowCart(true) // Always show cart after adding
@@ -1761,6 +1970,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const carritoTieneDelivery = carrito.some(
     item => item.deliveryType === 'domicilio' || item.deliveryType === 'ambos'
   )
+  const activeDeliveryFee = (carritoTieneDelivery && DELIVERY_FREE_MIN > 0 && !deliveryUnlocked && DELIVERY_FEE > 0) ? DELIVERY_FEE : 0
 
   const fetchOrderBump = async () => {
     if (!selectedStore || selectedStore === 'all') return
@@ -1809,6 +2019,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       return
     }
     fetchOrderBump()
+    if (isAuthenticated) fetchSavedAddresses()
     setShowCheckout(true)
   }
 
@@ -1816,8 +2027,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const handleSaveProfile = async () => {
     if (!profileForm.department || !profileForm.municipality || !profileForm.address) return
     setSavingProfile(true)
+    setProfileSaveError('')
     try {
-      await updateProfile({
+      const result = await updateProfile({
         phone: profileForm.phone || undefined,
         cedula: profileForm.cedula || undefined,
         department: profileForm.department,
@@ -1827,6 +2039,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         deliveryLatitude: profileLat ?? undefined,
         deliveryLongitude: profileLng ?? undefined,
       })
+      if (!result.success) {
+        setProfileSaveError(result.error || 'Error al guardar. Intenta de nuevo.')
+        return
+      }
       // Also pre-fill checkout form
       setFormData(prev => ({
         ...prev,
@@ -1844,8 +2060,89 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       setShowProfileModal(false)
     } catch (e) {
       console.error('Error saving profile:', e)
+      setProfileSaveError('Error de conexión. Intenta de nuevo.')
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  // ====== SAVED ADDRESSES HANDLERS ======
+  const fetchSavedAddresses = async () => {
+    setLoadingAddresses(true)
+    try {
+      const res = await api.getUserAddresses()
+      if (res.success && res.data) setSavedAddresses(res.data)
+    } catch {}
+    finally { setLoadingAddresses(false) }
+  }
+
+  const openAddressForm = (existing?: any) => {
+    if (existing) {
+      setEditingAddressId(existing.id)
+      setAddressForm({ label: existing.label, department: existing.department || '', municipality: existing.municipality || '', address: existing.address || '', neighborhood: existing.neighborhood || '' })
+      setAddressFormLat(existing.deliveryLatitude || null)
+      setAddressFormLng(existing.deliveryLongitude || null)
+    } else {
+      setEditingAddressId(null)
+      setAddressForm({ label: '', department: '', municipality: '', address: '', neighborhood: '' })
+      setAddressFormLat(null)
+      setAddressFormLng(null)
+    }
+    setAddressFormError('')
+    setShowAddressForm(true)
+  }
+
+  const handleSaveAddress = async () => {
+    if (!addressForm.label || !addressForm.department || !addressForm.municipality || !addressForm.address) {
+      setAddressFormError('Completa los campos obligatorios')
+      return
+    }
+    setSavingAddress(true)
+    setAddressFormError('')
+    try {
+      const payload = {
+        label: addressForm.label,
+        department: addressForm.department,
+        municipality: addressForm.municipality,
+        address: addressForm.address,
+        neighborhood: addressForm.neighborhood || undefined,
+        deliveryLatitude: addressFormLat ?? undefined,
+        deliveryLongitude: addressFormLng ?? undefined,
+      }
+      const res = editingAddressId
+        ? await api.updateUserAddress(editingAddressId, payload)
+        : await api.addUserAddress(payload)
+      if (res.success && res.data) {
+        setSavedAddresses(res.data)
+        setShowAddressForm(false)
+      } else {
+        setAddressFormError(res.error || 'Error al guardar')
+      }
+    } catch { setAddressFormError('Error de conexión') }
+    finally { setSavingAddress(false) }
+  }
+
+  const handleDeleteAddress = async (id: string) => {
+    const res = await api.deleteUserAddress(id)
+    if (res.success && res.data) setSavedAddresses(res.data)
+  }
+
+  const handleSetDefaultAddress = async (id: string) => {
+    const res = await api.setDefaultUserAddress(id)
+    if (res.success && res.data) setSavedAddresses(res.data)
+  }
+
+  const applyAddressToCheckout = (addr: any) => {
+    setFormData(prev => ({
+      ...prev,
+      departamento: addr.department || prev.departamento,
+      municipio: addr.municipality || prev.municipio,
+      direccion: addr.address || prev.direccion,
+      barrio: addr.neighborhood || prev.barrio,
+    }))
+    if (addr.deliveryLatitude && addr.deliveryLongitude) {
+      setDeliveryLat(addr.deliveryLatitude)
+      setDeliveryLng(addr.deliveryLongitude)
     }
   }
 
@@ -1981,6 +2278,34 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             </button>
           </div>
         </header>
+        {/* Saved addresses quick-select (only for authenticated users with delivery items) */}
+        {isAuthenticated && carritoTieneDelivery && savedAddresses.length > 0 && (
+          <div className="bg-blue-50 border-b border-blue-100 px-4 py-3">
+            <div className="max-w-6xl mx-auto">
+              <p className="text-xs text-blue-600 font-medium mb-2 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" /> Usar dirección guardada
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {savedAddresses.map((addr: any) => (
+                  <button
+                    key={addr.id}
+                    onClick={() => applyAddressToCheckout(addr)}
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-all ${
+                      formData.direccion === addr.address && formData.departamento === addr.department
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-blue-700 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+                    }`}
+                  >
+                    <MapPin className="w-3 h-3" />
+                    {addr.label}
+                    {addr.isDefault && <Star className="w-2.5 h-2.5 fill-current opacity-70" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <CheckoutView
           carrito={carrito}
           totalCarrito={totalCarrito}
@@ -2011,6 +2336,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           onPagarConAddi={paymentConfig.addi ? handlePagarConAddi : undefined}
           onPagarConSistecredito={paymentConfig.sistecredito ? handlePagarConSistecredito : undefined}
           allowContraentrega={paymentConfig.contraentrega}
+          freeDeliveryMin={DELIVERY_FREE_MIN}
+          deliveryFee={activeDeliveryFee}
         />
       </div>
     )
@@ -2118,7 +2445,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           )}
           {/* Marquee text — ocupa el resto */}
           <div className="flex-1 overflow-hidden">
-            <div className="flex whitespace-nowrap" style={{ animation: `marquee ${isMobile ? '20s' : '60s'} linear infinite` }}>
+            <div className="flex whitespace-nowrap" style={{ animation: `marquee ${([0,90,50,30,15,7][storeConfig.announcementBar!.scrollSpeed ?? 3] ?? 30)}s linear infinite` }}>
               {[...Array(20)].map((_, i) => (
                 <span key={i} className="inline-flex items-center mx-12 shrink-0">
                   {storeConfig.announcementBar!.linkUrl ? (
@@ -2274,7 +2601,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   Mis Pedidos
                 </button>
                 <button
-                  onClick={() => { setAccountTab('perfil'); setShowAccountPanel(true) }}
+                  onClick={() => { setAccountTab('perfil'); setShowAccountPanel(true); fetchSavedAddresses() }}
                   className="hidden md:flex w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 items-center justify-center transition-all duration-300 group"
                   title={authUser.name}
                 >
@@ -2696,40 +3023,82 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 ) : null}
 
                 {/* Action buttons */}
-                <div className="space-y-3 pt-1">
-                  <button
-                    onClick={addFromModal}
-                    disabled={selectedProduct.stock === 0}
-                    style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
-                    className={`w-full py-4 flex items-center justify-center gap-2.5 text-sm uppercase tracking-[0.15em] font-medium rounded-xl transition-opacity ${
-                      selectedProduct.stock === 0 ? 'opacity-30 cursor-not-allowed bg-black/10 text-white/30' : 'hover:opacity-85'
-                    }`}
-                  >
-                    <ShoppingCart className="w-4 h-4 flex-shrink-0" />
-                    Añadir al carrito
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (selectedProduct.stock === 0) return
-                      addFromModal()
-                      setShowCart(false)
-                      handleIrAlCheckout()
-                    }}
-                    disabled={selectedProduct.stock === 0}
-                    style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
-                    className={`w-full py-4 flex items-center justify-center gap-2 text-sm uppercase tracking-[0.15em] font-semibold rounded-xl transition-opacity ${
-                      selectedProduct.stock === 0 ? 'opacity-30 cursor-not-allowed bg-black/10 text-white/30' : 'hover:opacity-85'
-                    }`}
-                  >
-                    Comprar ahora
-                  </button>
-                </div>
+                {(() => {
+                  const isDeliveryItem = selectedProduct.deliveryType === 'domicilio' || selectedProduct.deliveryType === 'ambos'
+                  const previewTotal = totalCarrito + (selectedProduct.salePrice * productQuantity)
+                  const previewProgress = DELIVERY_FREE_MIN > 0 ? Math.min(100, (previewTotal / DELIVERY_FREE_MIN) * 100) : 0
+                  const previewUnlocked = DELIVERY_FREE_MIN > 0 && previewTotal >= DELIVERY_FREE_MIN
+                  const previewRemaining = Math.max(0, DELIVERY_FREE_MIN - previewTotal)
+                  return (
+                    <div className="space-y-3 pt-1">
+                      <button
+                        onClick={addFromModal}
+                        disabled={selectedProduct.stock === 0}
+                        style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
+                        className={`w-full py-4 flex items-center justify-center gap-2.5 text-sm uppercase tracking-[0.15em] font-medium rounded-xl transition-opacity ${
+                          selectedProduct.stock === 0 ? 'opacity-30 cursor-not-allowed bg-black/10 text-white/30' : 'hover:opacity-85'
+                        }`}
+                      >
+                        <ShoppingCart className="w-4 h-4 flex-shrink-0" />
+                        Añadir al carrito
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (selectedProduct.stock === 0) return
+                          addFromModal()
+                          setShowCart(false)
+                          handleIrAlCheckout()
+                        }}
+                        disabled={selectedProduct.stock === 0}
+                        style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
+                        className={`w-full py-4 flex items-center justify-center gap-2 text-sm uppercase tracking-[0.15em] font-semibold rounded-xl transition-opacity ${
+                          selectedProduct.stock === 0 ? 'opacity-30 cursor-not-allowed bg-black/10 text-white/30' : 'hover:opacity-85'
+                        }`}
+                      >
+                        {isDeliveryItem ? <Truck className="w-4 h-4 flex-shrink-0" /> : null}
+                        {selectedProduct.stock === 0 ? 'Agotado' : isDeliveryItem ? 'Pedir Domicilio' : 'Comprar ahora'}
+                      </button>
+
+                      {/* Barra de progreso hacia domicilio gratis */}
+                      {isDeliveryItem && DELIVERY_FREE_MIN > 0 && (
+                        <div className={`rounded-xl p-3 ${isLightBg ? 'bg-black/4 border border-black/8' : 'bg-white/5 border border-white/8'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <Truck className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`} />
+                              {previewUnlocked ? (
+                                <span className="text-xs font-semibold text-emerald-500">¡Domicilio gratis incluido!</span>
+                              ) : (
+                                <span className={`text-xs ${isLightBg ? 'text-black/60' : 'text-white/60'}`}>
+                                  Agrega <strong className={isLightBg ? 'text-black' : 'text-white'}>{formatCOP(previewRemaining)}</strong> más para domicilio gratis
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-[10px] font-bold ml-2 shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                              {Math.round(previewProgress)}%
+                            </span>
+                          </div>
+                          <div className={`h-1.5 rounded-full overflow-hidden ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`}>
+                            <div
+                              className="h-full rounded-full transition-all duration-500 ease-out"
+                              style={{ width: `${previewProgress}%`, backgroundColor: previewUnlocked ? '#10b981' : isLightBg ? '#111111' : '#ffffff' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* Verified store info */}
                 {selectedProduct.storeName && (
                   <div className={`flex items-center gap-3 py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/8'}`}>
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isLightBg ? 'bg-black/5 border border-black/10' : 'bg-white/5 border border-white/10'}`}>
-                      <Store className="w-5 h-5 text-white/70" />
+                    <div className={`w-14 h-14 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 ${isLightBg ? 'bg-black/5 border border-black/10' : 'bg-white/5 border border-white/10'}`}>
+                      {storeConfig?.storeInfo?.logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={storeConfig.storeInfo.logoUrl} alt={selectedProduct.storeName} className="w-full h-full object-contain" />
+                      ) : (
+                        <Store className="w-5 h-5 text-white/70" />
+                      )}
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
@@ -2763,27 +3132,124 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 )}
 
                 {/* Mobile reviews */}
-                <div className={`py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/8'}`}>
+                <div className={`pt-6 border-t ${isLightBg ? 'border-black/8' : 'border-white/8'}`}>
+                  {/* Stats header */}
+                  {!reviewsLoading && productReviews.length > 0 && (() => {
+                    const avg = productReviews.reduce((s: number, r: any) => s + r.rating, 0) / productReviews.length
+                    return (
+                      <div className="mb-6 flex items-start gap-5">
+                        <div className="flex flex-col items-center min-w-[56px]">
+                          <span className={`text-4xl font-extralight tracking-tight ${isLightBg ? 'text-black/90' : 'text-white'}`}>{avg.toFixed(1)}</span>
+                          <div className="flex gap-0.5 mt-1">
+                            {[1,2,3,4,5].map(n => (
+                              <Star key={n} size={11} className={n <= Math.round(avg) ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                            ))}
+                          </div>
+                          <span className={`text-[9px] mt-0.5 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{productReviews.length} reseña{productReviews.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          {[5,4,3,2,1].map(star => {
+                            const count = productReviews.filter((r: any) => r.rating === star).length
+                            const pct = Math.round(count / productReviews.length * 100)
+                            return (
+                              <div key={star} className="flex items-center gap-1.5">
+                                <span className={`text-[9px] w-2 shrink-0 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{star}</span>
+                                <Star size={8} className={isLightBg ? 'fill-black/20 text-black/20 shrink-0' : 'fill-white/20 text-white/20 shrink-0'} />
+                                <div className={`flex-1 h-1 rounded-full overflow-hidden ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`}>
+                                  <div className="h-full rounded-full bg-amber-400/60 transition-all duration-700" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={`text-[9px] w-3 text-right shrink-0 ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>{count}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Header + write button */}
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className={`text-[10px] uppercase tracking-widest ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Reseñas</h3>
-                    <button onClick={() => { setShowReviewForm(p => !p); setReviewSuccess(false); setReviewError('') }}
-                      className="text-xs text-white border border-white/30 px-3 py-1.5 rounded-full hover:bg-white/10 transition-colors">
-                      {showReviewForm ? 'Cancelar' : '+ Reseña'}
+                    <h3 className={`text-xs uppercase tracking-widest ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                      {productReviews.length > 0 ? `${productReviews.length} reseña${productReviews.length !== 1 ? 's' : ''}` : 'Reseñas'}
+                    </h3>
+                    <button
+                      onClick={() => { setShowReviewForm(p => !p); setReviewSuccess(false); setReviewError('') }}
+                      className={`text-xs border px-3 py-1 rounded-full transition-colors ${isLightBg ? 'text-black/60 border-black/20 hover:bg-black/5' : 'text-white/60 border-white/20 hover:bg-white/5'}`}
+                    >
+                      {showReviewForm ? 'Cancelar' : '+ Escribir reseña'}
                     </button>
                   </div>
+
+                  {/* Review form — mobile */}
                   {showReviewForm && !reviewSuccess && (
-                    <div className="mb-5 p-4 border border-white/10 bg-white/3 space-y-3 rounded-xl">
-                      <div>
-                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Tu nombre *</label>
-                        <input className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-white/50 ${isLightBg ? 'bg-black/5 border-black/10 text-black placeholder-black/30' : 'bg-white/5 border-white/10 text-white placeholder-white/30'}`} placeholder="Nombre" value={reviewForm.reviewerName} onChange={e => setReviewForm(p => ({ ...p, reviewerName: e.target.value }))} />
+                    <div className={`mb-5 p-4 rounded-xl border space-y-3 ${isLightBg ? 'border-black/10 bg-black/2' : 'border-white/8 bg-white/2'}`}>
+                      <div className="grid grid-cols-1 gap-3">
+                        <input
+                          className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
+                          placeholder="Tu nombre *"
+                          value={reviewForm.reviewerName}
+                          onChange={e => setReviewForm(p => ({ ...p, reviewerName: e.target.value }))}
+                        />
+                        <input
+                          type="email"
+                          className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
+                          placeholder="Email (opcional)"
+                          value={reviewForm.reviewerEmail}
+                          onChange={e => setReviewForm(p => ({ ...p, reviewerEmail: e.target.value }))}
+                        />
                       </div>
                       <div>
-                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Calificación</label>
-                        <div className="flex gap-1">{[1,2,3,4,5].map(n => <button key={n} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: n }))}><Star size={22} className={n <= reviewForm.rating ? 'fill-white text-white' : 'text-white/20'} /></button>)}</div>
+                        <div className="flex items-center gap-2">
+                          {[1,2,3,4,5].map(n => (
+                            <button key={n} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: n }))} className="transition-transform active:scale-90">
+                              <Star size={26} className={n <= reviewForm.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                            </button>
+                          ))}
+                          <span className={`text-xs ml-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                            {['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][reviewForm.rating]}
+                          </span>
+                        </div>
                       </div>
+                      <input
+                        className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
+                        placeholder="Título (opcional)"
+                        value={reviewForm.title}
+                        onChange={e => setReviewForm(p => ({ ...p, title: e.target.value }))}
+                      />
+                      <textarea
+                        rows={3}
+                        className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors resize-none ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
+                        placeholder="Cuéntanos qué te pareció el producto..."
+                        value={reviewForm.body}
+                        onChange={e => setReviewForm(p => ({ ...p, body: e.target.value }))}
+                      />
                       <div>
-                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Comentario</label>
-                        <textarea rows={3} className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-white/50 resize-none ${isLightBg ? 'bg-black/5 border-black/10 text-black placeholder-black/30' : 'bg-white/5 border-white/10 text-white placeholder-white/30'}`} placeholder="Tu experiencia..." value={reviewForm.body} onChange={e => setReviewForm(p => ({ ...p, body: e.target.value }))} />
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Foto (opcional)</label>
+                        {reviewForm.imageUrl1 ? (
+                          <div className="flex items-center gap-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={reviewForm.imageUrl1} alt="preview" className="w-20 h-20 object-cover rounded-lg border border-white/10" />
+                            <button type="button" onClick={() => setReviewForm(p => ({ ...p, imageUrl1: '' }))} className="text-xs text-white/40 hover:text-red-400 transition-colors">Eliminar</button>
+                          </div>
+                        ) : (
+                          <label className={`flex items-center gap-2 cursor-pointer border border-dashed px-3 py-2.5 rounded-lg w-fit transition-colors ${reviewImageUploading ? 'opacity-50 pointer-events-none' : ''} ${isLightBg ? 'border-black/15 hover:border-black/30' : 'border-white/15 hover:border-white/30'}`}>
+                            <svg className={`w-4 h-4 ${isLightBg ? 'text-black/30' : 'text-white/30'}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                            <span className={`text-xs ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{reviewImageUploading ? 'Subiendo…' : 'Subir imagen'}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                              const file = e.target.files?.[0]; if (!file) return
+                              setReviewImageUploading(true)
+                              try {
+                                const { cloudName, uploadPreset } = await getCloudinaryConfig()
+                                if (!cloudName || !uploadPreset) { setReviewError('La tienda no tiene configurado el servicio de imágenes.'); return }
+                                const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', uploadPreset)
+                                const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: 'POST', body: formData })
+                                if (res.ok) { const data = await res.json(); setReviewForm(p => ({ ...p, imageUrl1: data.secure_url })) }
+                                else { const data = await res.json(); setReviewError(data?.error?.message || 'Error al subir la imagen') }
+                              } catch { setReviewError('Error al subir la imagen. Intenta de nuevo.') }
+                              finally { setReviewImageUploading(false); e.target.value = '' }
+                            }} />
+                          </label>
+                        )}
                       </div>
                       {reviewError && <p className="text-red-400 text-xs">{reviewError}</p>}
                       <button
@@ -2792,33 +3258,111 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           const tenantId = selectedProduct?.tenantId || stores.find(s => s.slug === selectedStore)?.id
                           if (!tenantId || !selectedProduct) { setReviewError('No se pudo identificar la tienda.'); return }
                           setReviewSubmitting(true); setReviewError('')
-                          const res = await api.createReview({ tenantId, productId: String(selectedProduct.id), reviewerName: reviewForm.reviewerName, reviewerEmail: reviewForm.reviewerEmail || undefined, rating: reviewForm.rating, title: reviewForm.title || undefined, body: reviewForm.body || undefined })
+                          const res = await api.createReview({ tenantId, productId: String(selectedProduct.id), reviewerName: reviewForm.reviewerName, reviewerEmail: reviewForm.reviewerEmail || undefined, rating: reviewForm.rating, title: reviewForm.title || undefined, body: reviewForm.body || undefined, imageUrl1: reviewForm.imageUrl1 || undefined })
                           setReviewSubmitting(false)
-                          if (res.success) { setReviewSuccess(true); setShowReviewForm(false) } else { setReviewError(res.error || 'Error al enviar') }
+                          if (res.success) { setReviewSuccess(true); setShowReviewForm(false) } else { setReviewError(res.error || 'Error al enviar la reseña') }
                         }}
-                        className="w-full py-3 bg-white text-black text-sm font-semibold uppercase tracking-wider rounded-xl hover:bg-white/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      >{reviewSubmitting ? 'Enviando…' : 'Enviar reseña'}</button>
+                        className={`w-full py-2.5 text-sm uppercase tracking-[0.15em] font-semibold rounded-lg disabled:opacity-40 transition-colors ${isLightBg ? 'bg-black text-white' : 'bg-white text-black'}`}
+                      >
+                        {reviewSubmitting ? 'Enviando…' : 'Enviar reseña'}
+                      </button>
                     </div>
                   )}
-                  {reviewSuccess && <div className="mb-4 flex items-center gap-2 text-green-400 text-sm p-3 bg-green-400/10 border border-green-400/20 rounded-xl"><CheckCircle className="w-4 h-4" />¡Reseña enviada!</div>}
+
+                  {reviewSuccess && (
+                    <div className="mb-4 p-3 rounded-xl border border-green-500/30 bg-green-500/10 text-green-400 text-sm">
+                      Gracias por tu reseña. Será revisada pronto.
+                    </div>
+                  )}
+
+                  {/* Reviews list — mobile */}
                   {reviewsLoading ? (
-                    <div className="text-center py-4"><Loader2 className="w-5 h-5 animate-spin mx-auto text-white/30" /></div>
-                  ) : productReviews.length > 0 ? (
                     <div className="space-y-3">
-                      {productReviews.map((r: any) => (
-                        <div key={r.id} className={`p-3 rounded-xl border ${isLightBg ? 'bg-black/3 border-black/8' : 'bg-white/3 border-white/8'}`}>
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <div>
-                              <p className={`text-sm font-medium ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{r.reviewerName}</p>
-                              <div className="flex gap-0.5 mt-0.5">{[1,2,3,4,5].map(s => <Star key={s} size={12} className={s <= r.rating ? 'fill-white text-white' : 'text-white/15'} />)}</div>
+                      {[1,2].map(i => (
+                        <div key={i} className={`p-4 rounded-xl border animate-pulse ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className={`w-8 h-8 rounded-full shrink-0 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                            <div className="flex-1 space-y-1.5">
+                              <div className={`h-3 rounded w-24 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                              <div className={`h-2 rounded w-16 ${isLightBg ? 'bg-black/6' : 'bg-white/6'}`} />
                             </div>
-                            <span className={`text-[10px] ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{new Date(r.createdAt).toLocaleDateString('es-CO', { month: 'short', day: 'numeric' })}</span>
                           </div>
-                          {r.body && <p className={`text-sm font-light leading-relaxed mt-1 ${isLightBg ? 'text-black/70' : 'text-white/60'}`}>{r.body}</p>}
+                          <div className="space-y-1">
+                            <div className={`h-2.5 rounded ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
+                            <div className={`h-2.5 rounded w-4/5 ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
+                          </div>
                         </div>
                       ))}
                     </div>
-                  ) : <p className={`text-sm ${isLightBg ? 'text-black/30' : 'text-white/20'}`}>Aún no hay reseñas. ¡Sé el primero!</p>}
+                  ) : productReviews.length === 0 ? (
+                    <div className={`flex flex-col items-center py-8 gap-2 ${isLightBg ? 'text-black/25' : 'text-white/20'}`}>
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                      </svg>
+                      <p className="text-xs">Sé el primero en dejar una reseña</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {productReviews.map((r: any) => {
+                        const initials = r.reviewerName.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+                        const ratingLabel = ['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][r.rating] || ''
+                        const isHelpful = helpfulVotes.has(r.id)
+                        return (
+                          <div key={r.id} className={`p-4 rounded-xl border transition-colors ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                            <div className="flex items-start gap-2.5 mb-2.5">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 select-none ${isLightBg ? 'bg-black/8 text-black/50' : 'bg-white/10 text-white/60'}`}>{initials}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-sm font-medium ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{r.reviewerName}</span>
+                                  <span className="inline-flex items-center gap-0.5 text-[8px] text-green-400/70 border border-green-500/20 bg-green-500/6 px-1 py-0.5 rounded-full">
+                                    <svg className="w-1.5 h-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    Verificado
+                                  </span>
+                                </div>
+                                <span className={`text-[9px] ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>
+                                  {new Date(r.createdAt).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <div className="flex gap-0.5">
+                                {[1,2,3,4,5].map(n => (
+                                  <Star key={n} size={12} className={n <= r.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/12' : 'text-white/10')} />
+                                ))}
+                              </div>
+                              <span className={`text-xs font-medium ${isLightBg ? 'text-amber-600' : 'text-amber-400/80'}`}>{ratingLabel}</span>
+                            </div>
+                            {r.title && <p className={`text-sm font-medium mb-0.5 ${isLightBg ? 'text-black/75' : 'text-white/70'}`}>{r.title}</p>}
+                            {r.body && <p className={`text-sm leading-relaxed ${isLightBg ? 'text-black/55' : 'text-white/50'}`}>{r.body}</p>}
+                            {(r.imageUrl1 || r.imageUrl2) && (
+                              <div className="flex gap-2 mt-2">
+                                {r.imageUrl1 && <img src={r.imageUrl1} alt="reseña" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                                {r.imageUrl2 && <img src={r.imageUrl2} alt="reseña" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                              </div>
+                            )}
+                            {r.reply && (
+                              <div className={`mt-2 pl-2.5 border-l-2 py-1 ${isLightBg ? 'border-black/15' : 'border-white/15'}`}>
+                                <span className={`text-[9px] font-semibold uppercase tracking-widest block mb-0.5 ${isLightBg ? 'text-black/35' : 'text-white/35'}`}>Respuesta de la tienda</span>
+                                <p className={`text-xs leading-relaxed ${isLightBg ? 'text-black/50' : 'text-white/40'}`}>{r.reply}</p>
+                              </div>
+                            )}
+                            <div className="mt-2.5 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setHelpfulVotes(prev => { const next = new Set(prev); if (next.has(r.id)) next.delete(r.id); else next.add(r.id); return next })}
+                                className={`flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full border transition-all ${isHelpful ? (isLightBg ? 'border-black/25 bg-black/6 text-black/55' : 'border-white/25 bg-white/6 text-white/55') : (isLightBg ? 'border-black/10 text-black/25' : 'border-white/8 text-white/22')}`}
+                              >
+                                <svg className="w-2.5 h-2.5" fill={isHelpful ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.633 10.5c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 012.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 00.322-1.672V3a.75.75 0 01.75-.75A2.25 2.25 0 0116.5 4.5c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 01-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 00-1.423-.23H5.25M9 21H5.25a2.25 2.25 0 01-2.25-2.25V10.5a2.25 2.25 0 012.25-2.25H9" />
+                                </svg>
+                                {isHelpful ? 'Útil' : '¿Útil?'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2885,59 +3429,82 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
                     {/* Store info */}
                     {selectedProduct.storeName && (
-                      <div className="flex items-center gap-3 py-4 border-t border-white/5">
-                        <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
-                          <Store className="w-5 h-5 text-white/70" />
+                      <div className={`flex items-center gap-3 py-4 border-t ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                        <div className={`w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 ${isLightBg ? 'bg-black/5 border border-black/10' : 'bg-white/5 border border-white/10'}`}>
+                          {storeConfig?.storeInfo?.logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={storeConfig.storeInfo.logoUrl} alt={selectedProduct.storeName} className="w-full h-full object-contain p-1" />
+                          ) : (
+                            <Store className={`w-5 h-5 ${isLightBg ? 'text-black/40' : 'text-white/40'}`} />
+                          )}
                         </div>
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-white/80">{selectedProduct.storeName}</p>
-                            <span className="flex items-center gap-1 text-[10px] text-white/40 border border-white/10 px-2 py-0.5 rounded-full">
-                              <CheckCircle className="w-3 h-3 text-green-400" /> Verificado
+                            <p className={`text-sm font-semibold ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{selectedProduct.storeName}</p>
+                            <span className="inline-flex items-center gap-1 text-[9px] text-green-400/80 border border-green-500/25 bg-green-500/8 px-2 py-0.5 rounded-full">
+                              <svg className="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                              Verificado
                             </span>
                           </div>
-                          <p className="text-[11px] text-white/40 mt-0.5">Tienda oficial · Envíos a todo Colombia</p>
+                          <p className={`text-[11px] mt-0.5 ${isLightBg ? 'text-black/40' : 'text-white/35'}`}>Tienda oficial · Envíos a todo Colombia</p>
                         </div>
                       </div>
                     )}
 
                     {/* Description */}
                     {selectedProduct.description && (
-                      <div className="py-4 border-t border-white/5">
-                        <h4 className={`text-[10px] uppercase tracking-widest mb-4 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Descripción</h4>
+                      <div className={`py-5 border-t ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                        <h4 className={`text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                          <span>Descripción</span>
+                          <span className={`flex-1 h-px ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`} />
+                        </h4>
                         <div className="space-y-2.5">
                           {selectedProduct.description.split(/\n+/).map(l => l.trim()).filter(Boolean).map((line, i) => {
                             const isBullet = /^[-•*►▸→✓✔·]\s/.test(line)
                             const cleanLine = isBullet ? line.replace(/^[-•*►▸→✓✔·]\s*/, '') : line
                             return isBullet ? (
-                              <div key={i} className="flex items-start gap-2.5"><span className="mt-[5px] shrink-0 w-1.5 h-1.5 rounded-full bg-white/70" /><p className={`text-sm font-light leading-relaxed ${isLightBg ? 'text-black/75' : 'text-white/65'}`}>{cleanLine}</p></div>
-                            ) : <p key={i} className={`text-sm font-light leading-relaxed ${isLightBg ? 'text-black/75' : 'text-white/65'}`}>{line}</p>
+                              <div key={i} className="flex items-start gap-2.5">
+                                <span className={`mt-[7px] shrink-0 w-1 h-1 rounded-full ${isLightBg ? 'bg-black/30' : 'bg-white/40'}`} />
+                                <p className={`text-sm leading-relaxed ${isLightBg ? 'text-black/65' : 'text-white/60'}`}>{cleanLine}</p>
+                              </div>
+                            ) : <p key={i} className={`text-sm leading-relaxed ${isLightBg ? 'text-black/65' : 'text-white/60'}`}>{line}</p>
                           })}
                         </div>
                       </div>
                     )}
 
                     {/* Specs */}
-                    <div className={`py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/5'}`}>
-                      <h4 className={`text-[10px] uppercase tracking-widest mb-4 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Especificaciones</h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {[
-                          { label: 'Categoría', value: selectedProduct.category },
-                          { label: 'Marca', value: selectedProduct.brand },
-                          { label: 'Color', value: selectedProduct.color },
-                          { label: 'Tamaño', value: selectedProduct.size },
-                          { label: 'Género', value: selectedProduct.gender },
-                          { label: 'Material', value: selectedProduct.material },
-                          { label: 'Peso', value: (selectedProduct.productType === 'ferreteria' && selectedProduct.weight) ? `${selectedProduct.weight} ${selectedProduct.hardwareWeightUnit || 'kg'}` : (selectedProduct.netWeight ? `${selectedProduct.netWeight} ${selectedProduct.weightUnit || ''}` : null) },
-                          { label: 'Garantía', value: selectedProduct.warrantyMonths ? `${selectedProduct.warrantyMonths} meses` : null },
-                        ].filter(s => s.value).map(s => (
-                          <div key={s.label} className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                            <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>{s.label}</p>
-                            <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{s.value}</p>
-                          </div>
-                        ))}
+                    {[
+                      { label: 'Categoría', value: selectedProduct.category },
+                      { label: 'Marca', value: selectedProduct.brand },
+                      { label: 'Color', value: selectedProduct.color },
+                      { label: 'Tamaño', value: selectedProduct.size },
+                      { label: 'Género', value: selectedProduct.gender },
+                      { label: 'Material', value: selectedProduct.material },
+                      { label: 'Peso', value: (selectedProduct.productType === 'ferreteria' && selectedProduct.weight) ? `${selectedProduct.weight} ${selectedProduct.hardwareWeightUnit || 'kg'}` : (selectedProduct.netWeight ? `${selectedProduct.netWeight} ${selectedProduct.weightUnit || ''}` : null) },
+                      { label: 'Garantía', value: selectedProduct.warrantyMonths ? `${selectedProduct.warrantyMonths} meses` : null },
+                    ].filter(s => s.value).length > 0 && (
+                      <div className={`py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/5'}`}>
+                        <h4 className={`text-[10px] uppercase tracking-widest mb-4 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Especificaciones</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { label: 'Categoría', value: selectedProduct.category },
+                            { label: 'Marca', value: selectedProduct.brand },
+                            { label: 'Color', value: selectedProduct.color },
+                            { label: 'Tamaño', value: selectedProduct.size },
+                            { label: 'Género', value: selectedProduct.gender },
+                            { label: 'Material', value: selectedProduct.material },
+                            { label: 'Peso', value: (selectedProduct.productType === 'ferreteria' && selectedProduct.weight) ? `${selectedProduct.weight} ${selectedProduct.hardwareWeightUnit || 'kg'}` : (selectedProduct.netWeight ? `${selectedProduct.netWeight} ${selectedProduct.weightUnit || ''}` : null) },
+                            { label: 'Garantía', value: selectedProduct.warrantyMonths ? `${selectedProduct.warrantyMonths} meses` : null },
+                          ].filter(s => s.value).map(s => (
+                            <div key={s.label} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs ${isLightBg ? 'bg-black/4 border-black/10 text-black/60' : 'bg-white/4 border-white/8 text-white/60'}`}>
+                              <span className={`font-medium ${isLightBg ? 'text-black/40' : 'text-white/35'}`}>{s.label}:</span>
+                              <span>{s.value}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* ════ RIGHT — Purchase zone ════ */}
@@ -3027,171 +3594,254 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       </div>
 
                       {/* CTAs */}
-                      <div ref={ctaRef} className="flex gap-3 mt-2">
-                        <button
-                          onClick={addFromModal}
-                          disabled={selectedProduct.stock === 0}
-                          style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#f5f5f5' : '#1a1a1a', color: isLightBg ? '#111111' : '#ffffff', border: `1px solid ${isLightBg ? '#d1d5db' : '#333333'}` } : undefined}
-                          className={`flex-1 py-4 text-sm uppercase tracking-[0.15em] font-medium transition-all duration-200 flex items-center justify-center gap-2 rounded-xl ${
-                            selectedProduct.stock === 0 ? 'bg-black/5 text-black/20 cursor-not-allowed border border-black/10' : 'hover:opacity-75'
-                          }`}
-                        >
-                          <ShoppingCart className="w-4 h-4 flex-shrink-0" />
-                          <span className="leading-tight">{selectedProduct.stock === 0 ? 'Agotado' : 'Añadir al carrito'}</span>
-                        </button>
-                        <button
-                          onClick={() => { if (selectedProduct.stock === 0) return; addFromModal(); setShowCart(false); handleIrAlCheckout() }}
-                          disabled={selectedProduct.stock === 0}
-                          style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
-                          className={`flex-1 py-4 text-sm uppercase tracking-[0.15em] font-semibold flex items-center justify-center gap-2 rounded-xl transition-opacity ${
-                            selectedProduct.stock === 0 ? 'bg-black/5 text-black/20 cursor-not-allowed border border-black/10' : 'hover:opacity-80'
-                          }`}
-                        >
-                          Comprar ahora
-                        </button>
-                      </div>
+                      {(() => {
+                        const isDeliveryItem = selectedProduct.deliveryType === 'domicilio' || selectedProduct.deliveryType === 'ambos'
+                        const previewTotal = totalCarrito + (selectedProduct.salePrice * productQuantity)
+                        const previewProgress = DELIVERY_FREE_MIN > 0 ? Math.min(100, (previewTotal / DELIVERY_FREE_MIN) * 100) : 0
+                        const previewUnlocked = DELIVERY_FREE_MIN > 0 && previewTotal >= DELIVERY_FREE_MIN
+                        const previewRemaining = Math.max(0, DELIVERY_FREE_MIN - previewTotal)
+                        return (
+                          <div className="space-y-3 mt-2">
+                            <div ref={ctaRef} className="flex gap-3">
+                              <button
+                                onClick={addFromModal}
+                                disabled={selectedProduct.stock === 0}
+                                style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#f5f5f5' : '#1a1a1a', color: isLightBg ? '#111111' : '#ffffff', border: `1px solid ${isLightBg ? '#d1d5db' : '#333333'}` } : undefined}
+                                className={`flex-1 py-4 text-xs uppercase tracking-[0.1em] font-medium transition-all duration-200 flex items-center justify-center gap-2 rounded-xl ${
+                                  selectedProduct.stock === 0 ? 'bg-black/5 text-black/20 cursor-not-allowed border border-black/10' : 'hover:opacity-75'
+                                }`}
+                              >
+                                <ShoppingCart className="w-4 h-4 flex-shrink-0" />
+                                <span className="whitespace-nowrap">{selectedProduct.stock === 0 ? 'Agotado' : 'Añadir al carrito'}</span>
+                              </button>
+                              <button
+                                onClick={() => { if (selectedProduct.stock === 0) return; addFromModal(); setShowCart(false); handleIrAlCheckout() }}
+                                disabled={selectedProduct.stock === 0}
+                                style={selectedProduct.stock > 0 ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
+                                className={`flex-1 py-4 text-xs uppercase tracking-[0.1em] font-semibold flex items-center justify-center gap-2 rounded-xl transition-opacity ${
+                                  selectedProduct.stock === 0 ? 'bg-black/5 text-black/20 cursor-not-allowed border border-black/10' : 'hover:opacity-80'
+                                }`}
+                              >
+                                {isDeliveryItem ? <Truck className="w-4 h-4 flex-shrink-0" /> : null}
+                                <span className="whitespace-nowrap">{selectedProduct.stock === 0 ? 'Agotado' : isDeliveryItem ? 'Pedir Domicilio' : 'Comprar ahora'}</span>
+                              </button>
+                            </div>
+
+                            {/* Barra de progreso hacia domicilio gratis */}
+                            {isDeliveryItem && DELIVERY_FREE_MIN > 0 && (
+                              <div className={`rounded-xl p-3 ${isLightBg ? 'bg-black/4 border border-black/8' : 'bg-white/5 border border-white/8'}`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <Truck className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`} />
+                                    {previewUnlocked ? (
+                                      <span className="text-xs font-semibold text-emerald-500">¡Domicilio gratis incluido!</span>
+                                    ) : (
+                                      <span className={`text-xs ${isLightBg ? 'text-black/60' : 'text-white/60'}`}>
+                                        Agrega <strong className={isLightBg ? 'text-black' : 'text-white'}>{formatCOP(previewRemaining)}</strong> más para domicilio gratis
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className={`text-[10px] font-bold ml-2 shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                                    {Math.round(previewProgress)}%
+                                  </span>
+                                </div>
+                                <div className={`h-1.5 rounded-full overflow-hidden ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`}>
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500 ease-out"
+                                    style={{ width: `${previewProgress}%`, backgroundColor: previewUnlocked ? '#10b981' : isLightBg ? '#111111' : '#ffffff' }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
 
                       {/* Trust badges */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="flex flex-col items-center gap-1.5 p-3 border border-white/5 text-center">
-                          <Zap className="w-4 h-4 text-white/30" /><p className="text-[10px] text-white/40 leading-tight">Envío Colombia</p>
+                      <div className={`grid grid-cols-3 gap-2 rounded-xl border p-1 ${isLightBg ? 'border-black/8 bg-black/[0.02]' : 'border-white/8 bg-white/[0.02]'}`}>
+                        <div className={`flex flex-col items-center gap-1.5 py-3 text-center rounded-lg ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>
+                          <Zap className="w-4 h-4" /><p className="text-[10px] leading-tight">Envío Colombia</p>
                         </div>
-                        <div className="flex flex-col items-center gap-1.5 p-3 border border-white/5 text-center">
-                          <ShieldCheck className="w-4 h-4 text-white/30" /><p className="text-[10px] text-white/40 leading-tight">Pago seguro</p>
+                        <div className={`flex flex-col items-center gap-1.5 py-3 text-center rounded-lg border-x ${isLightBg ? 'border-black/8 text-black/50' : 'border-white/8 text-white/50'}`}>
+                          <ShieldCheck className="w-4 h-4" /><p className="text-[10px] leading-tight">Pago seguro</p>
                         </div>
-                        <div className="flex flex-col items-center gap-1.5 p-3 border border-white/5 text-center">
-                          <RotateCcw className="w-4 h-4 text-white/30" /><p className="text-[10px] text-white/40 leading-tight">Devoluciones</p>
+                        <div className={`flex flex-col items-center gap-1.5 py-3 text-center rounded-lg ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>
+                          <RotateCcw className="w-4 h-4" /><p className="text-[10px] leading-tight">Devoluciones</p>
                         </div>
                       </div>
 
-                      <div className={`flex items-center gap-2 px-3 py-2.5 text-sm border ${isLightBg ? 'bg-black/4 border-black/8 text-black/60' : 'bg-white/4 border-white/8 text-white/60'}`}>
-                        <Eye className="w-4 h-4 flex-shrink-0 text-white/40" />
+                      <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm ${isLightBg ? 'bg-black/[0.04] text-black/60' : 'bg-white/[0.04] text-white/50'}`}>
+                        <span className="relative flex h-2 w-2 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                        </span>
                         <span><strong className={isLightBg ? 'text-black/80' : 'text-white/80'}>{viewersCount}</strong> personas viendo ahora</span>
                       </div>
 
                       {/* Share */}
-                      <div className="pt-1">
-                        <p className={`text-[10px] uppercase tracking-widest mb-2 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Compartir</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?product=${selectedProduct.id}`).catch(() => {})}
-                            className={`flex items-center gap-1.5 px-3 py-2 text-xs border transition-colors ${isLightBg ? 'border-black/10 text-black/60 hover:bg-black/5' : 'border-white/10 text-white/50 hover:bg-white/5'}`}>
-                            <Link className="w-3.5 h-3.5" />Copiar enlace
-                          </button>
-                          <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`${window.location.origin}${window.location.pathname}?product=${selectedProduct.id}`)}`} target="_blank" rel="noopener noreferrer"
-                            className={`flex items-center gap-1.5 px-3 py-2 text-xs border transition-colors ${isLightBg ? 'border-black/10 text-black/60 hover:bg-black/5' : 'border-white/10 text-white/50 hover:bg-white/5'}`}>
-                            <Facebook className="w-3.5 h-3.5" />Facebook
-                          </a>
-                          {storeConfig?.storeInfo?.socialWhatsapp && (
-                            <a href={`https://wa.me/${storeConfig.storeInfo.socialWhatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, me interesa: ${selectedProduct.name}`)}`} target="_blank" rel="noopener noreferrer"
-                              className={`flex items-center gap-1.5 px-3 py-2 text-xs border transition-colors ${isLightBg ? 'border-black/10 text-black/60 hover:bg-black/5' : 'border-white/10 text-white/50 hover:bg-white/5'}`}>
-                              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                              WhatsApp
-                            </a>
-                          )}
-                          {storeConfig?.storeInfo?.socialInstagram && (
-                            <a href={storeConfig.storeInfo.socialInstagram.startsWith('http') ? storeConfig.storeInfo.socialInstagram : `https://instagram.com/${storeConfig.storeInfo.socialInstagram}`} target="_blank" rel="noopener noreferrer"
-                              className={`flex items-center gap-1.5 px-3 py-2 text-xs border transition-colors ${isLightBg ? 'border-black/10 text-black/60 hover:bg-black/5' : 'border-white/10 text-white/50 hover:bg-white/5'}`}>
-                              <Instagram className="w-3.5 h-3.5" />Instagram
-                            </a>
-                          )}
-                        </div>
-                      </div>
+                      {(() => {
+                        const productUrl = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?product=${selectedProduct.id}` : ''
+                        const shareText = `${selectedProduct.name} — ${formatCOP(selectedProduct.isOnOffer && selectedProduct.offerPrice ? selectedProduct.offerPrice : selectedProduct.salePrice)}`
+                        return (
+                          <div className={`pt-4 border-t ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                            <p className={`text-[10px] uppercase tracking-widest mb-3 ${isLightBg ? 'text-black/40' : 'text-white/30'}`}>Compartir</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button onClick={() => navigator.clipboard.writeText(productUrl).catch(() => {})}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-black/5' : 'border-white/15 text-white/50 hover:bg-white/5'}`}>
+                                <Link className="w-3.5 h-3.5" />Copiar enlace
+                              </button>
+                              <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(productUrl)}`} target="_blank" rel="noopener noreferrer"
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-blue-600 hover:text-white hover:border-blue-600' : 'border-white/15 text-white/50 hover:bg-blue-600 hover:text-white hover:border-blue-600'}`}>
+                                <Facebook className="w-3.5 h-3.5" />Facebook
+                              </a>
+                              <a href={`https://wa.me/?text=${encodeURIComponent(shareText + '\n' + productUrl)}`} target="_blank" rel="noopener noreferrer"
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-[#25D366] hover:text-white hover:border-[#25D366]' : 'border-white/15 text-white/50 hover:bg-[#25D366] hover:text-white hover:border-[#25D366]'}`}>
+                                <MessageCircle className="w-3.5 h-3.5" />WhatsApp
+                              </a>
+                              {storeConfig?.storeInfo?.socialInstagram && (
+                                <a href={storeConfig.storeInfo.socialInstagram.startsWith('http') ? storeConfig.storeInfo.socialInstagram : `https://instagram.com/${storeConfig.storeInfo.socialInstagram}`} target="_blank" rel="noopener noreferrer"
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-[#E1306C] hover:text-white hover:border-[#E1306C]' : 'border-white/15 text-white/50 hover:bg-[#E1306C] hover:text-white hover:border-[#E1306C]'}`}>
+                                  <Instagram className="w-3.5 h-3.5" />Instagram
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
                     </div>
                   </div>
                 </div>
 
                 {/* Desktop reviews */}
-                <div className={`mt-16 pt-10 border-t ${isLightBg ? 'border-black/10' : 'border-white/8'}`}>
-                  <div className="flex items-center justify-between mb-8">
-                    <h3 className="text-xs text-white/40 uppercase tracking-widest">Reseñas del producto</h3>
-                    <button onClick={() => { setShowReviewForm(p => !p); setReviewSuccess(false); setReviewError('') }}
-                      className="text-xs text-white border border-white/30 px-3 py-1.5 hover:bg-white/10 transition-colors">
+                <div className="mt-20 pt-12 border-t border-white/5">
+                  {/* Stats header */}
+                  {!reviewsLoading && productReviews.length > 0 && (() => {
+                    const avg = productReviews.reduce((s: number, r: any) => s + r.rating, 0) / productReviews.length
+                    return (
+                      <div className="mb-10 flex flex-col sm:flex-row gap-6 sm:gap-10 items-start">
+                        <div className="flex flex-col items-center min-w-[72px]">
+                          <span className={`text-5xl font-extralight tracking-tight ${isLightBg ? 'text-black/90' : 'text-white'}`}>{avg.toFixed(1)}</span>
+                          <div className="flex gap-0.5 mt-1.5">
+                            {[1,2,3,4,5].map(n => (
+                              <Star key={n} size={13} className={n <= Math.round(avg) ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                            ))}
+                          </div>
+                          <span className={`text-[10px] mt-1 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{productReviews.length} reseña{productReviews.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex-1 space-y-1.5 w-full max-w-[220px]">
+                          {[5,4,3,2,1].map(star => {
+                            const count = productReviews.filter((r: any) => r.rating === star).length
+                            const pct = Math.round(count / productReviews.length * 100)
+                            return (
+                              <div key={star} className="flex items-center gap-2">
+                                <span className={`text-[10px] w-2.5 shrink-0 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{star}</span>
+                                <Star size={9} className={isLightBg ? 'fill-black/25 text-black/25 shrink-0' : 'fill-white/25 text-white/25 shrink-0'} />
+                                <div className={`flex-1 h-1 rounded-full overflow-hidden ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`}>
+                                  <div className="h-full rounded-full bg-amber-400/60 transition-all duration-700" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={`text-[10px] w-4 text-right shrink-0 ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>{count}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] border border-green-500/25 bg-green-500/8 text-green-400/70 px-3 py-1.5 rounded-full self-start whitespace-nowrap">
+                          <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-.723 3.065 3.745 3.745 0 01-3.065.723 3.745 3.745 0 01-3.068 1.593c-1.268 0-2.39-.63-3.068-1.593a3.745 3.745 0 01-3.065-.723 3.746 3.746 0 01-.723-3.065 3.745 3.745 0 01-1.593-3.068c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 01.723-3.065 3.745 3.745 0 013.065-.723A3.745 3.745 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.745 3.745 0 013.065.723 3.745 3.745 0 01.723 3.065A3.745 3.745 0 0121 12z" />
+                          </svg>
+                          Compras verificadas
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Section header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className={`text-xs uppercase tracking-widest ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                      {productReviews.length > 0 ? `${productReviews.length} reseña${productReviews.length !== 1 ? 's' : ''}` : 'Reseñas del producto'}
+                    </h3>
+                    <button
+                      onClick={() => { setShowReviewForm(p => !p); setReviewSuccess(false); setReviewError('') }}
+                      className={`text-xs border px-3 py-1.5 rounded-full transition-colors ${isLightBg ? 'text-black/70 border-black/20 hover:bg-black/5' : 'text-white/70 border-white/20 hover:bg-white/5'}`}
+                    >
                       {showReviewForm ? 'Cancelar' : '+ Escribir reseña'}
                     </button>
                   </div>
+
                   {/* Review form */}
                   {showReviewForm && !reviewSuccess && (
-                    <div className="mb-8 p-4 border border-white/10 bg-white/3 space-y-4">
-                      <p className="text-sm text-white/60">Comparte tu experiencia con este producto</p>
+                    <div className={`mb-8 p-5 rounded-xl border space-y-4 ${isLightBg ? 'border-black/10 bg-black/2' : 'border-white/8 bg-white/2'}`}>
+                      <p className={`text-sm ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>Comparte tu experiencia con este producto</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Tu nombre *</label>
-                          <input
-                            className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-white/50"
-                            placeholder="Nombre"
-                            value={reviewForm.reviewerName}
-                            onChange={e => setReviewForm(p => ({ ...p, reviewerName: e.target.value }))}
-                          />
+                          <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Tu nombre *</label>
+                          <input className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="Nombre" value={reviewForm.reviewerName} onChange={e => setReviewForm(p => ({ ...p, reviewerName: e.target.value }))} />
                         </div>
                         <div>
-                          <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Email (opcional)</label>
-                          <input
-                            type="email"
-                            className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-white/50"
-                            placeholder="tu@email.com"
-                            value={reviewForm.reviewerEmail}
-                            onChange={e => setReviewForm(p => ({ ...p, reviewerEmail: e.target.value }))}
-                          />
+                          <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Email (opcional)</label>
+                          <input type="email" className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="tu@email.com" value={reviewForm.reviewerEmail} onChange={e => setReviewForm(p => ({ ...p, reviewerEmail: e.target.value }))} />
                         </div>
                       </div>
                       <div>
-                        <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-2">Calificación *</label>
-                        <div className="flex gap-1">
-                          {[1,2,3,4,5].map(n => (
-                            <button key={n} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: n }))}>
-                              <Star size={22} className={n <= reviewForm.rating ? 'fill-white text-white' : 'text-white/20'} />
-                            </button>
-                          ))}
+                        <label className={`text-[10px] uppercase tracking-widest block mb-2 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Calificación *</label>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            {[1,2,3,4,5].map(n => (
+                              <button key={n} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: n }))} className="transition-transform hover:scale-110 active:scale-95">
+                                <Star size={24} className={n <= reviewForm.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                              </button>
+                            ))}
+                          </div>
+                          <span className={`text-xs ml-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>{['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][reviewForm.rating]}</span>
                         </div>
                       </div>
                       <div>
-                        <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Título (opcional)</label>
-                        <input
-                          className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-white/50"
-                          placeholder="Resumen de tu reseña"
-                          value={reviewForm.title}
-                          onChange={e => setReviewForm(p => ({ ...p, title: e.target.value }))}
-                        />
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Título (opcional)</label>
+                        <input className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="Resumen de tu reseña" value={reviewForm.title} onChange={e => setReviewForm(p => ({ ...p, title: e.target.value }))} />
                       </div>
                       <div>
-                        <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Tu reseña</label>
-                        <textarea
-                          rows={3}
-                          className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-white/50 resize-none"
-                          placeholder="Cuéntanos qué te pareció el producto..."
-                          value={reviewForm.body}
-                          onChange={e => setReviewForm(p => ({ ...p, body: e.target.value }))}
-                        />
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Tu reseña</label>
+                        <textarea rows={3} className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors resize-none ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="Cuéntanos qué te pareció el producto..." value={reviewForm.body} onChange={e => setReviewForm(p => ({ ...p, body: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Foto (opcional)</label>
+                        {reviewForm.imageUrl1 ? (
+                          <div className="flex items-center gap-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={reviewForm.imageUrl1} alt="preview" className="w-20 h-20 object-cover rounded-lg border border-white/10" />
+                            <button type="button" onClick={() => setReviewForm(p => ({ ...p, imageUrl1: '' }))} className="text-xs text-white/40 hover:text-red-400 transition-colors">Eliminar</button>
+                          </div>
+                        ) : (
+                          <label className={`flex items-center gap-2 cursor-pointer border border-dashed px-3 py-2.5 rounded-lg w-fit transition-colors ${reviewImageUploading ? 'opacity-50 pointer-events-none' : ''} ${isLightBg ? 'border-black/15 hover:border-black/30' : 'border-white/15 hover:border-white/30'}`}>
+                            <svg className={`w-4 h-4 ${isLightBg ? 'text-black/30' : 'text-white/30'}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                            <span className={`text-xs ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{reviewImageUploading ? 'Subiendo…' : 'Subir imagen'}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                              const file = e.target.files?.[0]; if (!file) return
+                              setReviewImageUploading(true)
+                              try {
+                                const { cloudName, uploadPreset } = await getCloudinaryConfig()
+                                if (!cloudName || !uploadPreset) { setReviewError('La tienda no tiene configurado el servicio de imágenes.'); return }
+                                const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', uploadPreset)
+                                const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: 'POST', body: formData })
+                                if (res.ok) { const data = await res.json(); setReviewForm(p => ({ ...p, imageUrl1: data.secure_url })) }
+                                else { const data = await res.json(); setReviewError(data?.error?.message || 'Error al subir la imagen') }
+                              } catch { setReviewError('Error al subir la imagen. Intenta de nuevo.') }
+                              finally { setReviewImageUploading(false); e.target.value = '' }
+                            }} />
+                          </label>
+                        )}
                       </div>
                       {reviewError && <p className="text-red-400 text-xs">{reviewError}</p>}
                       <button
                         disabled={reviewSubmitting || !reviewForm.reviewerName.trim()}
                         onClick={async () => {
                           const tenantId = selectedProduct?.tenantId || stores.find(s => s.slug === selectedStore)?.id
-                          if (!tenantId || !selectedProduct) {
-                            setReviewError('No se pudo identificar la tienda. Intenta recargar la página.')
-                            return
-                          }
-                          setReviewSubmitting(true)
-                          setReviewError('')
-                          const res = await api.createReview({
-                            tenantId,
-                            productId: String(selectedProduct.id),
-                            reviewerName: reviewForm.reviewerName,
-                            reviewerEmail: reviewForm.reviewerEmail || undefined,
-                            rating: reviewForm.rating,
-                            title: reviewForm.title || undefined,
-                            body: reviewForm.body || undefined,
-                          })
+                          if (!tenantId || !selectedProduct) { setReviewError('No se pudo identificar la tienda. Intenta recargar la página.'); return }
+                          setReviewSubmitting(true); setReviewError('')
+                          const res = await api.createReview({ tenantId, productId: String(selectedProduct.id), reviewerName: reviewForm.reviewerName, reviewerEmail: reviewForm.reviewerEmail || undefined, rating: reviewForm.rating, title: reviewForm.title || undefined, body: reviewForm.body || undefined, imageUrl1: reviewForm.imageUrl1 || undefined })
                           setReviewSubmitting(false)
-                          if (res.success) {
-                            setReviewSuccess(true)
-                            setShowReviewForm(false)
-                          } else {
-                            setReviewError(res.error || 'Error al enviar la reseña')
-                          }
+                          if (res.success) { setReviewSuccess(true); setShowReviewForm(false) } else { setReviewError(res.error || 'Error al enviar la reseña') }
                         }}
-                        className="w-full py-3 text-sm uppercase tracking-[0.2em] font-semibold bg-white hover:bg-white/90 text-black disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className={`w-full py-3 text-sm uppercase tracking-[0.2em] font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${isLightBg ? 'bg-black text-white hover:bg-black/85' : 'bg-white text-black hover:bg-white/90'}`}
                       >
                         {reviewSubmitting ? 'Enviando…' : 'Enviar reseña'}
                       </button>
@@ -3199,46 +3849,96 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   )}
 
                   {reviewSuccess && (
-                    <div className="mb-8 p-4 border border-green-500/30 bg-green-500/10 text-green-400 text-sm">
-                      Gracias por tu reseña. Sera revisada y publicada pronto.
+                    <div className="mb-8 p-4 rounded-xl border border-green-500/30 bg-green-500/10 text-green-400 text-sm">
+                      Gracias por tu reseña. Será revisada y publicada pronto.
                     </div>
                   )}
 
-                  {/* Approved reviews list */}
+                  {/* Reviews list */}
                   {reviewsLoading ? (
-                    <p className="text-white/30 text-sm">Cargando reseñas…</p>
-                  ) : productReviews.length === 0 ? (
-                    <p className="text-white/20 text-sm">Este producto aún no tiene reseñas. ¡Sé el primero!</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {productReviews.map((r: any) => (
-                        <div key={r.id} className="p-4 border border-white/5 bg-white/2 space-y-2">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div>
-                              <span className="text-sm font-medium text-white/80">{r.reviewerName}</span>
-                              <span className="text-xs text-white/30 ml-2">{new Date(r.createdAt).toLocaleDateString('es-CO')}</span>
-                            </div>
-                            <div className="flex gap-0.5">
-                              {[1,2,3,4,5].map(n => (
-                                <Star key={n} size={14} className={n <= r.rating ? 'fill-white text-white' : 'text-white/15'} />
-                              ))}
+                    <div className="space-y-3">
+                      {[1,2,3].map(i => (
+                        <div key={i} className={`p-5 rounded-xl border animate-pulse ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                          <div className="flex items-start gap-3 mb-3">
+                            <div className={`w-9 h-9 rounded-full shrink-0 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                            <div className="flex-1 space-y-2 pt-0.5">
+                              <div className={`h-3 rounded w-28 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                              <div className={`h-2 rounded w-20 ${isLightBg ? 'bg-black/6' : 'bg-white/6'}`} />
                             </div>
                           </div>
-                          {r.title && <p className="text-sm font-medium text-white/70">{r.title}</p>}
-                          {r.body && <p className="text-sm text-white/50 leading-relaxed">{r.body}</p>}
-                          {(r.imageUrl1 || r.imageUrl2) && (
-                            <div className="flex gap-2 mt-1">
-                              {r.imageUrl1 && <img src={r.imageUrl1} alt="reseña" className="w-16 h-16 object-cover border border-white/10" />}
-                              {r.imageUrl2 && <img src={r.imageUrl2} alt="reseña" className="w-16 h-16 object-cover border border-white/10" />}
-                            </div>
-                          )}
-                          {r.reply && (
-                            <div className="mt-2 pl-3 border-l-2 border-white/20 text-xs text-white/40">
-                              <span className="text-white/60 font-medium">Respuesta de la tienda:</span>{r.reply}
-                            </div>
-                          )}
+                          <div className={`h-2.5 rounded w-24 mb-3 ${isLightBg ? 'bg-black/6' : 'bg-white/6'}`} />
+                          <div className="space-y-1.5">
+                            <div className={`h-2.5 rounded ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
+                            <div className={`h-2.5 rounded w-4/5 ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
+                          </div>
                         </div>
                       ))}
+                    </div>
+                  ) : productReviews.length === 0 ? (
+                    <div className={`flex flex-col items-center py-10 gap-3 ${isLightBg ? 'text-black/25' : 'text-white/20'}`}>
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="1.2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                      </svg>
+                      <p className="text-sm">Este producto aún no tiene reseñas. ¡Sé el primero!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {productReviews.map((r: any) => {
+                        const initials = r.reviewerName.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+                        const ratingLabel = ['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][r.rating] || ''
+                        const isHelpful = helpfulVotes.has(r.id)
+                        return (
+                          <div key={r.id} className={`p-5 rounded-xl border transition-all duration-200 ${isLightBg ? 'border-black/8 hover:border-black/15' : 'border-white/5 hover:border-white/10'}`}>
+                            <div className="flex items-start gap-3 mb-3">
+                              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 select-none ${isLightBg ? 'bg-black/8 text-black/50' : 'bg-white/10 text-white/60'}`}>{initials}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-sm font-medium ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{r.reviewerName}</span>
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] text-green-400/70 border border-green-500/20 bg-green-500/6 px-1.5 py-0.5 rounded-full">
+                                    <svg className="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    Verificado
+                                  </span>
+                                </div>
+                                <span className={`text-[10px] ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>{new Date(r.createdAt).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <div className="flex gap-0.5">
+                                {[1,2,3,4,5].map(n => (
+                                  <Star key={n} size={13} className={n <= r.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/12' : 'text-white/10')} />
+                                ))}
+                              </div>
+                              <span className={`text-xs font-medium ${isLightBg ? 'text-amber-600' : 'text-amber-400/80'}`}>{ratingLabel}</span>
+                            </div>
+                            {r.title && <p className={`text-sm font-medium mb-1 ${isLightBg ? 'text-black/75' : 'text-white/70'}`}>{r.title}</p>}
+                            {r.body && <p className={`text-sm leading-relaxed ${isLightBg ? 'text-black/55' : 'text-white/50'}`}>{r.body}</p>}
+                            {(r.imageUrl1 || r.imageUrl2) && (
+                              <div className="flex gap-2 mt-3">
+                                {r.imageUrl1 && <img src={r.imageUrl1} alt="reseña" className="w-16 h-16 object-cover rounded-lg border border-white/10" />}
+                                {r.imageUrl2 && <img src={r.imageUrl2} alt="reseña" className="w-16 h-16 object-cover rounded-lg border border-white/10" />}
+                              </div>
+                            )}
+                            {r.reply && (
+                              <div className={`mt-3 pl-3 border-l-2 py-1.5 ${isLightBg ? 'border-black/15' : 'border-white/15'}`}>
+                                <span className={`text-[10px] font-semibold uppercase tracking-widest block mb-0.5 ${isLightBg ? 'text-black/35' : 'text-white/35'}`}>Respuesta de la tienda</span>
+                                <p className={`text-xs leading-relaxed ${isLightBg ? 'text-black/50' : 'text-white/40'}`}>{r.reply}</p>
+                              </div>
+                            )}
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setHelpfulVotes(prev => { const next = new Set(prev); if (next.has(r.id)) next.delete(r.id); else next.add(r.id); return next })}
+                                className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 ${isHelpful ? (isLightBg ? 'border-black/25 bg-black/6 text-black/55' : 'border-white/25 bg-white/6 text-white/55') : (isLightBg ? 'border-black/10 text-black/25 hover:border-black/20 hover:text-black/45' : 'border-white/8 text-white/22 hover:border-white/18 hover:text-white/40')}`}
+                              >
+                                <svg className="w-3 h-3" fill={isHelpful ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.633 10.5c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 012.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 00.322-1.672V3a.75.75 0 01.75-.75A2.25 2.25 0 0116.5 4.5c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 01-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 00-1.423-.23H5.25M9 21H5.25a2.25 2.25 0 01-2.25-2.25V10.5a2.25 2.25 0 012.25-2.25H9" />
+                                </svg>
+                                {isHelpful ? 'Útil' : '¿Útil?'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -3774,11 +4474,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             </div>
 
                             {/* Card info */}
-                            <div className="p-3">
+                            <div className="p-3 text-center">
                               <h3 className="text-xs sm:text-sm font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">
                                 {product.name}
                               </h3>
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center justify-center gap-2 mb-1">
                                 {isOffer ? (
                                   <>
                                     <span className="text-gray-400 text-xs line-through">{formatCOP(product.salePrice)}</span>
@@ -3788,7 +4488,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                   <span className="text-gray-900 font-bold text-sm">{formatCOP(product.salePrice)}</span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                              <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400">
                                 <span className="w-1.5 h-1.5 rounded-full bg-white/60 inline-block" />
                                 1 Opción disponible
                               </div>
@@ -4361,9 +5061,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-3">
+                      <div className="p-3 text-center">
                         <h3 className="text-xs sm:text-sm font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center gap-2">
                           {discount > 0 ? (
                             <>
                               <span className="text-gray-400 text-xs line-through">{formatCOP(product.salePrice)}</span>
@@ -4821,11 +5521,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               <div className="relative">
                 <button
                   onClick={() => carouselCategoriesRef.current?.scrollBy({ left: -600, behavior: 'smooth' })}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 hover:text-white transition-all shadow-lg flex sm:hidden"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 hidden sm:flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 hover:text-white transition-all shadow-lg"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <div ref={carouselCategoriesRef} className="flex gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible scrollbar-hide scroll-smooth px-2 sm:px-3">
+                <div ref={carouselCategoriesRef} className="grid grid-cols-2 gap-2 px-2 sm:flex sm:gap-3 sm:overflow-x-auto sm:overflow-visible scrollbar-hide sm:scroll-smooth sm:px-3">
                   {heroCategories.map((cat, idx) => (
                     <button
                       key={cat.name}
@@ -4835,9 +5535,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         setShowDrop(false)
                         window.scrollTo({ top: 0, behavior: 'smooth' })
                       }}
-                      className="group flex flex-col flex-shrink-0 w-[42vw] sm:flex-1 sm:w-auto transition-all duration-300"
+                      className="group flex flex-col w-full sm:flex-shrink-0 sm:flex-1 sm:w-auto transition-all duration-300"
                     >
-                      <div data-dark className="relative overflow-hidden w-full aspect-square sm:aspect-auto sm:h-[380px]">
+                      <div data-dark className="relative overflow-hidden w-full aspect-[4/3] sm:aspect-auto sm:h-[380px]">
                         {cat.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
@@ -4863,7 +5563,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 </div>
                 <button
                   onClick={() => carouselCategoriesRef.current?.scrollBy({ left: 600, behavior: 'smooth' })}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 hover:text-white transition-all shadow-lg flex sm:hidden"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 hidden sm:flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 hover:text-white transition-all shadow-lg"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -4936,9 +5636,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-2">
+                      <div className="p-2 text-center">
                         <h3 className="text-xs font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {isOffer ? (
                             <>
                               <span className="text-gray-400 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
@@ -5154,9 +5854,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-2">
+                      <div className="p-2 text-center">
                         <h3 className="text-xs font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {isOffer ? (
                             <>
                               <span className="text-gray-400 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
@@ -5960,9 +6660,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-2">
+                      <div className="p-2 text-center">
                         <h3 className="text-xs font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {isOffer ? (
                             <>
                               <span className="text-gray-400 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
@@ -6070,12 +6770,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
             {/* Imagen */}
             {storeConfig.storeInfo.contactPageImage && (
-              <div className="mb-10 rounded-2xl overflow-hidden max-h-64">
+              <div className="mb-10 rounded-2xl overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={storeConfig.storeInfo.contactPageImage}
                   alt="Contacto"
-                  className="w-full h-full object-cover"
+                  className="w-full h-auto block"
                 />
               </div>
             )}
@@ -6087,22 +6787,25 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               if (links.length === 0) return null
               return (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {links.map((link, i) => (
-                    <a
-                      key={i}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/8 hover:border-white/20 transition-all duration-200 group"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-                        <Phone className="w-4 h-4 text-white" />
-                      </div>
-                      <span className="text-white/80 text-sm font-light group-hover:text-white transition-colors">
-                        {link.label || link.url}
-                      </span>
-                    </a>
-                  ))}
+                  {links.map((link, i) => {
+                    const { Icon, color, bg } = getLinkIcon(link.url, link.label)
+                    return (
+                      <a
+                        key={i}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/8 hover:border-white/20 transition-all duration-200 group"
+                      >
+                        <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+                          <Icon className={`w-4 h-4 ${color}`} />
+                        </div>
+                        <span className="text-white/80 text-sm font-light group-hover:text-white transition-colors">
+                          {link.label || link.url}
+                        </span>
+                      </a>
+                    )
+                  })}
                 </div>
               )
             })()}
@@ -6476,7 +7179,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         return (
           <button
             onClick={() => setShowChatWidget(v => !v)}
-            className={`hidden md:flex fixed ${totalItems > 0 && !showCart ? 'bottom-24' : 'bottom-6'} right-6 z-40 p-4 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 group items-center justify-center`}
+            className={`flex fixed ${totalItems > 0 && !showCart ? 'bottom-32 sm:bottom-24' : 'bottom-20 sm:bottom-6'} right-4 sm:right-6 z-40 p-4 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 group items-center justify-center`}
             style={{ background: btnColor }}
             title={`Chatear con ${chatbotStatus.botName}`}
           >
@@ -6564,7 +7267,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   href={`https://api.whatsapp.com/send/?phone=${storeConfig.storeInfo.socialWhatsapp}&text=${encodeURIComponent(whatsappMessage)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => setShowWhatsappModal(false)}
+                  onClick={() => {
+                    setShowWhatsappModal(false)
+                    const fbq = (window as any).fbq
+                    if (typeof fbq === 'function') fbq('track', 'Lead', { content_name: 'Click WhatsApp', value: 1, currency: 'COP' })
+                  }}
                   className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold text-center transition-colors"
                 >
                   Enviar mensaje
@@ -7007,41 +7714,77 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={() => setShowAccountPanel(false)} />
           <div className="fixed top-0 right-0 bottom-0 z-[71] w-full max-w-md flex flex-col landing-sidebar border-l border-white/10 shadow-2xl">
 
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white/15 border border-white/20 flex items-center justify-center">
-                  <User className="w-5 h-5 text-white" />
+            {/* ── Header ── */}
+            <div className="relative shrink-0 overflow-hidden">
+              {/* Decorative glow blobs */}
+              <div className="absolute top-0 left-0 w-48 h-48 rounded-full bg-blue-600/10 blur-3xl -translate-x-12 -translate-y-12 pointer-events-none" />
+              <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-purple-600/10 blur-2xl translate-x-8 -translate-y-8 pointer-events-none" />
+
+              {/* Close button */}
+              <button
+                onClick={() => setShowAccountPanel(false)}
+                className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/[0.07] hover:bg-white/[0.14] flex items-center justify-center text-white/40 hover:text-white transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* User info row */}
+              <div className="relative flex items-center gap-4 px-5 pt-6 pb-4">
+                {/* Avatar */}
+                <div className="relative shrink-0">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/40 to-indigo-600/30 border border-white/[0.12] flex items-center justify-center shadow-lg">
+                    <User className="w-7 h-7 text-white/80" />
+                  </div>
+                  {/* Profile complete badge */}
+                  <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm ${
+                    authUser.profileCompleted
+                      ? 'bg-emerald-500 border-[color:var(--sidebar-bg,#000)]'
+                      : 'bg-amber-500 border-[color:var(--sidebar-bg,#000)]'
+                  }`}>
+                    {authUser.profileCompleted
+                      ? <CheckCircle className="w-3 h-3 text-white" />
+                      : <span className="text-white text-[8px] font-bold leading-none">!</span>
+                    }
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-white leading-tight">{authUser.name}</p>
-                  <p className="text-xs text-white/40 leading-tight">{authUser.email}</p>
+
+                {/* Name + email + role */}
+                <div className="min-w-0 flex-1 pr-8">
+                  <p className="text-base font-semibold text-white leading-tight truncate">{authUser.name}</p>
+                  <p className="text-[11px] text-white/40 leading-snug truncate mt-0.5">{authUser.email}</p>
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${authUser.profileCompleted ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                    <span className={`text-[10px] font-medium ${authUser.profileCompleted ? 'text-emerald-400/80' : 'text-amber-400/80'}`}>
+                      {authUser.profileCompleted ? 'Perfil de entrega completo' : 'Completa tu perfil de entrega'}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <button onClick={() => setShowAccountPanel(false)} className="text-white/30 hover:text-white transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Tabs */}
-            <div className="flex border-b border-white/10 shrink-0">
-              {([
-                { key: 'perfil',    label: 'Mi Perfil',    icon: <MapPin className="w-3.5 h-3.5" /> },
-                { key: 'pedidos',   label: 'Pedidos',      icon: <Package className="w-3.5 h-3.5" /> },
-                { key: 'favoritos', label: 'Favoritos',    icon: <Heart className="w-3.5 h-3.5" /> },
-              ] as const).map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => { setAccountTab(tab.key); if (tab.key === 'pedidos') fetchClientOrders() }}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs uppercase tracking-wider transition-colors border-b-2 ${
-                    accountTab === tab.key
-                      ? 'border-white text-white'
-                      : 'border-transparent text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  {tab.icon}{tab.label}
-                </button>
-              ))}
+              {/* Tabs — pill style */}
+              <div className="flex gap-1.5 px-4 pb-4">
+                {([
+                  { key: 'perfil',    label: 'Mi Perfil',  icon: <User className="w-3.5 h-3.5" /> },
+                  { key: 'pedidos',   label: 'Pedidos',    icon: <Package className="w-3.5 h-3.5" /> },
+                  { key: 'favoritos', label: 'Favoritos',  icon: <Heart className="w-3.5 h-3.5" /> },
+                ] as const).map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => { setAccountTab(tab.key); if (tab.key === 'pedidos') fetchClientOrders() }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-medium tracking-wide transition-all ${
+                      accountTab === tab.key
+                        ? 'bg-white/[0.12] text-white shadow-sm'
+                        : 'text-white/35 hover:text-white/65 hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Separator */}
+              <div className="h-px bg-white/[0.07] mx-0" />
             </div>
 
             {/* Tab content */}
@@ -7049,71 +7792,165 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
               {/* ── MI PERFIL ── */}
               {accountTab === 'perfil' && (
-                <div className="p-6 space-y-6">
+                <div className="p-5 space-y-5">
 
                   {/* Datos personales */}
-                  <section className="space-y-3">
-                    <h4 className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-medium">Datos personales</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: 'Teléfono',  value: authUser.phone },
-                        { label: 'Cédula',    value: authUser.cedula },
-                      ].map(f => (
-                        <div key={f.label} className="bg-white/5 border border-white/10 p-3 space-y-1">
-                          <p className="text-[10px] text-white/30 uppercase tracking-wider">{f.label}</p>
-                          <p className="text-sm text-white font-light">{f.value || <span className="text-white/20 italic text-xs">Sin datos</span>}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-
-                  {/* Dirección de entrega */}
-                  <section className="space-y-3">
-                    <h4 className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-medium">Dirección de entrega</h4>
-                    <div className="space-y-2">
-                      {[
-                        { label: 'Departamento',  value: authUser.department },
-                        { label: 'Municipio',     value: authUser.municipality },
-                        { label: 'Dirección',     value: authUser.address },
-                        { label: 'Barrio',        value: authUser.neighborhood },
-                      ].map(f => (
-                        <div key={f.label} className="flex items-start justify-between gap-3 bg-white/5 border border-white/10 px-3 py-2.5">
-                          <span className="text-[10px] text-white/30 uppercase tracking-wider shrink-0 pt-0.5">{f.label}</span>
-                          <span className="text-xs text-white/80 text-right font-light">{f.value || <span className="text-white/20 italic">—</span>}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* GPS */}
-                    {authUser.deliveryLatitude && authUser.deliveryLongitude && (
-                      <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 px-3 py-2.5">
-                        <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        <span className="text-xs text-blue-300 font-light">
-                          {Number(authUser.deliveryLatitude).toFixed(5)}, {Number(authUser.deliveryLongitude).toFixed(5)}
-                        </span>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {[
+                      { label: 'Teléfono', value: authUser.phone, icon: '📱' },
+                      { label: 'Cédula',   value: authUser.cedula, icon: '🪪' },
+                    ].map(f => (
+                      <div key={f.label} className="rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-3 space-y-0.5">
+                        <p className="text-[10px] text-white/35 uppercase tracking-widest">{f.label}</p>
+                        <p className="text-sm text-white/90 font-light truncate">{f.value || <span className="text-white/20 italic text-xs">—</span>}</p>
                       </div>
-                    )}
-                  </section>
-
-                  {/* Estado del perfil */}
-                  <div className={`flex items-center gap-2 px-3 py-2.5 border text-xs ${
-                    authUser.profileCompleted
-                      ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                      : 'bg-white/10 border-white/15 text-white'
-                  }`}>
-                    {authUser.profileCompleted
-                      ? '✓ Perfil de entrega completo'
-                      : '⚠ Completa tu dirección para pedir a domicilio'}
+                    ))}
                   </div>
 
-                  {/* Edit button */}
-                  <button
-                    onClick={() => { setShowAccountPanel(false); setShowProfileModal(true) }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 border border-white/20 hover:border-white/30 hover:bg-white/10 text-white/70 hover:text-white text-sm transition-all uppercase tracking-wider"
-                  >
-                    <Settings className="w-4 h-4" />
-                    Editar datos de entrega
-                  </button>
+                  {/* ── DIRECCIÓN ACTUAL / EN USO ── */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-white/30 font-medium px-0.5">Dirección activa</p>
+
+                    {/* Card dirección principal */}
+                    <div className={`relative rounded-2xl overflow-hidden border ${
+                      authUser.profileCompleted
+                        ? 'border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.07] to-emerald-500/[0.03]'
+                        : 'border-amber-500/30 bg-gradient-to-br from-amber-500/[0.07] to-amber-500/[0.03]'
+                    }`}>
+                      {/* top accent line */}
+                      <div className={`h-0.5 w-full ${authUser.profileCompleted ? 'bg-gradient-to-r from-emerald-500/60 via-emerald-400/40 to-transparent' : 'bg-gradient-to-r from-amber-500/60 via-amber-400/40 to-transparent'}`} />
+
+                      <div className="px-4 py-3.5">
+                        {/* header row */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${authUser.profileCompleted ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
+                            <span className={`text-[11px] font-medium tracking-wide ${authUser.profileCompleted ? 'text-emerald-400' : 'text-amber-400'}`}>
+                              {authUser.profileCompleted ? 'En uso · Completa' : 'Incompleta'}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setProfileForm({
+                                phone: authUser.phone || '', cedula: authUser.cedula || '',
+                                department: authUser.department || '', municipality: authUser.municipality || '',
+                                address: authUser.address || '', neighborhood: authUser.neighborhood || '',
+                              })
+                              if (authUser.deliveryLatitude && authUser.deliveryLongitude) {
+                                setProfileLat(authUser.deliveryLatitude); setProfileLng(authUser.deliveryLongitude)
+                              }
+                              setShowAccountPanel(false); setShowProfileModal(true)
+                            }}
+                            className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white transition-colors py-1 px-2 rounded-lg hover:bg-white/10"
+                          >
+                            <Pencil className="w-3 h-3" /> Editar
+                          </button>
+                        </div>
+
+                        {authUser.address ? (
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-white/90 leading-snug">{authUser.address}</p>
+                            {authUser.neighborhood && (
+                              <p className="text-xs text-white/45">{authUser.neighborhood}</p>
+                            )}
+                            <p className="text-xs text-white/40">{[authUser.municipality, authUser.department].filter(Boolean).join(' · ')}</p>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setShowAccountPanel(false); setShowProfileModal(true) }}
+                            className="flex items-center gap-2 text-xs text-amber-400/70 hover:text-amber-400 transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Agregar dirección de entrega
+                          </button>
+                        )}
+
+                        {/* Mini map — shown when GPS coordinates are saved */}
+                        {authUser.deliveryLatitude && authUser.deliveryLongitude && (
+                          <div className="mt-3">
+                            <MiniMap
+                              latitude={Number(authUser.deliveryLatitude)}
+                              longitude={Number(authUser.deliveryLongitude)}
+                              height={140}
+                              onEdit={() => {
+                                setProfileForm({
+                                  phone: authUser.phone || '', cedula: authUser.cedula || '',
+                                  department: authUser.department || '', municipality: authUser.municipality || '',
+                                  address: authUser.address || '', neighborhood: authUser.neighborhood || '',
+                                })
+                                setProfileLat(authUser.deliveryLatitude!); setProfileLng(authUser.deliveryLongitude!)
+                                setShowAccountPanel(false); setShowProfileModal(true)
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── MIS DIRECCIONES GUARDADAS ── */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-white/30 font-medium">Mis direcciones</p>
+                      {loadingAddresses && <div className="w-3.5 h-3.5 border border-white/20 border-t-white/50 rounded-full animate-spin" />}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {savedAddresses.map((addr: any) => (
+                        <div
+                          key={addr.id}
+                          className={`group relative rounded-xl border p-3.5 flex flex-col gap-1.5 transition-all ${
+                            addr.isDefault
+                              ? 'border-blue-500/40 bg-gradient-to-br from-blue-500/10 to-blue-600/[0.04]'
+                              : 'border-white/[0.08] bg-white/[0.04] hover:border-white/15 hover:bg-white/[0.07]'
+                          }`}
+                        >
+                          {/* label + default star */}
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="text-xs font-semibold text-white/85 leading-tight">{addr.label}</span>
+                            {addr.isDefault
+                              ? <Star className="w-3 h-3 text-blue-400 fill-blue-400 shrink-0 mt-0.5" />
+                              : <button onClick={() => handleSetDefaultAddress(addr.id)} className="opacity-0 group-hover:opacity-100 transition-opacity" title="Marcar predeterminada">
+                                  <Star className="w-3 h-3 text-white/25 hover:text-blue-400 shrink-0 mt-0.5" />
+                                </button>
+                            }
+                          </div>
+
+                          {/* address text */}
+                          <p className="text-[11px] text-white/40 leading-tight line-clamp-2">
+                            {[addr.address, addr.municipality].filter(Boolean).join(', ')}
+                          </p>
+
+                          {/* actions */}
+                          <div className="flex items-center gap-1 mt-auto pt-1.5 border-t border-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => openAddressForm(addr)}
+                              className="flex items-center gap-1 text-[10px] text-white/40 hover:text-white transition-colors px-1.5 py-0.5 rounded hover:bg-white/10"
+                            >
+                              <Pencil className="w-2.5 h-2.5" /> Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAddress(addr.id)}
+                              className="flex items-center gap-1 text-[10px] text-white/40 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded hover:bg-red-500/10 ml-auto"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Add new card */}
+                      <button
+                        onClick={() => openAddressForm()}
+                        className="rounded-xl border border-dashed border-white/[0.12] bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.06] p-3.5 flex flex-col items-center justify-center gap-2 transition-all min-h-[90px] group"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-white/[0.06] group-hover:bg-white/10 flex items-center justify-center transition-all">
+                          <Plus className="w-4 h-4 text-white/35 group-hover:text-white/60" />
+                        </div>
+                        <span className="text-[10px] text-white/30 group-hover:text-white/50 transition-colors leading-tight text-center">Nueva<br/>dirección</span>
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               )}
 
@@ -7266,97 +8103,150 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {/* ========== MIS PEDIDOS (CLIENT ORDERS) ========== */}
       {showMyOrders && isAuthenticated && (
         <>
-          <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm" onClick={() => setShowMyOrders(false)} />
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <div className="landing-sidebar border border-white/10 w-full max-w-lg max-h-[80vh] flex flex-col relative shadow-2xl">
-              <div className="flex items-center justify-between p-6 border-b border-white/10">
+          <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-md" onClick={() => setShowMyOrders(false)} />
+          {/* Bottom sheet on mobile, centered panel on desktop */}
+          <div className="fixed inset-x-0 bottom-0 z-[71] md:inset-0 md:flex md:items-center md:justify-center md:p-6">
+            <div className="landing-sidebar w-full md:max-w-lg md:rounded-2xl flex flex-col rounded-t-3xl overflow-hidden shadow-2xl border border-white/[0.08]"
+              style={{ maxHeight: '88vh' }}>
+
+              {/* Drag handle (mobile) */}
+              <div className="flex justify-center pt-3 pb-1 md:hidden shrink-0">
+                <div className="w-10 h-1 rounded-full bg-white/20" />
+              </div>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 shrink-0">
                 <div className="flex items-center gap-3">
-                  <Package className="w-5 h-5 text-white" />
-                  <h3 className="text-lg font-light text-white tracking-wide">Mis Pedidos</h3>
+                  <div className="w-9 h-9 rounded-xl bg-white/[0.07] flex items-center justify-center">
+                    <Package className="w-4 h-4 text-white/70" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Mis Pedidos</h3>
+                    <p className="text-[10px] text-white/35">{clientOrders.length > 0 ? `${clientOrders.length} pedido${clientOrders.length !== 1 ? 's' : ''}` : 'Historial de compras'}</p>
+                  </div>
                 </div>
-                <button onClick={() => setShowMyOrders(false)} className="text-white/30 hover:text-white transition-colors">
-                  <X className="w-5 h-5" />
+                <button
+                  onClick={() => setShowMyOrders(false)}
+                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-white/40 hover:text-white transition-all"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="h-px bg-white/[0.07] mx-5 shrink-0" />
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto px-4 py-4">
                 {clientOrdersLoading ? (
-                  <div className="text-center py-12">
-                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-white/40 text-sm">Cargando pedidos...</p>
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <div className="w-8 h-8 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
+                    <p className="text-white/35 text-sm">Cargando pedidos...</p>
                   </div>
                 ) : clientOrders.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Package className="w-12 h-12 text-white/10 mx-auto mb-4" />
-                    <p className="text-white/40 text-sm font-light">No tienes pedidos aún</p>
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">
+                      <Package className="w-7 h-7 text-white/20" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-white/50 text-sm font-medium">No tienes pedidos aún</p>
+                      <p className="text-white/25 text-xs mt-1">Tus compras aparecerán aquí</p>
+                    </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {clientOrders.map((order: any) => (
-                      <div key={order.id} className="border border-white/10 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-white">{order.orderNumber || `#${order.id}`}</span>
-                          <span className={`text-[10px] uppercase tracking-wider px-2 py-1 ${
-                            order.status === 'entregado' ? 'bg-green-500/10 text-green-400 border border-green-500/30' :
-                            order.status === 'enviado' || order.status === 'en_camino' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' :
-                            order.status === 'preparando' ? 'bg-white/10 text-white border border-white/20' :
-                            order.status === 'cancelado' ? 'bg-red-500/10 text-red-400 border border-red-500/30' :
-                            'bg-white/5 text-white/50 border border-white/10'
-                          }`}>
-                            {order.status}
-                          </span>
-                        </div>
-                        {order.storeName && (
-                          <div className="flex items-center gap-1.5">
-                            <Store className="w-3 h-3 text-white/30" />
-                            <span className="text-xs text-white/50">{order.storeName}</span>
-                          </div>
-                        )}
-                        <div className="text-xs text-white/40">
-                          {new Date(order.createdAt || order.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                        {/* Order items */}
-                        {order.items && order.items.length > 0 && (
-                          <div className="space-y-1.5 pt-2 border-t border-white/5">
-                            {order.items.map((item: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between text-xs">
-                                <span className="text-white/60 truncate mr-2">{item.quantity}x {item.productName}</span>
-                                <span className="text-white/40 shrink-0">{formatCOP(item.totalPrice || item.unitPrice * item.quantity)}</span>
+                  <div className="space-y-3">
+                    {clientOrders.map((order: any) => {
+                      const statusMap: Record<string, { label: string; color: string }> = {
+                        entregado:   { label: 'Entregado',   color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25' },
+                        en_camino:   { label: 'En camino',   color: 'text-blue-400 bg-blue-500/10 border-blue-500/25' },
+                        enviado:     { label: 'Enviado',     color: 'text-blue-400 bg-blue-500/10 border-blue-500/25' },
+                        preparando:  { label: 'Preparando',  color: 'text-amber-400 bg-amber-500/10 border-amber-500/25' },
+                        pendiente:   { label: 'Pendiente',   color: 'text-white/60 bg-white/[0.05] border-white/10' },
+                        cancelado:   { label: 'Cancelado',   color: 'text-red-400 bg-red-500/10 border-red-500/25' },
+                      }
+                      const st = statusMap[order.status] ?? { label: order.status, color: 'text-white/40 bg-white/[0.04] border-white/10' }
+                      const orderDate = new Date(order.createdAt || order.created_at)
+                      const deliverySteps = ['asignado', 'recogido', 'en_camino', 'entregado']
+                      const deliveryIdx = deliverySteps.indexOf(order.deliveryStatus || '')
+
+                      return (
+                        <div key={order.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] overflow-hidden">
+                          {/* Order header */}
+                          <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-white/[0.06] flex items-center justify-center shrink-0">
+                                <Package className="w-3.5 h-3.5 text-white/50" />
                               </div>
-                            ))}
+                              <div>
+                                <p className="text-sm font-semibold text-white/90 leading-tight">{order.orderNumber || `#${order.id?.slice(0,8)}`}</p>
+                                <p className="text-[10px] text-white/30 leading-tight">
+                                  {orderDate.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full border ${st.color}`}>
+                              {st.label}
+                            </span>
                           </div>
-                        )}
-                        <div className="text-sm text-white font-medium">
-                          {formatCOP(order.total || order.totalAmount || 0)}
-                        </div>
-                        {/* Delivery status timeline */}
-                        {order.deliveryStatus && order.deliveryStatus !== 'sin_asignar' && (
-                          <div className="pt-2 border-t border-white/5">
-                            <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Estado del envío</p>
-                            <div className="flex items-center gap-1">
-                              {['asignado', 'recogido', 'en_camino', 'entregado'].map((step, i) => {
-                                const steps = ['asignado', 'recogido', 'en_camino', 'entregado']
-                                const currentIndex = steps.indexOf(order.deliveryStatus || '')
-                                const isActive = i <= currentIndex
-                                return (
-                                  <div key={step} className="flex items-center gap-1 flex-1">
-                                    <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-white' : 'bg-white/10'}`} />
-                                    {i < 3 && <div className={`flex-1 h-px ${isActive && i < currentIndex ? 'bg-white' : 'bg-white/10'}`} />}
+
+                          <div className="px-4 py-3 space-y-3">
+                            {/* Store */}
+                            {order.storeName && (
+                              <div className="flex items-center gap-1.5">
+                                <Store className="w-3 h-3 text-white/25 shrink-0" />
+                                <span className="text-[11px] text-white/40">{order.storeName}</span>
+                              </div>
+                            )}
+
+                            {/* Items */}
+                            {order.items && order.items.length > 0 && (
+                              <div className="space-y-1.5">
+                                {order.items.map((item: any, idx: number) => (
+                                  <div key={idx} className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="text-[10px] font-bold text-white/30 bg-white/[0.06] w-5 h-5 rounded-md flex items-center justify-center shrink-0">{item.quantity}</span>
+                                      <span className="text-xs text-white/60 truncate">{item.productName}</span>
+                                    </div>
+                                    <span className="text-xs text-white/40 shrink-0">{formatCOP(item.totalPrice || item.unitPrice * item.quantity)}</span>
                                   </div>
-                                )
-                              })}
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Total */}
+                            <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                              <span className="text-[11px] text-white/35 uppercase tracking-wider">Total</span>
+                              <span className="text-sm font-bold text-white/90">{formatCOP(order.total || order.totalAmount || 0)}</span>
                             </div>
-                            <div className="flex justify-between mt-1">
-                              <span className="text-[9px] text-white/30">Asignado</span>
-                              <span className="text-[9px] text-white/30">Entregado</span>
-                            </div>
-                            {order.driverName && (
-                              <p className="text-xs text-white/50 mt-2">Repartidor: {order.driverName}</p>
+
+                            {/* Delivery timeline */}
+                            {order.deliveryStatus && order.deliveryStatus !== 'sin_asignar' && (
+                              <div className="pt-1">
+                                <div className="flex items-center gap-0">
+                                  {deliverySteps.map((step, i) => {
+                                    const done = i <= deliveryIdx
+                                    const labels = ['Asignado', 'Recogido', 'En camino', 'Entregado']
+                                    return (
+                                      <div key={step} className="flex items-center flex-1">
+                                        <div className="flex flex-col items-center gap-1">
+                                          <div className={`w-2.5 h-2.5 rounded-full border-2 transition-all ${done ? 'bg-emerald-400 border-emerald-400' : 'bg-transparent border-white/15'}`} />
+                                          <span className={`text-[8px] leading-none text-center ${done ? 'text-emerald-400/70' : 'text-white/20'}`}>{labels[i]}</span>
+                                        </div>
+                                        {i < 3 && <div className={`flex-1 h-px mb-3.5 ${i < deliveryIdx ? 'bg-emerald-400/50' : 'bg-white/10'}`} />}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                {order.driverName && (
+                                  <p className="text-[11px] text-white/35 mt-2 flex items-center gap-1.5">
+                                    <User className="w-3 h-3" /> {order.driverName}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -7623,84 +8513,227 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {/* ========== MOBILE: MI CUENTA VIEW ========== */}
       {mobileActiveTab === 'cuenta' && (
         <div className="fixed inset-0 z-[60] overflow-y-auto md:hidden" style={{ backgroundColor: effectiveBgColor, top: storeConfig?.announcementBar?.isActive ? '104px' : '64px', bottom: '64px' }}>
-          <div className="px-4 py-6">
-            {isAuthenticated && authUser ? (
-              <div className="space-y-6">
-                {/* User Info */}
-                <div className="text-center space-y-3">
-                  <div className="w-20 h-20 rounded-full bg-white/10 border-2 border-white/20 flex items-center justify-center mx-auto">
-                    <User className="w-10 h-10 text-white" />
+          {isAuthenticated && authUser ? (
+            <div className="flex flex-col">
+
+              {/* ── Profile hero header ── */}
+              <div className="relative overflow-hidden px-5 pt-6 pb-5">
+                {/* Decorative blobs */}
+                <div className="absolute top-0 left-0 w-48 h-48 rounded-full bg-blue-600/10 blur-3xl -translate-x-12 -translate-y-12 pointer-events-none" />
+                <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-purple-600/10 blur-2xl translate-x-8 -translate-y-8 pointer-events-none" />
+
+                {/* Avatar + info */}
+                <div className="relative flex items-center gap-4">
+                  {/* Avatar */}
+                  <div className="relative shrink-0">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/40 to-indigo-600/30 border border-white/[0.12] flex items-center justify-center shadow-lg">
+                      <User className="w-7 h-7 text-white/80" />
+                    </div>
+                    <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-black flex items-center justify-center shadow-sm ${authUser.profileCompleted ? 'bg-emerald-500' : 'bg-amber-500'}`}>
+                      {authUser.profileCompleted
+                        ? <CheckCircle className="w-3 h-3 text-white" />
+                        : <span className="text-white text-[8px] font-bold leading-none">!</span>
+                      }
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-light text-white">{authUser.name}</h2>
-                    <p className="text-sm text-white/40">{authUser.email}</p>
+
+                  {/* Name + email + status */}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-base font-semibold text-white leading-tight truncate">{authUser.name}</p>
+                    <p className="text-[11px] text-white/40 truncate mt-0.5">{authUser.email}</p>
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${authUser.profileCompleted ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      <span className={`text-[10px] font-medium ${authUser.profileCompleted ? 'text-emerald-400/80' : 'text-amber-400/80'}`}>
+                        {authUser.profileCompleted ? 'Perfil de entrega completo' : 'Completa tu perfil de entrega'}
+                      </span>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Menu Options */}
-                <div className="space-y-2">
-                  {/* Mis Pedidos */}
-                  <button
-                    onClick={() => { fetchClientOrders(); setShowMyOrders(true) }}
-                    className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/10 hover:border-white/20 transition-all"
-                  >
-                    <Package className="w-5 h-5 text-white" />
-                    <div className="text-left flex-1">
-                      <span className="text-sm text-white">Mis Pedidos</span>
-                      <p className="text-[11px] text-white/40">Ver historial de pedidos</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-white/20" />
-                  </button>
+              {/* ── Divider ── */}
+              <div className="h-px bg-white/[0.07] mx-5" />
 
-                  {/* Ubicación */}
+              {/* ── Quick-action cards ── */}
+              <div className="px-4 pt-4 pb-2 grid grid-cols-3 gap-2.5">
+                {[
+                  { label: 'Pedidos', icon: <Package className="w-5 h-5" />, action: () => { fetchClientOrders(); setShowMyOrders(true) }, sub: 'Historial' },
+                  { label: 'Dirección', icon: <MapPin className="w-5 h-5" />, action: () => { const el = document.getElementById('cuenta-location-picker'); if (el) el.scrollIntoView({ behavior: 'smooth' }) }, sub: 'Entrega GPS' },
+                  { label: 'Favoritos', icon: <Heart className="w-5 h-5" />, action: () => { const el = document.getElementById('mobile-favorites-section'); if (el) el.scrollIntoView({ behavior: 'smooth' }) }, sub: `${favorites.size} guardados` },
+                ].map(item => (
                   <button
-                    onClick={() => {
-                      // Open location picker (scroll to show it)
-                      const el = document.getElementById('cuenta-location-picker')
-                      if (el) el.scrollIntoView({ behavior: 'smooth' })
-                    }}
-                    className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/10 hover:border-white/20 transition-all"
+                    key={item.label}
+                    onClick={item.action}
+                    className="flex flex-col items-center gap-2 py-4 rounded-2xl bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.09] hover:border-white/[0.14] active:scale-95 transition-all"
                   >
-                    <MapPin className="w-5 h-5 text-white" />
-                    <div className="text-left flex-1">
-                      <span className="text-sm text-white">Mi Ubicación</span>
-                      <p className="text-[11px] text-white/40">Configurar dirección de entrega</p>
+                    <span className="text-white/60">{item.icon}</span>
+                    <div className="text-center">
+                      <p className="text-[11px] font-semibold text-white/80 leading-tight">{item.label}</p>
+                      <p className="text-[9px] text-white/30 leading-tight mt-0.5">{item.sub}</p>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-white/20" />
                   </button>
+                ))}
+              </div>
 
-                  {/* Favoritos */}
-                  <button
-                    onClick={() => { setMobileActiveTab('tienda'); setShowCatalog(true) }}
-                    className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/10 hover:border-white/20 transition-all"
-                  >
-                    <Heart className="w-5 h-5 text-white" />
-                    <div className="text-left flex-1">
-                      <span className="text-sm text-white">Favoritos</span>
-                      <p className="text-[11px] text-white/40">{favorites.size} productos guardados</p>
+              <div className="px-4 space-y-6 pb-6 pt-2">
+
+                {/* ── Mis Favoritos ── */}
+                <div id="mobile-favorites-section" className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Heart className="w-4 h-4 text-red-400/70" />
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/50 font-medium">Mis Favoritos</p>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-white/20" />
-                  </button>
+                    {favorites.size > 0 && (
+                      <span className="text-[10px] text-white/30 bg-white/[0.06] px-2 py-0.5 rounded-full">{favorites.size}</span>
+                    )}
+                  </div>
+
+                  {favorites.size === 0 ? (
+                    <div className="flex items-center gap-3 py-4 px-4 rounded-2xl border border-dashed border-white/[0.08]">
+                      <Heart className="w-8 h-8 text-white/10 shrink-0" />
+                      <div>
+                        <p className="text-sm text-white/30 font-light">Sin favoritos aún</p>
+                        <p className="text-[11px] text-white/20 mt-0.5">Toca ♡ en cualquier producto para guardarlo</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {products.filter(p => favorites.has(p.id)).map(product => {
+                        const isOffer = product.isOnOffer && product.offerPrice
+                        return (
+                          <button
+                            key={product.id}
+                            onClick={() => setSelectedProduct(product)}
+                            className="group relative rounded-2xl overflow-hidden border border-white/[0.08] bg-white/[0.04] hover:border-white/[0.15] active:scale-95 transition-all text-left"
+                          >
+                            {/* Image */}
+                            <div className="aspect-square w-full bg-black/30 overflow-hidden">
+                              {product.imageUrl
+                                ? <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                : <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-6 h-6 text-white/10" /></div>
+                              }
+                              {isOffer && (
+                                <div className="absolute top-2 left-2 bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">OFERTA</div>
+                              )}
+                            </div>
+                            {/* Info */}
+                            <div className="px-2.5 py-2.5 space-y-1">
+                              <p className="text-[11px] font-medium text-white/85 leading-tight line-clamp-2">{product.name}</p>
+                              {isOffer ? (
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-xs font-semibold text-orange-400">{formatCOP(product.offerPrice!)}</span>
+                                  <span className="text-[9px] text-white/25 line-through">{formatCOP(product.salePrice)}</span>
+                                </div>
+                              ) : (
+                                <span className="text-xs font-semibold text-white/70">{formatCOP(product.salePrice)}</span>
+                              )}
+                            </div>
+                            {/* Actions row */}
+                            <div className="absolute top-2 right-2 flex flex-col gap-1.5">
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleFavorite(product.id) }}
+                                className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm border border-white/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
+                              >
+                                <Heart className="w-3 h-3 fill-current" />
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); agregarAlCarrito(product) }}
+                                className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/20 transition-all"
+                              >
+                                <ShoppingCart className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Mis Direcciones (mobile) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-light text-white/70 uppercase tracking-wider">Mis Direcciones</h3>
+                    <button
+                      onClick={() => openAddressForm()}
+                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Nueva
+                    </button>
+                  </div>
+                  {loadingAddresses ? (
+                    <div className="flex justify-center py-3"><div className="w-5 h-5 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" /></div>
+                  ) : savedAddresses.length === 0 ? (
+                    <button
+                      onClick={() => openAddressForm()}
+                      className="w-full flex items-center gap-4 p-4 bg-white/5 border border-dashed border-white/15 hover:border-white/30 transition-all"
+                    >
+                      <MapPin className="w-5 h-5 text-white/30" />
+                      <div className="text-left flex-1">
+                        <span className="text-sm text-white/50">Agregar dirección</span>
+                        <p className="text-[11px] text-white/30">Mi casa, trabajo, etc.</p>
+                      </div>
+                      <Plus className="w-4 h-4 text-white/20" />
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      {savedAddresses.map((addr: any) => (
+                        <div key={addr.id} className={`border p-3 ${addr.isDefault ? 'border-blue-500/40 bg-blue-500/5' : 'border-white/10 bg-white/5'}`}>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <MapPin className="w-3.5 h-3.5 text-white/40 shrink-0" />
+                              <span className="text-sm font-medium text-white truncate">{addr.label}</span>
+                              {addr.isDefault && <span className="text-[9px] text-blue-400 border border-blue-400/30 px-1.5 py-0.5 uppercase tracking-wider shrink-0">predeterminada</span>}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!addr.isDefault && (
+                                <button onClick={() => handleSetDefaultAddress(addr.id)} className="p-1 text-white/30 hover:text-blue-400 transition-colors">
+                                  <Star className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button onClick={() => openAddressForm(addr)} className="p-1 text-white/30 hover:text-white transition-colors">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDeleteAddress(addr.id)} className="p-1 text-white/30 hover:text-red-400 transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-white/40 pl-5">
+                            {[addr.address, addr.neighborhood, addr.municipality].filter(Boolean).join(', ')}
+                          </p>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => openAddressForm()}
+                        className="w-full text-xs text-blue-400 hover:text-blue-300 border border-blue-400/20 hover:border-blue-400/40 py-2 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Agregar otra dirección
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Location Picker */}
                 <div id="cuenta-location-picker" className="space-y-3">
                   <h3 className="text-sm font-light text-white/70 uppercase tracking-wider">Mi Ubicación de Entrega</h3>
-                  <div className="border border-white/10 p-4 bg-white/5">
-                    {deliveryLat && deliveryLng ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-white/60">
-                          <MapPin className="w-4 h-4 text-white" />
-                          <span>Lat: {deliveryLat.toFixed(4)}, Lng: {deliveryLng.toFixed(4)}</span>
-                        </div>
-                        <button
-                          onClick={() => { setDeliveryLat(null); setDeliveryLng(null) }}
-                          className="text-xs text-red-400 hover:text-red-300"
-                        >
-                          Cambiar ubicación
-                        </button>
-                      </div>
-                    ) : (
+                  {deliveryLat && deliveryLng ? (
+                    <div className="space-y-2">
+                      <MiniMap
+                        latitude={deliveryLat}
+                        longitude={deliveryLng}
+                        height={160}
+                      />
+                      <button
+                        onClick={() => { setDeliveryLat(null); setDeliveryLng(null) }}
+                        className="text-xs text-red-400/70 hover:text-red-400 transition-colors flex items-center gap-1"
+                      >
+                        <X className="w-3 h-3" /> Quitar ubicación GPS
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="border border-white/10 p-4 bg-white/5">
                       <button
                         onClick={() => {
                           if (navigator.geolocation) {
@@ -7715,37 +8748,37 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         <MapPin className="w-4 h-4" />
                         Establecer mi ubicación
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Logout */}
                 <button
                   onClick={handleClientLogout}
-                  className="w-full flex items-center justify-center gap-2 p-4 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
+                  className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl bg-red-500/8 border border-red-500/20 text-red-400 hover:bg-red-500/15 transition-all text-sm font-medium"
                 >
-                  <LogOut className="w-5 h-5" />
-                  <span className="text-sm">Cerrar Sesión</span>
+                  <LogOut className="w-4 h-4" />
+                  Cerrar Sesión
                 </button>
               </div>
-            ) : (
-              <div className="text-center space-y-6 py-12">
-                <div className="w-20 h-20 rounded-full bg-white/5 border-2 border-white/10 flex items-center justify-center mx-auto">
-                  <User className="w-10 h-10 text-white/20" />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="text-lg font-light text-white">Inicia Sesión</h2>
-                  <p className="text-sm text-white/40 max-w-xs mx-auto">Accede a tu cuenta para ver tus pedidos, guardar favoritos y más</p>
-                </div>
-                <button
-                  onClick={() => { setShowClientLogin(true); setClientLoginTab('login'); setClientLoginError('') }}
-                  className="px-8 py-3 bg-white text-black text-sm font-medium uppercase tracking-wider hover:bg-white/90 transition-colors"
-                >
-                  Iniciar Sesión
-                </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-5 py-16 px-8">
+              <div className="w-20 h-20 rounded-full bg-white/5 border-2 border-white/10 flex items-center justify-center">
+                <User className="w-10 h-10 text-white/20" />
               </div>
-            )}
-          </div>
+              <div className="text-center space-y-1.5">
+                <h2 className="text-lg font-semibold text-white">Inicia Sesión</h2>
+                <p className="text-sm text-white/40 max-w-xs mx-auto">Accede a tu cuenta para ver tus pedidos, guardar favoritos y más</p>
+              </div>
+              <button
+                onClick={() => { setShowClientLogin(true); setClientLoginTab('login'); setClientLoginError('') }}
+                className="px-8 py-3 rounded-xl bg-white text-black text-sm font-semibold uppercase tracking-wider hover:bg-white/90 active:scale-95 transition-all"
+              >
+                Iniciar Sesión
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -7753,7 +8786,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       <div className="fixed bottom-0 left-0 right-0 z-[55] md:hidden border-t border-white/10 landing-nav" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="flex items-center justify-around h-16">
           <button
-            onClick={() => { setShowCart(false); setMobileActiveTab('cuenta') }}
+            onClick={() => { setShowCart(false); setMobileActiveTab('cuenta'); if (isAuthenticated) fetchSavedAddresses() }}
             className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${mobileActiveTab === 'cuenta' ? 'text-white' : 'text-white/40'}`}
           >
             <User className="w-6 h-6" />
@@ -7951,16 +8984,20 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     </button>
                     {profileLat && profileLng && (
                       <span className="text-xs text-green-600 flex items-center gap-1 px-2">
-                        ✓ {profileLat.toFixed(4)}, {profileLng.toFixed(4)}
+                        ✓ {Number(profileLat).toFixed(4)}, {Number(profileLng).toFixed(4)}
                       </span>
                     )}
                   </div>
                 </div>
               </div>
 
+              {profileSaveError && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{profileSaveError}</p>
+              )}
+
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => setShowProfileModal(false)}
+                  onClick={() => { setShowProfileModal(false); setProfileSaveError('') }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Ahora no
@@ -7972,6 +9009,147 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 >
                   {savingProfile ? 'Guardando...' : 'Guardar dirección'}
                 </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ========== ADDRESS FORM MODAL ========== */}
+      {showAddressForm && isAuthenticated && (
+        <>
+          <div className="fixed inset-0 z-[210] bg-black/75 backdrop-blur-md" onClick={() => setShowAddressForm(false)} />
+          <div className="fixed inset-0 z-[211] flex items-end sm:items-center justify-center sm:p-4">
+            <div className="bg-zinc-950 border border-white/10 w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+
+              {/* drag handle (mobile) */}
+              <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                <div className="w-10 h-1 rounded-full bg-white/20" />
+              </div>
+
+              {/* header */}
+              <div className="flex items-center justify-between px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">{editingAddressId ? 'Editar dirección' : 'Nueva dirección'}</h3>
+                    <p className="text-[11px] text-white/35">Guarda para usarla rápido al pedir</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAddressForm(false)} className="w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/10 flex items-center justify-center text-white/40 hover:text-white transition-all">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="px-6 pb-6 space-y-4">
+                {/* Label / Nombre */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Nombre de la dirección *</label>
+                  <input
+                    type="text"
+                    placeholder="Mi casa, Trabajo, Casa mamá..."
+                    value={addressForm.label}
+                    onChange={e => setAddressForm(p => ({ ...p, label: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder-white/20 focus:border-blue-500/60 focus:bg-white/[0.08] outline-none transition-all"
+                  />
+                  {/* Quick label chips */}
+                  <div className="flex gap-1.5 flex-wrap mt-2">
+                    {['Mi casa', 'Trabajo', 'Casa familia', 'Apartamento'].map(preset => (
+                      <button
+                        key={preset}
+                        onClick={() => setAddressForm(p => ({ ...p, label: preset }))}
+                        className={`text-[10px] px-2.5 py-1 rounded-full border transition-all ${
+                          addressForm.label === preset
+                            ? 'border-blue-500/60 bg-blue-500/15 text-blue-400'
+                            : 'border-white/10 text-white/35 hover:border-white/25 hover:text-white/60'
+                        }`}
+                      >{preset}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dept + Municipio */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Departamento *</label>
+                    <select
+                      value={addressForm.department}
+                      onChange={e => setAddressForm(p => ({ ...p, department: e.target.value, municipality: '' }))}
+                      className="w-full px-3 py-3 rounded-xl border border-white/10 bg-zinc-900 text-sm text-white focus:border-blue-500/60 outline-none transition-all"
+                    >
+                      <option value="">Selecciona</option>
+                      {Object.keys(departamentosMunicipios).map(dep => (
+                        <option key={dep} value={dep}>{dep}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Municipio *</label>
+                    <select
+                      value={addressForm.municipality}
+                      onChange={e => setAddressForm(p => ({ ...p, municipality: e.target.value }))}
+                      disabled={!addressForm.department}
+                      className="w-full px-3 py-3 rounded-xl border border-white/10 bg-zinc-900 text-sm text-white focus:border-blue-500/60 outline-none transition-all disabled:opacity-40"
+                    >
+                      <option value="">{addressForm.department ? 'Selecciona' : '—'}</option>
+                      {addressForm.department && departamentosMunicipios[addressForm.department]?.map(mun => (
+                        <option key={mun} value={mun}>{mun}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Dirección */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Dirección *</label>
+                  <input
+                    type="text"
+                    placeholder="Calle 10 #5-20, Edificio..."
+                    value={addressForm.address}
+                    onChange={e => setAddressForm(p => ({ ...p, address: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder-white/20 focus:border-blue-500/60 focus:bg-white/[0.08] outline-none transition-all"
+                  />
+                </div>
+
+                {/* Barrio */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Barrio <span className="text-white/25 normal-case tracking-normal font-normal">(opcional)</span></label>
+                  <input
+                    type="text"
+                    placeholder="Barrio o sector"
+                    value={addressForm.neighborhood}
+                    onChange={e => setAddressForm(p => ({ ...p, neighborhood: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder-white/20 focus:border-blue-500/60 focus:bg-white/[0.08] outline-none transition-all"
+                  />
+                </div>
+
+                {addressFormError && (
+                  <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2.5">
+                    <X className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                    <p className="text-xs text-red-400">{addressFormError}</p>
+                  </div>
+                )}
+
+                {/* Buttons */}
+                <div className="flex gap-2.5 pt-1">
+                  <button
+                    onClick={() => setShowAddressForm(false)}
+                    className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-sm text-white/50 hover:text-white hover:border-white/20 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveAddress}
+                    disabled={savingAddress || !addressForm.label || !addressForm.department || !addressForm.municipality || !addressForm.address}
+                    className="flex-1 px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:text-white/25 disabled:cursor-not-allowed text-white text-sm font-medium transition-all"
+                  >
+                    {savingAddress ? (
+                      <span className="flex items-center justify-center gap-2"><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Guardando</span>
+                    ) : editingAddressId ? 'Actualizar' : 'Guardar dirección'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

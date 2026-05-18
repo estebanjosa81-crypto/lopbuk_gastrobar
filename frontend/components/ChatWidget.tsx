@@ -51,40 +51,61 @@ function ProductCard({
   accentColor,
   isLight,
   onProductClick,
+  onOrderByChat,
 }: {
   product: SuggestedProduct
   accentColor: string
   isLight: boolean
   onProductClick?: (id: string) => void
+  onOrderByChat?: (productName: string) => void
 }) {
+  const hasActions = onProductClick || onOrderByChat
   return (
-    <div className="flex items-center gap-2.5 bg-white border border-gray-100 rounded-xl p-2.5 shadow-sm min-w-0">
-      <div className="w-12 h-12 rounded-lg flex-shrink-0 bg-gray-100 overflow-hidden">
-        {product.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <ShoppingCart className="w-5 h-5 text-gray-300" />
-          </div>
-        )}
+    <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden min-w-0">
+      {/* Info row */}
+      <div className="flex items-center gap-2.5 p-2.5">
+        <div className="w-12 h-12 rounded-lg flex-shrink-0 bg-gray-100 overflow-hidden">
+          {product.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <ShoppingCart className="w-5 h-5 text-gray-300" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{product.name}</p>
+          {product.category && (
+            <p className="text-[10px] text-gray-400 truncate">{product.category}</p>
+          )}
+          <p className="text-sm font-bold text-gray-900 mt-0.5">{formatCOP(product.salePrice)}</p>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-gray-800 truncate leading-tight">{product.name}</p>
-        {product.category && (
-          <p className="text-[10px] text-gray-400 truncate">{product.category}</p>
-        )}
-        <p className="text-sm font-bold text-gray-900 mt-0.5">{formatCOP(product.salePrice)}</p>
-      </div>
-      {onProductClick && (
-        <button
-          onClick={() => onProductClick(product.id)}
-          className="flex-shrink-0 flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-all hover:opacity-90 active:scale-95"
-          style={{ background: accentColor, color: isLight ? '#111827' : '#ffffff' }}
-        >
-          <ExternalLink className="w-3 h-3" />
-          Ver
-        </button>
+
+      {/* Action buttons */}
+      {hasActions && (
+        <div className="flex border-t border-gray-100 divide-x divide-gray-100">
+          {onProductClick && (
+            <button
+              onClick={() => onProductClick(product.id)}
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold py-2 text-gray-500 hover:bg-gray-50 transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Ver en tienda
+            </button>
+          )}
+          {onOrderByChat && (
+            <button
+              onClick={() => onOrderByChat(product.name)}
+              className="flex-1 flex items-center justify-center gap-1 text-[11px] font-semibold py-2 transition-colors hover:opacity-80"
+              style={{ color: accentColor }}
+            >
+              <ShoppingCart className="w-3 h-3" />
+              Pedir por aquí
+            </button>
+          )}
+        </div>
       )}
     </div>
   )
@@ -105,24 +126,23 @@ export function ChatWidget({ storeSlug, botName, botAvatarUrl, accentColor = '#f
   const [sending, setSending] = useState(false)
   const [sessionToken, setSessionToken] = useState<string | undefined>()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const sessionTokenRef = useRef<string | undefined>()
+
+  useEffect(() => { sessionTokenRef.current = sessionToken }, [sessionToken])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const sendMessage = async () => {
-    const text = input.trim()
+  const sendMessageText = async (text: string) => {
     if (!text || sending) return
-
-    setInput('')
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setSending(true)
-
     try {
       const res = await fetch(`${API_URL}/chatbot/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: storeSlug, sessionToken, message: text }),
+        body: JSON.stringify({ slug: storeSlug, sessionToken: sessionTokenRef.current, message: text }),
       })
       const json = await res.json()
       if (json.success) {
@@ -141,6 +161,13 @@ export function ChatWidget({ storeSlug, botName, botAvatarUrl, accentColor = '#f
     setSending(false)
   }
 
+  const sendMessage = async () => {
+    const text = input.trim()
+    if (!text) return
+    setInput('')
+    await sendMessageText(text)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -151,13 +178,16 @@ export function ChatWidget({ storeSlug, botName, botAvatarUrl, accentColor = '#f
   const handleProductClick = (productId: string) => {
     if (onProductClick) {
       onClose()
-      // Small delay so the widget animates out before the modal opens
       setTimeout(() => onProductClick(productId), 150)
     }
   }
 
+  const handleOrderByChat = (productName: string) => {
+    sendMessageText(`Quiero pedir: ${productName}`)
+  }
+
   return (
-    <div className="fixed bottom-24 right-4 sm:right-6 w-[340px] max-w-[calc(100vw-2rem)] z-50 flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+    <div className="fixed bottom-36 sm:bottom-24 right-4 sm:right-6 w-[340px] max-w-[calc(100vw-2rem)] z-50 flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3" style={{ background: accentColor }}>
         <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -220,6 +250,7 @@ export function ChatWidget({ storeSlug, botName, botAvatarUrl, accentColor = '#f
                       accentColor={accentColor}
                       isLight={isLight}
                       onProductClick={onProductClick ? handleProductClick : undefined}
+                      onOrderByChat={handleOrderByChat}
                     />
                   ))}
                 </div>

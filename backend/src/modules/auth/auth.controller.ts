@@ -160,6 +160,53 @@ export class AuthController {
     }
   }
 
+  async getAddresses(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const addresses = await authService.getUserAddresses(req.user!.userId);
+      res.json({ success: true, data: addresses });
+    } catch (error) { next(error); }
+  }
+
+  async addAddress(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { label, department, municipality, address, neighborhood, deliveryLatitude, deliveryLongitude, isDefault } = req.body;
+      const addresses = await authService.addUserAddress(req.user!.userId, {
+        label, department, municipality, address, neighborhood,
+        deliveryLatitude: deliveryLatitude != null ? Number(deliveryLatitude) : undefined,
+        deliveryLongitude: deliveryLongitude != null ? Number(deliveryLongitude) : undefined,
+        isDefault: !!isDefault,
+      });
+      res.status(201).json({ success: true, data: addresses, message: 'Dirección guardada' });
+    } catch (error) { next(error); }
+  }
+
+  async updateAddress(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { label, department, municipality, address, neighborhood, deliveryLatitude, deliveryLongitude, isDefault } = req.body;
+      const addresses = await authService.updateUserAddress(req.user!.userId, req.params.id, {
+        label, department, municipality, address, neighborhood,
+        deliveryLatitude: deliveryLatitude != null ? Number(deliveryLatitude) : undefined,
+        deliveryLongitude: deliveryLongitude != null ? Number(deliveryLongitude) : undefined,
+        isDefault: isDefault !== undefined ? !!isDefault : undefined,
+      });
+      res.json({ success: true, data: addresses, message: 'Dirección actualizada' });
+    } catch (error) { next(error); }
+  }
+
+  async deleteAddress(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const addresses = await authService.deleteUserAddress(req.user!.userId, req.params.id);
+      res.json({ success: true, data: addresses, message: 'Dirección eliminada' });
+    } catch (error) { next(error); }
+  }
+
+  async setDefaultAddress(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const addresses = await authService.setDefaultUserAddress(req.user!.userId, req.params.id);
+      res.json({ success: true, data: addresses, message: 'Dirección predeterminada actualizada' });
+    } catch (error) { next(error); }
+  }
+
   async changePassword(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const { currentPassword, newPassword } = req.body;

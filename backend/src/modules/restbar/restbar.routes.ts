@@ -5,8 +5,12 @@ import { authenticate, authorize } from '../../common/middleware';
 import { validateRequest } from '../../utils/validators';
 import pool from '../../config/database';
 import { UserRole } from '../../common/types';
+import reservationsRouter from './reservations.routes';
 
 const router: ReturnType<typeof Router> = Router();
+
+// ── Sub-router de reservas (maneja su propio auth internamente) ───────────────
+router.use('/reservations', reservationsRouter);
 
 // ── PUBLIC: menú sin autenticación ───────────────────────────────────────────
 router.get('/public-menu/:slug', async (req: Request, res: Response) => {
@@ -23,15 +27,31 @@ router.get('/public-menu/:slug', async (req: Request, res: Response) => {
     const tenantId = tenants[0].id;
     const storeName = tenants[0].name;
 
-    const [items] = await pool.query(
-      `SELECT p.id, p.name, p.category, p.description, p.sale_price AS price,
-              p.image_url AS imageUrl, p.preparation_area AS preparationArea,
-              p.prep_time_minutes AS prepTimeMinutes
-       FROM products p
-       WHERE p.tenant_id = ? AND p.is_menu_item = 1 AND p.available_in_menu = 1
-       ORDER BY p.category, p.name`,
-      [tenantId]
-    ) as any;
+    // Try to include likes; fall back gracefully if menu_likes table doesn't exist yet
+    let items: any[];
+    try {
+      [items] = await pool.query(
+        `SELECT p.id, p.name, p.category, p.description, p.sale_price AS price,
+                p.image_url AS imageUrl, p.preparation_area AS preparationArea,
+                p.prep_time_minutes AS prepTimeMinutes,
+                (SELECT COUNT(*) FROM menu_likes WHERE product_id = p.id) AS likes
+         FROM products p
+         WHERE p.tenant_id = ? AND p.is_menu_item = 1 AND p.available_in_menu = 1
+         ORDER BY p.category, p.name`,
+        [tenantId]
+      ) as any;
+    } catch {
+      [items] = await pool.query(
+        `SELECT p.id, p.name, p.category, p.description, p.sale_price AS price,
+                p.image_url AS imageUrl, p.preparation_area AS preparationArea,
+                p.prep_time_minutes AS prepTimeMinutes,
+                0 AS likes
+         FROM products p
+         WHERE p.tenant_id = ? AND p.is_menu_item = 1 AND p.available_in_menu = 1
+         ORDER BY p.category, p.name`,
+        [tenantId]
+      ) as any;
+    }
 
     // Group by category
     const grouped: Record<string, any[]> = {};
@@ -46,6 +66,7 @@ router.get('/public-menu/:slug', async (req: Request, res: Response) => {
         imageUrl: item.imageUrl,
         preparationArea: item.preparationArea,
         prepTimeMinutes: item.prepTimeMinutes,
+        likes: Number(item.likes),
       });
     }
 
@@ -53,6 +74,57 @@ router.get('/public-menu/:slug', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Public menu error:', error);
     res.status(500).json({ success: false, error: 'Error al obtener el menú' });
+  }
+});
+
+// ── PUBLIC: registrar like de cliente en un platillo ─────────────────────────
+router.post('/public-menu-like', async (req: Request, res: Response) => {
+  try {
+    const { productId, tenantSlug, deviceId } = req.body;
+    if (!productId || !tenantSlug || !deviceId) {
+      res.status(400).json({ success: false, error: 'Datos incompletos' });
+      return;
+    }
+    const [tenants] = await pool.query(
+      'SELECT id FROM tenants WHERE slug = ? AND status = ? LIMIT 1',
+      [tenantSlug, 'activo']
+    ) as any;
+    if (!tenants?.length) {
+      res.status(404).json({ success: false, error: 'Tienda no encontrada' });
+      return;
+    }
+    const tenantId = tenants[0].id;
+
+    try {
+      await pool.query(
+        'INSERT IGNORE INTO menu_likes (product_id, tenant_id, device_id) VALUES (?, ?, ?)',
+        [productId, tenantId, deviceId]
+      );
+      const [[{ total }]] = await pool.query(
+        'SELECT COUNT(*) AS total FROM menu_likes WHERE product_id = ?',
+        [productId]
+      ) as any;
+      res.json({ success: true, data: { likes: Number(total) } });
+    } catch {
+      // Table doesn't exist yet — return 0 silently
+      res.json({ success: true, data: { likes: 0 } });
+    }
+  } catch (error) {
+    console.error('Like error:', error);
+    res.status(500).json({ success: false, error: 'Error al registrar like' });
+  }
+});
+
+// ── PUBLIC: obtener conteo de likes de un platillo ───────────────────────────
+router.get('/public-menu-likes/:productId', async (req: Request, res: Response) => {
+  try {
+    const [[{ total }]] = await pool.query(
+      'SELECT COUNT(*) AS total FROM menu_likes WHERE product_id = ?',
+      [req.params.productId]
+    ) as any;
+    res.json({ success: true, data: { likes: Number(total) } });
+  } catch {
+    res.json({ success: true, data: { likes: 0 } });
   }
 });
 
@@ -510,6 +582,31 @@ router.patch('/settings/public-menu', authorize(...ADMIN_ROLES), async (req: Req
     res.json({ success: true, data: { enabled, slug: rows[0]?.slug } });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Error al actualizar configuración' });
+  }
+});
+
+// ── LIKES STATS (admin) ───────────────────────────────────────────────────────
+router.get('/likes-stats', authorize(...ADMIN_ROLES), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user?.tenantId;
+    try {
+      const [rows] = await pool.query(
+        `SELECT p.id, p.name, p.category, p.image_url AS imageUrl,
+                (SELECT COUNT(*) FROM menu_likes WHERE product_id = p.id) AS likes
+         FROM products p
+         WHERE p.tenant_id = ? AND p.is_menu_item = 1
+         ORDER BY likes DESC
+         LIMIT 20`,
+        [tenantId]
+      ) as any;
+      res.json({ success: true, data: rows.map((r: any) => ({ ...r, likes: Number(r.likes) })) });
+    } catch {
+      // menu_likes table not created yet
+      res.json({ success: true, data: [] });
+    }
+  } catch (error) {
+    console.error('Likes stats error:', error);
+    res.status(500).json({ success: false, error: 'Error al obtener estadísticas' });
   }
 });
 

@@ -146,6 +146,24 @@ export class TenantsController {
       next(error);
     }
   }
+
+  async getModules(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await tenantsService.getModules(req.params.id);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateModules(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await tenantsService.updateModules(req.params.id, req.body.modules);
+      res.json({ success: true, data, message: 'Módulos actualizados' });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const tenantsController = new TenantsController();

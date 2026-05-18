@@ -5,7 +5,7 @@ import { useStore } from '@/lib/store'
 import { useAuthStore } from '@/lib/auth-store'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle, Bell, ExternalLink, Menu, PackageX, Search, ShoppingBag, User, Package, Receipt, Users, X } from 'lucide-react'
+import { AlertTriangle, Bell, ExternalLink, Menu, PackageX, Search, ShoppingBag, User, Package, Receipt, Users, X, BookOpen } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,8 @@ import { api } from '@/lib/api'
 import { SyncStatusBar } from '@/components/sync-status-bar'
 import { ProfileModal } from '@/components/profile-modal'
 import { PreferencesModal } from '@/components/preferences-modal'
+import { AppGuide } from '@/components/AppGuide'
+import { ProductTour } from '@/components/ProductTour'
 
 const sectionTitles: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -111,6 +113,7 @@ function GlobalSearch() {
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
       <Input
         ref={inputRef}
+        data-tour="header-search"
         type="search"
         value={query}
         placeholder="Buscar productos, facturas, clientes…"
@@ -219,6 +222,18 @@ export function Header() {
   const { user, logout } = useAuthStore()
   const [profileOpen, setProfileOpen] = useState(false)
   const [preferencesOpen, setPreferencesOpen] = useState(false)
+  const [guideOpen, setGuideOpen]   = useState(false)
+  const [tourOpen,  setTourOpen]    = useState(false)
+
+  // Auto-show interactive tour on first visit
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const seen = localStorage.getItem('lopbuk_guide_seen_v1')
+    if (!seen) {
+      setTimeout(() => setTourOpen(true), 800) // small delay so the UI renders first
+      localStorage.setItem('lopbuk_guide_seen_v1', '1')
+    }
+  }, [])
   const lowStockProducts = products.filter(p => p.stock <= p.reorderPoint && p.stock > 0).sort((a, b) => a.stock - b.stock)
   const outOfStockProducts = products.filter(p => p.stock === 0)
   const lowStockCount = lowStockProducts.length
@@ -277,10 +292,23 @@ export function Header() {
         {/* Search */}
         <GlobalSearch />
 
+        {/* Guide button */}
+        <Button
+          data-tour="header-guide"
+          variant="ghost"
+          size="sm"
+          onClick={() => setTourOpen(true)}
+          className="hidden sm:flex items-center gap-1.5 text-muted-foreground hover:text-foreground h-9 px-3"
+          title="Guía de uso"
+        >
+          <BookOpen className="h-4 w-4" />
+          <span className="text-xs font-medium hidden lg:inline">Guía</span>
+        </Button>
+
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative h-10 w-10 lg:h-11 lg:w-11">
+            <Button data-tour="header-notifications" variant="ghost" size="icon" className="relative h-10 w-10 lg:h-11 lg:w-11">
               <Bell className="h-5 w-5 lg:h-5.5 lg:w-5.5 text-muted-foreground" />
               {alertCount > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-5 w-5 lg:h-5.5 lg:w-5.5 items-center justify-center rounded-full bg-destructive text-[10px] lg:text-xs font-medium text-destructive-foreground">
@@ -413,6 +441,8 @@ export function Header() {
 
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
       <PreferencesModal open={preferencesOpen} onClose={() => setPreferencesOpen(false)} />
+      <AppGuide open={guideOpen} onClose={() => setGuideOpen(false)} />
+      <ProductTour open={tourOpen} onClose={() => setTourOpen(false)} />
     </header>
   )
 }

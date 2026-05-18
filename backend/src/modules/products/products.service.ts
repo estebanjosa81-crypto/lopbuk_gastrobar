@@ -827,6 +827,46 @@ export class ProductsService {
 
     return [headers.join(','), ...csvRows].join('\r\n');
   }
+
+  async updatePreorder(
+    productId: string,
+    tenantId: string,
+    data: {
+      isPreorder: boolean;
+      preorderWindowEnd: string | null;
+      preorderShipStart: string | null;
+      preorderShipEnd: string | null;
+      preorderBadgeText: string;
+      preorderPolicyText: string | null;
+    }
+  ) {
+    const [result] = await db.execute(
+      `UPDATE products SET
+        is_preorder = ?,
+        preorder_window_end = ?,
+        preorder_ship_start = ?,
+        preorder_ship_end = ?,
+        preorder_badge_text = ?,
+        preorder_policy_text = ?
+      WHERE id = ? AND tenant_id = ?`,
+      [
+        data.isPreorder ? 1 : 0,
+        data.preorderWindowEnd || null,
+        data.preorderShipStart || null,
+        data.preorderShipEnd || null,
+        data.preorderBadgeText || 'Pre-orden',
+        data.preorderPolicyText || null,
+        productId,
+        tenantId,
+      ]
+    ) as any;
+
+    if ((result as ResultSetHeader).affectedRows === 0) {
+      throw new AppError('Producto no encontrado', 404);
+    }
+
+    return this.findById(productId, tenantId);
+  }
 }
 
 export const productsService = new ProductsService();

@@ -336,7 +336,8 @@ export class AuthService {
               u.delivery_latitude, u.delivery_longitude, u.profile_completed,
               u.created_at, u.updated_at,
               t.plan AS tenant_plan, t.name AS tenant_name, t.slug AS tenant_slug, t.max_users, t.max_products,
-              t.trial_ends_at AS tenant_trial_ends_at
+              t.trial_ends_at AS tenant_trial_ends_at, t.enabled_modules AS tenant_enabled_modules,
+              t.business_type AS tenant_business_type
        FROM users u
        LEFT JOIN tenants t ON t.id = u.tenant_id
        WHERE u.id = ?`,
@@ -356,12 +357,12 @@ export class AuthService {
       role: user.role,
       avatar: user.avatar || undefined,
       isActive: user.is_active,
-      phone: user.phone || undefined,
-      cedula: user.cedula || undefined,
-      department: user.department || undefined,
-      municipality: user.municipality || undefined,
-      address: user.address || undefined,
-      neighborhood: user.neighborhood || undefined,
+      phone: decryptNullable(user.phone) || undefined,
+      cedula: decryptNullable(user.cedula) || undefined,
+      department: decryptNullable(user.department) || undefined,
+      municipality: decryptNullable(user.municipality) || undefined,
+      address: decryptNullable(user.address) || undefined,
+      neighborhood: decryptNullable(user.neighborhood) || undefined,
       deliveryLatitude: user.delivery_latitude ?? undefined,
       deliveryLongitude: user.delivery_longitude ?? undefined,
       profileCompleted: !!user.profile_completed,
@@ -371,6 +372,11 @@ export class AuthService {
       tenantMaxUsers: user.max_users ?? undefined,
       tenantMaxProducts: user.max_products ?? undefined,
       tenantTrialEndsAt: user.tenant_trial_ends_at ?? undefined,
+      enabledModules: user.tenant_enabled_modules
+        ? (typeof user.tenant_enabled_modules === 'string'
+            ? JSON.parse(user.tenant_enabled_modules)
+            : user.tenant_enabled_modules)
+        : null,
       createdAt: user.created_at,
       updatedAt: user.updated_at,
     } as any;
@@ -423,6 +429,118 @@ export class AuthService {
     );
 
     return this.getProfile(userId);
+  }
+
+  // ── Saved Addresses ──────────────────────────────────────────────────────
+
+  async getUserAddresses(userId: string) {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT * FROM user_addresses WHERE user_id = ? ORDER BY is_default DESC, created_at DESC',
+      [userId]
+    );
+    return (rows as any[]).map(r => ({
+      id: r.id,
+      label: r.label,
+      department: decryptNullable(r.department),
+      municipality: decryptNullable(r.municipality),
+      address: decryptNullable(r.address),
+      neighborhood: decryptNullable(r.neighborhood),
+      deliveryLatitude: r.delivery_latitude ?? undefined,
+      deliveryLongitude: r.delivery_longitude ?? undefined,
+      isDefault: !!r.is_default,
+    }));
+  }
+
+  async addUserAddress(userId: string, data: {
+    label: string;
+    department: string;
+    municipality: string;
+    address: string;
+    neighborhood?: string;
+    deliveryLatitude?: number;
+    deliveryLongitude?: number;
+    isDefault?: boolean;
+  }) {
+    const id = uuidv4();
+    if (data.isDefault) {
+      await db.execute('UPDATE user_addresses SET is_default = 0 WHERE user_id = ?', [userId]);
+    }
+    await db.execute(
+      `INSERT INTO user_addresses
+         (id, user_id, label, department, municipality, address, neighborhood, delivery_latitude, delivery_longitude, is_default)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, userId,
+        data.label,
+        encryptNullable(data.department),
+        encryptNullable(data.municipality),
+        encryptNullable(data.address),
+        encryptNullable(data.neighborhood || null),
+        data.deliveryLatitude ?? null,
+        data.deliveryLongitude ?? null,
+        data.isDefault ? 1 : 0,
+      ]
+    );
+    return this.getUserAddresses(userId);
+  }
+
+  async updateUserAddress(userId: string, addressId: string, data: {
+    label?: string;
+    department?: string;
+    municipality?: string;
+    address?: string;
+    neighborhood?: string;
+    deliveryLatitude?: number;
+    deliveryLongitude?: number;
+    isDefault?: boolean;
+  }) {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT id FROM user_addresses WHERE id = ? AND user_id = ?',
+      [addressId, userId]
+    );
+    if ((rows as any[]).length === 0) throw new AppError('Dirección no encontrada', 404);
+
+    if (data.isDefault) {
+      await db.execute('UPDATE user_addresses SET is_default = 0 WHERE user_id = ?', [userId]);
+    }
+
+    const updates: string[] = [];
+    const values: any[] = [];
+    if (data.label !== undefined) { updates.push('label = ?'); values.push(data.label); }
+    if (data.department !== undefined) { updates.push('department = ?'); values.push(encryptNullable(data.department)); }
+    if (data.municipality !== undefined) { updates.push('municipality = ?'); values.push(encryptNullable(data.municipality)); }
+    if (data.address !== undefined) { updates.push('address = ?'); values.push(encryptNullable(data.address)); }
+    if (data.neighborhood !== undefined) { updates.push('neighborhood = ?'); values.push(encryptNullable(data.neighborhood)); }
+    if (data.deliveryLatitude !== undefined) { updates.push('delivery_latitude = ?'); values.push(data.deliveryLatitude); }
+    if (data.deliveryLongitude !== undefined) { updates.push('delivery_longitude = ?'); values.push(data.deliveryLongitude); }
+    if (data.isDefault !== undefined) { updates.push('is_default = ?'); values.push(data.isDefault ? 1 : 0); }
+
+    if (updates.length > 0) {
+      values.push(addressId);
+      await db.execute(`UPDATE user_addresses SET ${updates.join(', ')} WHERE id = ?`, values);
+    }
+    return this.getUserAddresses(userId);
+  }
+
+  async deleteUserAddress(userId: string, addressId: string) {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT id FROM user_addresses WHERE id = ? AND user_id = ?',
+      [addressId, userId]
+    );
+    if ((rows as any[]).length === 0) throw new AppError('Dirección no encontrada', 404);
+    await db.execute('DELETE FROM user_addresses WHERE id = ?', [addressId]);
+    return this.getUserAddresses(userId);
+  }
+
+  async setDefaultUserAddress(userId: string, addressId: string) {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT id FROM user_addresses WHERE id = ? AND user_id = ?',
+      [addressId, userId]
+    );
+    if ((rows as any[]).length === 0) throw new AppError('Dirección no encontrada', 404);
+    await db.execute('UPDATE user_addresses SET is_default = 0 WHERE user_id = ?', [userId]);
+    await db.execute('UPDATE user_addresses SET is_default = 1 WHERE id = ?', [addressId]);
+    return this.getUserAddresses(userId);
   }
 
   async changePassword(

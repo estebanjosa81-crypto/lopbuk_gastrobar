@@ -19,6 +19,11 @@ export interface ProductoCarrito {
   // Peso del producto (ferretería) en kg para cálculo de flota
   weightKg?: number | null;
   productType?: string;
+  // Pre-orden
+  isPreorder?: boolean;
+  preorderShipStart?: string | null;
+  preorderShipEnd?: string | null;
+  preorderBadgeText?: string;
 }
 
 export interface PedidoForm {

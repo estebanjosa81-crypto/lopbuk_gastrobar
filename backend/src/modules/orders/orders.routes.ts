@@ -13,6 +13,60 @@ import { autoAssignVehicle, calcOrderWeight } from '../fleet';
 const router: ReturnType<typeof Router> = Router();
 
 // =============================================
+// INVENTORY HOLDS — reserva de stock durante checkout
+// =============================================
+async function checkStockAvailability(
+  items: { productId: string; productName?: string; quantity: number }[],
+  tenantId: string
+): Promise<{ ok: boolean; conflict?: string }> {
+  for (const item of items) {
+    if (!item.productId) continue;
+    const [rows] = await pool.query(
+      `SELECT p.name,
+              p.stock - COALESCE(
+                (SELECT SUM(h.quantity) FROM inventory_holds h
+                 WHERE h.product_id = p.id AND h.expires_at > NOW()), 0
+              ) AS available
+       FROM products p
+       WHERE p.id = ? AND p.tenant_id = ?`,
+      [item.productId, tenantId]
+    ) as any;
+    if (!rows || rows.length === 0) continue;
+    if (Number(rows[0].available) < item.quantity) {
+      return { ok: false, conflict: rows[0].name || item.productName || item.productId };
+    }
+  }
+  return { ok: true };
+}
+
+async function createHolds(
+  orderId: string,
+  tenantId: string,
+  items: { productId: string; quantity: number }[],
+  expiresAt: Date
+): Promise<void> {
+  for (const item of items) {
+    if (!item.productId) continue;
+    await pool.query(
+      `INSERT INTO inventory_holds (id, order_id, product_id, tenant_id, quantity, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), orderId, item.productId, tenantId, item.quantity, expiresAt]
+    );
+  }
+}
+
+async function releaseHolds(orderId: string): Promise<void> {
+  await pool.query('DELETE FROM inventory_holds WHERE order_id = ?', [orderId]);
+}
+
+async function extendHolds(orderId: string, newExpiresAt: Date): Promise<void> {
+  await pool.query(
+    'UPDATE inventory_holds SET expires_at = ? WHERE order_id = ?',
+    [newExpiresAt, orderId]
+  );
+}
+
+// =============================================
 // PUBLIC: Crear pedido desde el storefront (sin auth)
 // =============================================
 router.post(
@@ -61,6 +115,16 @@ router.post(
         tenantId = tenants[0].id;
       }
 
+      // Verificar stock disponible (descontando holds activos de otros checkouts)
+      const stockCheck = await checkStockAvailability(items, tenantId);
+      if (!stockCheck.ok) {
+        res.status(409).json({
+          success: false,
+          error: `Stock insuficiente para "${stockCheck.conflict}". Otro cliente está en proceso de compra o el stock se agotó.`,
+        });
+        return;
+      }
+
       // Generate order number
       const orderNumber = `PED-${Date.now().toString(36).toUpperCase()}`;
       const orderId = uuidv4();
@@ -102,14 +166,20 @@ router.post(
       for (const item of items) {
         await pool.query(
           `INSERT INTO storefront_order_items
-            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price, size, color)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price, size, color,
+             is_preorder, preorder_ship_start, preorder_ship_end)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [orderId, item.productId, item.productName, item.productImage || null,
             item.quantity, item.unitPrice, item.originalPrice || item.unitPrice, item.discountPercent || 0,
             item.unitPrice * item.quantity,
-            item.size || null, item.color || null]
+            item.size || null, item.color || null,
+            item.isPreorder ? 1 : 0, item.preorderShipStart || null, item.preorderShipEnd || null]
         );
       }
+
+      // Crear holds de 24h para contraentrega
+      const holdExpiry24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await createHolds(orderId, tenantId, items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })), holdExpiry24h).catch(() => {});
 
       // Fire merchant notification (async, non-blocking)
       try {
@@ -196,22 +266,74 @@ router.post(
         tenantId = tenants[0].id;
       }
 
-      // Apply 10% online payment discount to each item
+      // Verificar si el descuento online está habilitado para este tenant
+      let onlineDiscountEnabled = false;
+      try {
+        const [siRows] = await pool.query(
+          'SELECT online_discount_enabled FROM store_info WHERE tenant_id = ? LIMIT 1', [tenantId]
+        ) as any;
+        if (siRows?.length > 0) onlineDiscountEnabled = siRows[0].online_discount_enabled === 1;
+      } catch { /* column may not exist */ }
+
+      // Verificar stock disponible antes de crear la preferencia
+      const mpStockCheck = await checkStockAvailability(items, tenantId);
+      if (!mpStockCheck.ok) {
+        res.status(409).json({
+          success: false,
+          error: `Stock insuficiente para "${mpStockCheck.conflict}". Otro cliente está en proceso de compra o el stock se agotó.`,
+        });
+        return;
+      }
+
+      // Aplicar descuento online si está habilitado (10%)
       const ONLINE_DISCOUNT = 0.10;
       const discountedItems = items.map((item: any) => ({
         ...item,
-        unitPrice: Math.round(item.unitPrice * (1 - ONLINE_DISCOUNT)),
+        unitPrice: onlineDiscountEnabled
+          ? Math.round(Number(item.unitPrice) * (1 - ONLINE_DISCOUNT))
+          : Number(item.unitPrice),
       }));
 
       const subtotal = discountedItems.reduce((sum: number, item: any) => sum + (item.unitPrice * item.quantity), 0);
       const total = Math.max(0, subtotal - discount);
 
-      // Create order in DB
       const orderNumber = `PED-${Date.now().toString(36).toUpperCase()}`;
       const orderId = uuidv4();
       const couponNote = couponCode ? ` [Cupón: ${couponCode} - Desc: $${discount}]` : '';
-      const finalNotes = `[PAGO EN LÍNEA MP -10%] ${notes || ''}${couponNote}`.trim();
+      const onlineDiscountNote = onlineDiscountEnabled ? '[PAGO EN LÍNEA MP -10%] ' : '[PAGO EN LÍNEA MP] ';
+      const finalNotes = `${onlineDiscountNote}${notes || ''}${couponNote}`.trim();
 
+      // ── CREAR PREFERENCIA MP PRIMERO — si falla, no se inserta la orden ──
+      const mpClient = new MercadoPagoConfig({ accessToken: mpToken });
+      const preferenceClient = new Preference(mpClient);
+
+      const preference = await preferenceClient.create({
+        body: {
+          external_reference: orderId,
+          items: discountedItems.map((item: any) => ({
+            id: item.productId,
+            title: item.productName,
+            quantity: parseInt(item.quantity, 10),
+            unit_price: parseFloat(Number(item.unitPrice).toFixed(2)),
+            currency_id: 'COP',
+          })),
+          payer: {
+            name: customerName,
+            email: customerEmail || 'cliente@tienda.com',
+            phone: { number: customerPhone },
+            identification: customerCedula ? { type: 'CC', number: customerCedula } : undefined,
+          },
+          back_urls: {
+            success: `${frontendUrl}/?mp=success&order=${orderId}`,
+            failure: `${frontendUrl}/?mp=failure&order=${orderId}`,
+            pending: `${frontendUrl}/?mp=pending&order=${orderId}`,
+          },
+          auto_return: 'approved',
+          metadata: { orderId, orderNumber },
+        },
+      });
+
+      // Insertar orden solo si la preferencia MP fue exitosa
       await pool.query(
         `INSERT INTO storefront_orders
           (id, tenant_id, order_number, customer_name, customer_phone, customer_email, customer_cedula,
@@ -223,47 +345,23 @@ router.post(
           subtotal, discount, total]
       );
 
+      const itemDiscountPct = onlineDiscountEnabled ? 10 : 0;
       for (const item of discountedItems) {
         await pool.query(
           `INSERT INTO storefront_order_items
-            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 10, ?)`,
+            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price,
+             is_preorder, preorder_ship_start, preorder_ship_end)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [orderId, item.productId, item.productName, item.productImage || null,
-            item.quantity, item.unitPrice, item.originalUnitPrice || item.unitPrice,
-            item.unitPrice * item.quantity]
+            item.quantity, item.unitPrice, item.originalUnitPrice || item.unitPrice, itemDiscountPct,
+            item.unitPrice * item.quantity,
+            item.isPreorder ? 1 : 0, item.preorderShipStart || null, item.preorderShipEnd || null]
         );
       }
 
-      // Create MercadoPago preference
-      const mpClient = new MercadoPagoConfig({ accessToken: mpToken });
-      const preferenceClient = new Preference(mpClient);
-
-      const preference = await preferenceClient.create({
-        body: {
-          external_reference: orderId,
-          items: discountedItems.map((item: any) => ({
-            id: item.productId,
-            title: item.productName,
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            currency_id: 'COP',
-          })),
-          payer: {
-            name: customerName,
-            email: customerEmail || 'cliente@perfummua.com',
-            phone: { number: customerPhone },
-            identification: customerCedula ? { type: 'CC', number: customerCedula } : undefined,
-          },
-          back_urls: {
-            success: `${frontendUrl}/?mp=success&order=${orderId}`,
-            failure: `${frontendUrl}/?mp=failure&order=${orderId}`,
-            pending: `${frontendUrl}/?mp=pending&order=${orderId}`,
-          },
-          auto_return: 'approved',
-          statement_descriptor: 'PERFUM MUA',
-          metadata: { orderId, orderNumber },
-        },
-      });
+      // Crear holds de 3h para pago en línea
+      const holdExpiry3h = new Date(Date.now() + 3 * 60 * 60 * 1000);
+      await createHolds(orderId, tenantId, discountedItems.map((i: any) => ({ productId: i.productId, quantity: i.quantity })), holdExpiry3h).catch(() => {});
 
       res.status(201).json({
         success: true,
@@ -396,11 +494,13 @@ router.post(
       for (const item of items) {
         await pool.query(
           `INSERT INTO storefront_order_items
-            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price,
+             is_preorder, preorder_ship_start, preorder_ship_end)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
           [orderId, item.productId, item.productName, item.productImage || null,
             item.quantity, item.unitPrice, item.originalUnitPrice || item.unitPrice,
-            item.unitPrice * item.quantity]
+            item.unitPrice * item.quantity,
+            item.isPreorder ? 1 : 0, item.preorderShipStart || null, item.preorderShipEnd || null]
         );
       }
 
@@ -602,11 +702,13 @@ router.post(
       for (const item of items) {
         await pool.query(
           `INSERT INTO storefront_order_items
-            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+            (order_id, product_id, product_name, product_image, quantity, unit_price, original_price, discount_percent, total_price,
+             is_preorder, preorder_ship_start, preorder_ship_end)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
           [orderId, item.productId, item.productName, item.productImage || null,
             item.quantity, item.unitPrice, item.originalUnitPrice || item.unitPrice,
-            item.unitPrice * item.quantity]
+            item.unitPrice * item.quantity,
+            item.isPreorder ? 1 : 0, item.preorderShipStart || null, item.preorderShipEnd || null]
         );
       }
 
@@ -779,15 +881,19 @@ router.post('/mercadopago-webhook', async (req: Request, res: Response) => {
 
     if (mpStatus === 'approved') {
       await pool.query(
-        "UPDATE storefront_orders SET status = 'confirmado' WHERE id = ? AND status = 'pendiente'",
-        [orderId]
+        "UPDATE storefront_orders SET status = 'confirmado', gateway_payment_id = ? WHERE id = ? AND status = 'pendiente'",
+        [String(paymentId), orderId]
       );
+      // Extender hold a 30 días al confirmar pago
+      const holdExpiry30d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await extendHolds(orderId, holdExpiry30d).catch(() => {});
       console.log(`MP webhook: order ${orderId} confirmed (payment ${paymentId})`);
     } else if (mpStatus === 'rejected' || mpStatus === 'cancelled') {
       await pool.query(
         "UPDATE storefront_orders SET status = 'cancelado' WHERE id = ? AND status = 'pendiente'",
         [orderId]
       );
+      await releaseHolds(orderId).catch(() => {});
       console.log(`MP webhook: order ${orderId} cancelled (${mpStatus})`);
     }
 
@@ -929,9 +1035,6 @@ router.get(
       if (status) {
         whereClause += ' AND o.status = ?';
         params.push(status);
-      } else {
-        // Exclude MP/ADDI/Sistecredito orders that are still 'pendiente' (user abandoned checkout without paying)
-        whereClause += " AND NOT (o.payment_method IN ('mercadopago', 'addi', 'sistecredito') AND o.status = 'pendiente')";
       }
 
       if (search) {
@@ -1010,8 +1113,7 @@ router.get('/stats', async (req: Request, res: Response) => {
         SUM(CASE WHEN status = 'cancelado' THEN 1 ELSE 0 END) as cancelled,
         SUM(CASE WHEN status != 'cancelado' THEN total ELSE 0 END) as totalRevenue
        FROM storefront_orders
-       WHERE tenant_id = ?
-         AND NOT (payment_method IN ('mercadopago', 'addi', 'sistecredito') AND status = 'pendiente')`,
+       WHERE tenant_id = ?`,
       [tenantId]
     ) as any;
 
@@ -1118,6 +1220,7 @@ router.put(
       );
 
       let invoiceNumber: string | null = null;
+      let ivaEnabled = false;
 
       // ================================================================
       // When marked as "entregado" → Generate sale + deduct stock
@@ -1161,10 +1264,15 @@ router.put(
           [currentNumber, tenantId]
         );
 
-        // Calculate totals
+        // Calculate totals — IVA solo si está habilitado en store_info
         const subtotal = orderItems.reduce((sum: number, item: any) => sum + Number(item.totalPrice), 0);
-        const taxRate = 0.19;
-        const tax = subtotal * taxRate;
+        try {
+          const [ivaRows] = await connection.query(
+            'SELECT enable_iva FROM store_info WHERE tenant_id = ? LIMIT 1', [tenantId]
+          ) as any;
+          ivaEnabled = ivaRows.length > 0 && ivaRows[0].enable_iva != null ? Boolean(ivaRows[0].enable_iva) : false;
+        } catch { ivaEnabled = false; }
+        const tax = ivaEnabled ? Math.round(subtotal * 0.19 * 100) / 100 : 0;
         const total = subtotal + tax;
 
         // Check for active cash session
@@ -1243,15 +1351,38 @@ router.put(
         );
       }
 
-      // ================================================================
-      // When cancelled → restore stock if it was already deducted (entregado can't be cancelled above, so this handles other states)
-      // ================================================================
-      if (status === 'cancelado') {
-        // No stock was deducted yet since stock only deducts on "entregado"
-        // Just mark as cancelled — no stock changes needed
+      // Liberar holds al entregar o cancelar
+      if (status === 'entregado' || status === 'cancelado') {
+        await releaseHolds(orderId).catch(() => {});
       }
 
       await connection.commit();
+
+      // Alegra: enviar factura electrónica async (no bloquea la respuesta)
+      if (status === 'entregado' && invoiceNumber) {
+        setImmediate(async () => {
+          try {
+            const { alegraService } = await import('../alegra/alegra.service');
+            const [oi] = await pool.query(
+              `SELECT oi.product_name as productName, oi.quantity, oi.total_price as totalPrice
+               FROM storefront_order_items oi WHERE oi.order_id = ?`, [orderId]
+            ) as any;
+            await alegraService.createInvoice({
+              tenantId, invoiceNumber,
+              customerName: order.customer_name || 'Consumidor Final',
+              customerEmail: order.customer_email || undefined,
+              customerPhone: order.customer_phone || undefined,
+              customerCedula: order.customer_cedula || undefined,
+              date: new Date().toISOString().split('T')[0],
+              items: (oi as any[]).map((i: any) => ({
+                name: i.productName, quantity: i.quantity,
+                price: Number(i.totalPrice) / i.quantity, applyTax: ivaEnabled,
+              })),
+              observations: `Pedido online ${order.order_number}`,
+            });
+          } catch { /* Alegra no crítico */ }
+        });
+      }
 
       res.json({
         success: true,

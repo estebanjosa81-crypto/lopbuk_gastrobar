@@ -13,8 +13,10 @@ import {
   BookOpen, Search, ToggleLeft, ToggleRight, ChevronLeft,
   Banknote, CreditCard, Smartphone, ArrowLeftRight, Layers,
   ChevronRight, User, DollarSign, FileText, Printer, TrendingDown, Download,
+  CalendarDays,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { RestBarReservations } from '@/components/restbar-reservations'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCOP = (n: number) =>
@@ -34,7 +36,7 @@ const ITEM_STATUS: Record<string, { label: string; color: string }> = {
   cancelado:      { label: 'Cancelado',    color: 'bg-red-500/20 text-red-400' },
 }
 
-type Tab = 'mesas' | 'comandas' | 'cocina' | 'bar' | 'caja' | 'reportes' | 'menu'
+type Tab = 'mesas' | 'reservas' | 'comandas' | 'cocina' | 'bar' | 'caja' | 'reportes' | 'menu'
 
 const RESTAURANT_ROLES = ['mesero', 'cocinero', 'cajero', 'bartender', 'administrador_rb']
 
@@ -53,9 +55,18 @@ export function RestBar() {
   }
 
   const [tab, setTab] = useState<Tab>(defaultTab)
+  const [pendingReservations, setPendingReservations] = useState(0)
 
-  const tabs: { id: Tab; label: string; icon: any; roles?: string[] }[] = [
+  useEffect(() => {
+    if (!isAdmin) return
+    api.getRestbarPendingReservationsCount()
+      .then(r => { if (r.success && r.data != null) setPendingReservations(r.data as number) })
+      .catch(() => { /* silencioso */ })
+  }, [isAdmin])
+
+  const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'mesas',    label: 'Mesas',    icon: TableProperties },
+    { id: 'reservas', label: 'Reservas', icon: CalendarDays },
     { id: 'menu',     label: 'Menú',     icon: BookOpen },
     { id: 'comandas', label: 'Comandas', icon: UtensilsCrossed },
     { id: 'cocina',   label: 'Cocina',   icon: ChefHat },
@@ -66,6 +77,7 @@ export function RestBar() {
 
   const visibleTabs = tabs.filter(t => {
     if (!isAdmin && t.id === 'mesas')    return false
+    if (!isAdmin && t.id === 'reservas') return false
     if (!isAdmin && t.id === 'menu')     return false
     if (!isAdmin && t.id === 'reportes') return false
     if (role === 'mesero' && t.id === 'cocina') return false
@@ -101,6 +113,11 @@ export function RestBar() {
             >
               <t.icon className="h-3.5 w-3.5" />
               {t.label}
+              {t.id === 'reservas' && pendingReservations > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
+                  {pendingReservations}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -109,6 +126,7 @@ export function RestBar() {
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         {tab === 'mesas'    && <MesasTab />}
+        {tab === 'reservas' && <RestBarReservations />}
         {tab === 'menu'     && <MenuTab />}
         {tab === 'comandas' && <ComandasTab role={role} />}
         {tab === 'cocina'   && <AreaDisplayTab area="cocina" />}
@@ -2201,6 +2219,14 @@ function ReportesTab() {
   const [to,             setTo]             = useState('')
   const [showSocio,      setShowSocio]      = useState(false)
   const [socioRange,     setSocioRange]     = useState<{ from: string; to: string } | null>(null)
+  const [likesData,      setLikesData]      = useState<Array<{ id: number; name: string; category: string; imageUrl: string | null; likes: number }>>([])
+  const [likesLoading,   setLikesLoading]   = useState(true)
+
+  useEffect(() => {
+    api.getMenuLikesStats()
+      .then(r => { if (r.success && r.data) setLikesData(r.data) })
+      .finally(() => setLikesLoading(false))
+  }, [])
 
   const getRange = useCallback(() => {
     const tz = 'America/Bogota'
@@ -2666,6 +2692,73 @@ function ReportesTab() {
           )}
         </>
       )}
+
+      {/* ── Favoritos de clientes (likes del menú público) ── */}
+      <Section title="❤️  Favoritos de clientes">
+        {likesLoading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+            <span className="text-sm">Cargando favoritos...</span>
+          </div>
+        ) : likesData.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+            <p className="text-sm">Aún no hay likes de clientes en el menú público.</p>
+            <p className="text-xs opacity-60">Los likes se registran cuando los clientes navegan por el menú y tocan el corazón en un platillo.</p>
+          </div>
+        ) : (() => {
+          const maxLikes = Math.max(...likesData.map(i => i.likes), 1)
+          const withLikes = likesData.filter(i => i.likes > 0)
+          const top = withLikes.slice(0, 10)
+          return (
+            <div className="space-y-3">
+              {top.map((item, rank) => (
+                <div key={item.id} className="flex items-center gap-3">
+                  {/* Rank */}
+                  <span className={cn(
+                    'w-6 text-center text-xs font-black tabular-nums shrink-0',
+                    rank === 0 ? 'text-amber-400' : rank === 1 ? 'text-zinc-300' : rank === 2 ? 'text-orange-600' : 'text-muted-foreground',
+                  )}>
+                    {rank + 1}
+                  </span>
+                  {/* Thumbnail */}
+                  {item.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={item.imageUrl} alt={item.name} className="w-10 h-10 rounded-lg object-cover shrink-0 border border-border" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-accent shrink-0 flex items-center justify-center">
+                      <UtensilsCrossed className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  {/* Name + bar */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <p className="text-sm font-semibold truncate">{item.name}</p>
+                      <span className="flex items-center gap-1 text-xs font-bold text-rose-400 shrink-0">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                        </svg>
+                        {item.likes}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-accent/40 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-rose-500/70 transition-all"
+                        style={{ width: `${Math.max(4, Math.round((item.likes / maxLikes) * 100))}%` }}
+                      />
+                    </div>
+                    {item.category && <p className="text-[10px] text-muted-foreground mt-0.5">{item.category}</p>}
+                  </div>
+                </div>
+              ))}
+              {withLikes.length === 0 && (
+                <p className="text-center text-sm text-muted-foreground py-4">
+                  Ningún platillo tiene likes aún.
+                </p>
+              )}
+            </div>
+          )
+        })()}
+      </Section>
     </div>
   )
 }

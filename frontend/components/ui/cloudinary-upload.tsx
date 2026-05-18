@@ -19,7 +19,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 // Module-level cache so we don't hit the API on every upload
 let _cloudinaryCache: { cloudName: string; uploadPreset: string } | null = null
 
-async function getCloudinaryConfig(): Promise<{ cloudName: string; uploadPreset: string }> {
+export async function getCloudinaryConfig(): Promise<{ cloudName: string; uploadPreset: string }> {
   // 1. Use module cache
   if (_cloudinaryCache?.cloudName && _cloudinaryCache?.uploadPreset) {
     return _cloudinaryCache

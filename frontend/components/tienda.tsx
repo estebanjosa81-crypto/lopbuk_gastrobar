@@ -54,9 +54,12 @@ import {
   FileCode,
   Upload,
   Globe2,
+  Clock,
+  PackageCheck,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { StoreCustomization } from '@/components/store-customization'
+import { StoreBuilder } from '@/components/StoreBuilder'
 import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
 
 interface StoreProduct {
@@ -76,6 +79,12 @@ interface StoreProduct {
   deliveryType: 'domicilio' | 'envio' | 'ambos' | null
   isNewLaunch: boolean
   launchDate: string | null
+  // Pre-orden
+  isPreorder: boolean
+  preorderWindowEnd: string | null
+  preorderShipStart: string | null
+  preorderShipEnd: string | null
+  preorderBadgeText: string | null
 }
 
 type ActiveTab = 'catalog' | 'new-launches' | 'order-bump' | 'share' | 'contact' | 'age-gate' | 'html-sections'
@@ -121,6 +130,7 @@ export function Tienda() {
   const [stats, setStats] = useState({ total: 0, published: 0, unpublished: 0, offers: 0, delivery: 0, newLaunches: 0 })
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [showCustomization, setShowCustomization] = useState(false)
+  const [showBuilder, setShowBuilder] = useState(false)
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog')
 
   // Order Bump state
@@ -184,6 +194,15 @@ export function Tienda() {
   const [offerLabel, setOfferLabel] = useState('')
   const [offerEnd, setOfferEnd] = useState('')
   const [savingOffer, setSavingOffer] = useState(false)
+
+  // Pre-order modal state
+  const [preorderModal, setPreorderModal] = useState<{ open: boolean; product: StoreProduct | null }>({ open: false, product: null })
+  const [preorderActive, setPreorderActive] = useState(false)
+  const [preorderWindowEnd, setPreorderWindowEnd] = useState('')
+  const [preorderShipStart, setPreorderShipStart] = useState('')
+  const [preorderShipEnd, setPreorderShipEnd] = useState('')
+  const [preorderBadgeText, setPreorderBadgeText] = useState('Pre-orden')
+  const [savingPreorder, setSavingPreorder] = useState(false)
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
@@ -523,6 +542,55 @@ export function Tienda() {
     setOfferEnd(product.offerEnd ? product.offerEnd.slice(0, 16) : '')
   }
 
+  const openPreorderModal = (product: StoreProduct) => {
+    setPreorderModal({ open: true, product })
+    setPreorderActive(product.isPreorder)
+    setPreorderWindowEnd(product.preorderWindowEnd ? product.preorderWindowEnd.slice(0, 16) : '')
+    setPreorderShipStart(product.preorderShipStart || '')
+    setPreorderShipEnd(product.preorderShipEnd || '')
+    setPreorderBadgeText(product.preorderBadgeText || 'Pre-orden')
+  }
+
+  const handleSavePreorder = async () => {
+    if (!preorderModal.product) return
+    setSavingPreorder(true)
+    // datetime-local returns "YYYY-MM-DDTHH:mm" (no seconds); isISO8601 requires seconds
+    const toISO = (v: string): string | null => {
+      if (!v) return null
+      return v.length === 16 ? `${v}:00` : v
+    }
+    try {
+      const result = await api.updateProductPreorder(preorderModal.product.id, {
+        isPreorder: preorderActive,
+        preorderWindowEnd: toISO(preorderWindowEnd),
+        preorderShipStart: preorderShipStart || null,
+        preorderShipEnd: preorderShipEnd || null,
+        preorderBadgeText: preorderBadgeText || 'Pre-orden',
+      })
+      if (result.success) {
+        setProducts(prev => prev.map(p =>
+          p.id === preorderModal.product!.id
+            ? {
+                ...p,
+                isPreorder: preorderActive,
+                preorderWindowEnd: preorderWindowEnd || null,
+                preorderShipStart: preorderShipStart || null,
+                preorderShipEnd: preorderShipEnd || null,
+                preorderBadgeText: preorderBadgeText || 'Pre-orden',
+              }
+            : p
+        ))
+        setPreorderModal({ open: false, product: null })
+      } else {
+        setErrorMsg(result.error || 'Error al guardar pre-orden')
+      }
+    } catch {
+      setErrorMsg('Error de conexión al guardar pre-orden')
+    } finally {
+      setSavingPreorder(false)
+    }
+  }
+
   const handleSaveOffer = async () => {
     if (!offerModal.product) return
     const price = parseFloat(offerPrice)
@@ -719,6 +787,11 @@ export function Tienda() {
                 <Truck className="h-3 w-3 mr-1" /> Domicilio
               </Badge>
             )}
+            {product.isPreorder && (
+              <Badge className="text-xs bg-amber-500 hover:bg-amber-600 text-white">
+                <PackageCheck className="h-3 w-3 mr-1" /> Pre-orden
+              </Badge>
+            )}
           </div>
 
           {/* Discount badge */}
@@ -844,6 +917,21 @@ export function Tienda() {
               <Sparkles className="h-4 w-4" />
               {inNewLaunchTab && <span className="ml-1">{isNew ? 'Quitar' : 'Agregar'}</span>}
             </Button>
+
+            {/* Pre-orden button */}
+            <Button
+              variant={product.isPreorder ? 'default' : 'outline'}
+              size="sm"
+              className={product.isPreorder
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                : 'border-amber-300 text-amber-600 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20'
+              }
+              disabled={isToggling}
+              onClick={() => openPreorderModal(product)}
+              title="Configurar pre-orden"
+            >
+              <PackageCheck className="h-4 w-4" />
+            </Button>
           </div>
           {isOffer && product.offerLabel && (
             <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
@@ -886,6 +974,10 @@ export function Tienda() {
           <Button variant="outline" size="sm" onClick={() => setShowCustomization(true)}>
             <Layout className="h-4 w-4 mr-2" />
             Personalizar Tienda
+          </Button>
+          <Button size="sm" onClick={() => setShowBuilder(true)} className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white hover:from-indigo-600 hover:to-violet-700 border-0">
+            <Sparkles className="h-4 w-4 mr-2" />
+            Editor Visual
           </Button>
           <Button variant="outline" size="sm" onClick={fetchProducts} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -2621,6 +2713,134 @@ export function Tienda() {
           </div>
         </>
       )}
+
+      {/* ── Pre-orden Modal ── */}
+      {preorderModal.open && preorderModal.product && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setPreorderModal({ open: false, product: null })} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-background rounded-xl shadow-2xl w-full max-w-md border border-border overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-border">
+                <div>
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                    <PackageCheck className="h-5 w-5 text-amber-500" />
+                    Configurar Pre-orden
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{preorderModal.product.name}</p>
+                </div>
+                <button
+                  onClick={() => setPreorderModal({ open: false, product: null })}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh]">
+                {/* Toggle on/off */}
+                <div
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${preorderActive ? 'border-amber-400 bg-amber-500/10' : 'border-border bg-muted/30'}`}
+                  onClick={() => setPreorderActive(v => !v)}
+                >
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${preorderActive ? 'bg-amber-500' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${preorderActive ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{preorderActive ? 'Pre-orden activada' : 'Pre-orden desactivada'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {preorderActive ? 'El producto aparece en tienda aunque tenga stock 0' : 'Activa para vender antes del stock disponible'}
+                    </p>
+                  </div>
+                </div>
+
+                {preorderActive && (
+                  <>
+                    {/* Badge text */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground">Texto del badge <span className="text-muted-foreground font-normal">(máx. 60 caracteres)</span></label>
+                      <input
+                        type="text"
+                        value={preorderBadgeText}
+                        onChange={e => setPreorderBadgeText(e.target.value.slice(0, 60))}
+                        placeholder="Pre-orden"
+                        className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <span className={`inline-block text-[11px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide bg-amber-500 text-white`}>
+                          {preorderBadgeText || 'Pre-orden'}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">vista previa del badge</span>
+                      </div>
+                    </div>
+
+                    {/* Window end */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        Cierre de pre-orden <span className="text-muted-foreground font-normal">(opcional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={preorderWindowEnd}
+                        onChange={e => setPreorderWindowEnd(e.target.value)}
+                        className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <p className="text-[11px] text-muted-foreground">Fecha/hora en que se cierra la pre-orden. Deja vacío para mantenerla abierta indefinidamente.</p>
+                    </div>
+
+                    {/* Ship range */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                        <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+                        Rango de envío estimado <span className="text-muted-foreground font-normal">(opcional)</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground">Desde</p>
+                          <input
+                            type="date"
+                            value={preorderShipStart}
+                            onChange={e => setPreorderShipStart(e.target.value)}
+                            className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground">Hasta</p>
+                          <input
+                            type="date"
+                            value={preorderShipEnd}
+                            onChange={e => setPreorderShipEnd(e.target.value)}
+                            className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Se muestra al cliente en la tienda y en el checkout.</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end p-5 border-t border-border">
+                <Button variant="outline" size="sm" onClick={() => setPreorderModal({ open: false, product: null })}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5"
+                  onClick={handleSavePreorder}
+                  disabled={savingPreorder}
+                >
+                  {savingPreorder ? <RefreshCw className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+                  {savingPreorder ? 'Guardando...' : (preorderActive ? 'Activar Pre-orden' : 'Desactivar Pre-orden')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showBuilder && <StoreBuilder onClose={() => setShowBuilder(false)} />}
     </div>
   )
 }

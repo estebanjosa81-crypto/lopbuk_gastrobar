@@ -154,6 +154,32 @@ class ApiService {
     })
   }
 
+  async getUserAddresses() {
+    return this.request<any[]>('/auth/addresses')
+  }
+
+  async addUserAddress(data: {
+    label: string; department: string; municipality: string; address: string;
+    neighborhood?: string; deliveryLatitude?: number; deliveryLongitude?: number; isDefault?: boolean;
+  }) {
+    return this.request<any[]>('/auth/addresses', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async updateUserAddress(id: string, data: {
+    label?: string; department?: string; municipality?: string; address?: string;
+    neighborhood?: string; deliveryLatitude?: number; deliveryLongitude?: number; isDefault?: boolean;
+  }) {
+    return this.request<any[]>(`/auth/addresses/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+
+  async deleteUserAddress(id: string) {
+    return this.request<any[]>(`/auth/addresses/${id}`, { method: 'DELETE' })
+  }
+
+  async setDefaultUserAddress(id: string) {
+    return this.request<any[]>(`/auth/addresses/${id}/default`, { method: 'PATCH' })
+  }
+
   async logout() {
     this.setToken(null)
     // Ask backend to clear the httpOnly cookie
@@ -823,6 +849,19 @@ class ApiService {
     })
   }
 
+  async updateProductPreorder(productId: string, data: {
+    isPreorder: boolean
+    preorderWindowEnd: string | null
+    preorderShipStart: string | null
+    preorderShipEnd: string | null
+    preorderBadgeText: string
+  }) {
+    return this.request<any>(`/products/${productId}/preorder`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
   async getPublicNewLaunches(store?: string) {
     const q = store ? `?store=${encodeURIComponent(store)}` : ''
     return this.request<any[]>(`/storefront/new-launches${q}`)
@@ -832,7 +871,7 @@ class ApiService {
   // Cart Settings
   // =============================================
 
-  async updateCartSettings(data: { cartMinPurchase: number }) {
+  async updateCartSettings(data: { cartMinPurchase: number; cartDeliveryFee?: number }) {
     return this.request<any>('/storefront/cart-settings', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -953,7 +992,7 @@ class ApiService {
   // Announcement Bar endpoints
   // =============================================
 
-  async updateAnnouncementBar(data: { text: string; linkUrl?: string; bgColor?: string; textColor?: string; isActive: boolean }) {
+  async updateAnnouncementBar(data: { text: string; linkUrl?: string; bgColor?: string; textColor?: string; isActive: boolean; scrollSpeed?: number }) {
     return this.request<any>('/storefront/announcement-bar', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -1474,6 +1513,27 @@ class ApiService {
     })
   }
 
+  // ─── WhatsApp ─────────────────────────────────────────────────────────────────
+
+  async getWhatsAppStatus() {
+    return this.request<any>('/whatsapp/status')
+  }
+
+  async connectWhatsApp(data: { whatsappNumber?: string }) {
+    return this.request<any>('/whatsapp/connect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async disconnectWhatsApp() {
+    return this.request<any>('/whatsapp/disconnect', { method: 'DELETE' })
+  }
+
+  async getWhatsAppQR() {
+    return this.request<any>('/whatsapp/qr')
+  }
+
   // ─── Printers ─────────────────────────────────────────────────────────────────
 
   async getPrinters() {
@@ -1750,6 +1810,56 @@ class ApiService {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
     })
+  }
+
+  async getRestbarPendingReservationsCount() {
+    return this.request<number>('/restbar/reservations/pending-count')
+  }
+
+  async getRestbarReservations(params?: { date?: string; status?: string; page?: number }) {
+    const q = new URLSearchParams()
+    if (params?.date) q.set('date', params.date)
+    if (params?.status) q.set('status', params.status)
+    if (params?.page) q.set('page', String(params.page))
+    const qs = q.toString()
+    return this.request<any>(`/restbar/reservations${qs ? `?${qs}` : ''}`)
+  }
+
+  async getRestbarReservationSettings() {
+    return this.request<any>('/restbar/reservations/settings')
+  }
+
+  async updateRestbarReservationSettings(data: Record<string, any>) {
+    return this.request<any>('/restbar/reservations/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async confirmRestbarReservation(id: string, tableId?: string) {
+    return this.request<any>(`/restbar/reservations/${id}/confirm`, {
+      method: 'PATCH',
+      body: JSON.stringify({ tableId }),
+    })
+  }
+
+  async cancelRestbarReservation(id: string, reason: string) {
+    return this.request<any>(`/restbar/reservations/${id}/cancel`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason }),
+    })
+  }
+
+  async completeRestbarReservation(id: string) {
+    return this.request<any>(`/restbar/reservations/${id}/complete`, { method: 'PATCH' })
+  }
+
+  async noShowRestbarReservation(id: string) {
+    return this.request<any>(`/restbar/reservations/${id}/noshow`, { method: 'PATCH' })
+  }
+
+  async markRestbarReservationWhatsappNotified(id: string) {
+    return this.request<any>(`/restbar/reservations/${id}/whatsapp-notified`, { method: 'PATCH' })
   }
 
   // ── Finances module ─────────────────────────────────────────────────────────
@@ -2053,6 +2163,245 @@ class ApiService {
       '/fleet/calculate-weight',
       { method: 'POST', body: JSON.stringify({ items }) }
     );
+  }
+
+  // ── Menu likes ──────────────────────────────────────────────────────────────
+  async likeMenuProduct(productId: number, tenantSlug: string, deviceId: string) {
+    return this.request<{ likes: number }>('/restbar/public-menu-like', {
+      method: 'POST',
+      body: JSON.stringify({ productId, tenantSlug, deviceId }),
+    })
+  }
+
+  async getMenuLikesStats() {
+    return this.request<Array<{ id: number; name: string; category: string; imageUrl: string | null; likes: number }>>(
+      '/restbar/likes-stats'
+    )
+  }
+
+  // ── Real Estate ─────────────────────────────────────────────────────────────
+
+  async getREStats() {
+    return this.request<any>('/realestate/stats')
+  }
+
+  // Properties
+  async getREProperties(filters?: Record<string, any>) {
+    const q = filters ? '?' + new URLSearchParams(filters as any).toString() : ''
+    return this.request<any[]>(`/realestate/properties${q}`)
+  }
+  async getREPropertyById(id: string) {
+    return this.request<any>(`/realestate/properties/${id}`)
+  }
+  async createREProperty(data: any) {
+    return this.request<any>('/realestate/properties', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateREProperty(id: string, data: any) {
+    return this.request<any>(`/realestate/properties/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  async deleteREProperty(id: string) {
+    return this.request<any>(`/realestate/properties/${id}`, { method: 'DELETE' })
+  }
+  async addREMedia(propertyId: string, data: { media_type: string; url: string; caption?: string; is_cover?: boolean }) {
+    return this.request<any>(`/realestate/properties/${propertyId}/media`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  async deleteREMedia(propertyId: string, mediaId: number) {
+    return this.request<any>(`/realestate/properties/${propertyId}/media/${mediaId}`, { method: 'DELETE' })
+  }
+
+  // Owners
+  async getREOwners() {
+    return this.request<any[]>('/realestate/owners')
+  }
+  async createREOwner(data: any) {
+    return this.request<any>('/realestate/owners', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateREOwner(id: string, data: any) {
+    return this.request<any>(`/realestate/owners/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  async deleteREOwner(id: string) {
+    return this.request<any>(`/realestate/owners/${id}`, { method: 'DELETE' })
+  }
+
+  // Clients
+  async getREClients(filters?: Record<string, any>) {
+    const q = filters ? '?' + new URLSearchParams(filters as any).toString() : ''
+    return this.request<any[]>(`/realestate/clients${q}`)
+  }
+  async createREClient(data: any) {
+    return this.request<any>('/realestate/clients', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateREClient(id: string, data: any) {
+    return this.request<any>(`/realestate/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  async deleteREClient(id: string) {
+    return this.request<any>(`/realestate/clients/${id}`, { method: 'DELETE' })
+  }
+
+  // Leads
+  async getRELeads(filters?: Record<string, any>) {
+    const q = filters ? '?' + new URLSearchParams(filters as any).toString() : ''
+    return this.request<any[]>(`/realestate/leads${q}`)
+  }
+  async getRELeadById(id: string) {
+    return this.request<any>(`/realestate/leads/${id}`)
+  }
+  async createRELead(data: any) {
+    return this.request<any>('/realestate/leads', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateRELead(id: string, data: any) {
+    return this.request<any>(`/realestate/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  async deleteRELead(id: string) {
+    return this.request<any>(`/realestate/leads/${id}`, { method: 'DELETE' })
+  }
+  async addRELeadActivity(leadId: string, data: { activity_type: string; description: string }) {
+    return this.request<any>(`/realestate/leads/${leadId}/activities`, { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  // Visits
+  async getREVisits(filters?: Record<string, any>) {
+    const q = filters ? '?' + new URLSearchParams(filters as any).toString() : ''
+    return this.request<any[]>(`/realestate/visits${q}`)
+  }
+  async createREVisit(data: any) {
+    return this.request<any>('/realestate/visits', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateREVisitStatus(id: string, status: string, extra?: any) {
+    return this.request<any>(`/realestate/visits/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, ...extra }) })
+  }
+
+  // Contracts
+  async getREContracts(filters?: Record<string, any>) {
+    const q = filters ? '?' + new URLSearchParams(filters as any).toString() : ''
+    return this.request<any[]>(`/realestate/contracts${q}`)
+  }
+  async createREContract(data: any) {
+    return this.request<any>('/realestate/contracts', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateREContractStatus(id: string, status: string) {
+    return this.request<any>(`/realestate/contracts/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  }
+
+  // Rent payments
+  async getREContractPayments(contractId: string) {
+    return this.request<any[]>(`/realestate/contracts/${contractId}/payments`)
+  }
+  async createRERentPayment(contractId: string, data: any) {
+    return this.request<any>(`/realestate/contracts/${contractId}/payments`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  async markRERentPaymentPaid(paymentId: number, data: { paid_amount: number; payment_method: string; receipt_url?: string }) {
+    return this.request<any>(`/realestate/rent-payments/${paymentId}/paid`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  // Maintenances
+  async getREMaintenances(filters?: Record<string, any>) {
+    const q = filters ? '?' + new URLSearchParams(filters as any).toString() : ''
+    return this.request<any[]>(`/realestate/maintenances${q}`)
+  }
+  async createREMaintenance(data: any) {
+    return this.request<any>('/realestate/maintenances', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateREMaintenanceStatus(id: string, status: string, extra?: any) {
+    return this.request<any>(`/realestate/maintenances/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status, ...extra }) })
+  }
+
+  // Public portal
+  async getPublicREProperties(slug: string, filters?: Record<string, any>) {
+    const q = filters ? '?' + new URLSearchParams(filters as any).toString() : ''
+    return this.request<any>(`/realestate/public/${slug}/properties${q}`)
+  }
+  async getPublicREPropertyDetail(slug: string, id: string) {
+    return this.request<any>(`/realestate/public/${slug}/properties/${id}`)
+  }
+  async registerRELead(slug: string, data: { full_name: string; phone: string; email?: string; property_id?: string; interested_in?: string; source?: string }) {
+    return this.request<any>(`/realestate/public/${slug}/leads`, { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  // ── Work Orders (Tapicería) ───────────────────────────────────────────────
+  async getWOStats() {
+    return this.request<any>('/workorders/stats')
+  }
+  async getWorkOrders(filters?: Record<string, string>) {
+    const q = filters ? '?' + new URLSearchParams(filters).toString() : ''
+    return this.request<any[]>(`/workorders${q}`)
+  }
+  async getWorkOrderById(id: string) {
+    return this.request<any>(`/workorders/${id}`)
+  }
+  async createWorkOrder(data: any) {
+    return this.request<any>('/workorders', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateWorkOrder(id: string, data: any) {
+    return this.request<any>(`/workorders/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  async updateWOStatus(id: string, status: string) {
+    return this.request<any>(`/workorders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  }
+  async deleteWorkOrder(id: string) {
+    return this.request<any>(`/workorders/${id}`, { method: 'DELETE' })
+  }
+  async addWOMaterial(id: string, data: any) {
+    return this.request<any>(`/workorders/${id}/materials`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  async removeWOMaterial(id: string, materialId: number) {
+    return this.request<any>(`/workorders/${id}/materials/${materialId}`, { method: 'DELETE' })
+  }
+  async addWOPayment(id: string, data: { amount: number; payment_method?: string; notes?: string }) {
+    return this.request<any>(`/workorders/${id}/payments`, { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  // ── Tenant Modules (Superadmin) ─────────────────────────────────────────
+  async getTenantModules(tenantId: string) {
+    return this.request<{ enabledModules: string[]; businessType: string | null }>(`/tenants/${tenantId}/modules`)
+  }
+  async updateTenantModules(tenantId: string, modules: string[]) {
+    return this.request<{ enabledModules: string[] }>(`/tenants/${tenantId}/modules`, {
+      method: 'PUT',
+      body: JSON.stringify({ modules }),
+    })
+  }
+
+  // ── Merma (Waste Tracking) ───────────────────────────────────────────────
+  async getMermaDashboard(dateFrom?: string, dateTo?: string) {
+    const q = new URLSearchParams()
+    if (dateFrom) q.set('dateFrom', dateFrom)
+    if (dateTo) q.set('dateTo', dateTo)
+    return this.request<any>(`/merma/dashboard?${q}`)
+  }
+  async listWasteRecords(filters?: Record<string, string>) {
+    const q = filters ? '?' + new URLSearchParams(filters).toString() : ''
+    return this.request<any>(`/merma${q}`)
+  }
+  async createWasteRecord(data: any) {
+    return this.request<any>('/merma', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async deleteWasteRecord(id: string) {
+    return this.request<any>(`/merma/${id}`, { method: 'DELETE' })
+  }
+  async listParLevels() {
+    return this.request<any>('/merma/par/levels')
+  }
+  async upsertParLevel(data: any) {
+    return this.request<any>('/merma/par/levels', { method: 'POST', body: JSON.stringify(data) })
+  }
+  async deleteParLevel(id: string) {
+    return this.request<any>(`/merma/par/levels/${id}`, { method: 'DELETE' })
+  }
+
+  // ── Gastrobar Ops (Modo Dueño) ───────────────────────────────────────────
+  async getModoDueno(date?: string) {
+    const q = date ? `?date=${date}` : ''
+    return this.request<any>(`/gastrobar-ops/modo-dueno${q}`)
+  }
+  async getFoodCost() {
+    return this.request<any>('/gastrobar-ops/food-cost')
+  }
+  async getPurchaseSuggestions() {
+    return this.request<any>('/gastrobar-ops/purchase-suggestions')
+  }
+  async getWeeklyTrend() {
+    return this.request<any>('/gastrobar-ops/weekly-trend')
   }
 }
 

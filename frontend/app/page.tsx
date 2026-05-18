@@ -37,6 +37,10 @@ import { CajeroPanel } from '@/components/cajero-panel'
 import { DeveloperRequests } from '@/components/developer-requests'
 import { DispatchPanel } from '@/components/dispatch-panel'
 import { FleetManagement } from '@/components/fleet-management'
+import { RealEstate } from '@/components/realestate'
+import { Tapiceria } from '@/components/tapiceria'
+import { Merma } from '@/components/merma'
+import { GastrobarOps } from '@/components/gastrobar-ops'
 
 export default function Home() {
   const { activeSection, setActiveSection } = useStore()
@@ -237,6 +241,22 @@ export default function Home() {
             <FleetManagement />
           </div>
         )
+      case 'realestate':
+        return (
+          <div className="h-full flex flex-col">
+            <RealEstate />
+          </div>
+        )
+      case 'workorders':
+        return (
+          <div className="h-full flex flex-col">
+            <Tapiceria />
+          </div>
+        )
+      case 'merma':
+        return <Merma />
+      case 'gastrobar-ops':
+        return <GastrobarOps />
       default:
         return <Dashboard />
     }

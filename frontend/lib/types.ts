@@ -494,6 +494,7 @@ export interface User {
   tenantMaxUsers?: number
   tenantMaxProducts?: number
   tenantTrialEndsAt?: string | null
+  enabledModules?: string[] | null
   createdAt: string
 }
 

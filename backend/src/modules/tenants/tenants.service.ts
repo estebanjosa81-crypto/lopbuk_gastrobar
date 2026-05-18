@@ -261,6 +261,30 @@ export class TenantsService {
         [tenantId]
       );
 
+      // Create RestBar sequences for tenant
+      await connection.execute<ResultSetHeader>(
+        `INSERT INTO rb_order_sequence (tenant_id, prefix, current_number) VALUES (?, 'C', 0)`,
+        [tenantId]
+      );
+      await connection.execute<ResultSetHeader>(
+        `INSERT INTO rb_reservation_sequence (tenant_id, prefix, current_number) VALUES (?, 'R', 0)`,
+        [tenantId]
+      );
+
+      // Create singleton config tables for tenant
+      await connection.execute<ResultSetHeader>(
+        `INSERT IGNORE INTO store_announcement_bar (tenant_id, text, is_active) VALUES (?, '', FALSE)`,
+        [tenantId]
+      );
+      await connection.execute<ResultSetHeader>(
+        `INSERT IGNORE INTO store_order_bump (tenant_id, is_enabled) VALUES (?, FALSE)`,
+        [tenantId]
+      );
+      await connection.execute<ResultSetHeader>(
+        `INSERT IGNORE INTO chatbot_config (tenant_id, is_enabled) VALUES (?, 0)`,
+        [tenantId]
+      );
+
       // Create default categories for tenant
       const defaultCategories = [
         { id: 'general', name: 'General', description: 'Productos generales' },
@@ -457,6 +481,27 @@ export class TenantsService {
     if (filtered.length === types.length) throw new AppError('Categoría no encontrada', 404);
     await this.updatePlatformSetting('business_types', JSON.stringify(filtered));
     return filtered;
+  }
+
+  async getModules(tenantId: string): Promise<{ enabledModules: string[] | null; businessType: string | null }> {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT enabled_modules, business_type FROM tenants WHERE id = ?',
+      [tenantId]
+    );
+    if (rows.length === 0) throw new AppError('Tenant no encontrado', 404);
+    const row = rows[0];
+    const raw = row.enabled_modules;
+    const enabledModules: string[] | null = raw
+      ? (typeof raw === 'string' ? JSON.parse(raw) : raw)
+      : null;
+    return { enabledModules, businessType: row.business_type ?? null };
+  }
+
+  async updateModules(tenantId: string, modules: string[]): Promise<{ enabledModules: string[] }> {
+    const [rows] = await db.execute<RowDataPacket[]>('SELECT id FROM tenants WHERE id = ?', [tenantId]);
+    if (rows.length === 0) throw new AppError('Tenant no encontrado', 404);
+    await db.execute('UPDATE tenants SET enabled_modules = ? WHERE id = ?', [JSON.stringify(modules), tenantId]);
+    return { enabledModules: modules };
   }
 }
 

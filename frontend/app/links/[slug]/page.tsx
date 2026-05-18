@@ -1,11 +1,62 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { formatCOP } from '@/lib/utils'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
+// ── Device fingerprint (persisted in localStorage) ───────────────────────────
+function getDeviceId(): string {
+  if (typeof window === 'undefined') return ''
+  let id = localStorage.getItem('lopbuk_did')
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    localStorage.setItem('lopbuk_did', id)
+  }
+  return id
+}
+
+function getLikedSet(): Set<number> {
+  if (typeof window === 'undefined') return new Set()
+  try { return new Set(JSON.parse(localStorage.getItem('lopbuk_likes') || '[]')) }
+  catch { return new Set() }
+}
+
+function saveLikedSet(s: Set<number>) {
+  localStorage.setItem('lopbuk_likes', JSON.stringify([...s]))
+}
+
+// ── Countdown ────────────────────────────────────────────────────────────────
+function useCountdown(targetDate: string | null | undefined) {
+  const calc = useCallback(() => {
+    if (!targetDate) return null
+    const diff = new Date(targetDate).getTime() - Date.now()
+    if (diff <= 0) return { expired: true, days: 0, hours: 0, minutes: 0, seconds: 0 }
+    const days = Math.floor(diff / 86400000)
+    const hours = Math.floor((diff % 86400000) / 3600000)
+    const minutes = Math.floor((diff % 3600000) / 60000)
+    const seconds = Math.floor((diff % 60000) / 1000)
+    return { expired: false, days, hours, minutes, seconds }
+  }, [targetDate])
+
+  const [time, setTime] = useState(calc)
+  useEffect(() => {
+    if (!targetDate) return
+    const id = setInterval(() => setTime(calc()), 1000)
+    return () => clearInterval(id)
+  }, [targetDate, calc])
+  return time
+}
+
+function formatShipRange(start: string | null | undefined, end: string | null | undefined) {
+  if (!start && !end) return null
+  const fmt = (d: string) => new Date(d).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
+  if (start && end) return `${fmt(start)} – ${fmt(end)}`
+  return fmt((start || end)!)
+}
+
+// ── Types ────────────────────────────────────────────────────────────────────
 interface LinkItem { label: string; url: string; color?: string; image?: string }
 
 interface ShopProduct {
@@ -23,6 +74,15 @@ interface ShopProduct {
   isOnOffer?: number | boolean | null
   offerPrice?: number | null
   offerLabel?: string | null
+  productType?: string | null
+  weight?: number | null
+  hardwareWeightUnit?: string | null
+  isPreorder?: number | boolean | null
+  preorderWindowEnd?: string | null
+  preorderShipStart?: string | null
+  preorderShipEnd?: string | null
+  preorderBadgeText?: string | null
+  preorderPolicyText?: string | null
 }
 
 interface StoreData {
@@ -42,9 +102,11 @@ interface StoreData {
   contactPageLinkTheme: string | null
   socialX: string | null
   socialSnapchat: string | null
+  reservationsEnabled?: boolean
   shopProducts: ShopProduct[]
 }
 
+// ── Social icons ─────────────────────────────────────────────────────────────
 function TikTokIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -52,7 +114,6 @@ function TikTokIcon() {
     </svg>
   )
 }
-
 function WhatsAppIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -60,7 +121,6 @@ function WhatsAppIcon() {
     </svg>
   )
 }
-
 function FacebookIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -68,7 +128,6 @@ function FacebookIcon() {
     </svg>
   )
 }
-
 function XIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -76,7 +135,6 @@ function XIcon() {
     </svg>
   )
 }
-
 function SnapchatIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -84,7 +142,6 @@ function SnapchatIcon() {
     </svg>
   )
 }
-
 function InstagramIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -93,6 +150,327 @@ function InstagramIcon() {
   )
 }
 
+// ── Heart icon ────────────────────────────────────────────────────────────────
+function HeartIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" className="w-7 h-7">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  )
+}
+
+// ── Full-screen story viewer ───────────────────────────────────────────────────
+function MenuStoryViewer({
+  products,
+  initialIndex,
+  slug,
+  catalogUrl,
+  onClose,
+}: {
+  products: ShopProduct[]
+  initialIndex: number
+  slug: string
+  catalogUrl: string
+  onClose: () => void
+}) {
+  const [idx, setIdx] = useState(initialIndex)
+  const [likedIds, setLikedIds] = useState<Set<number>>(() => getLikedSet())
+  const [likeCounts, setLikeCounts] = useState<Record<number, number>>({})
+  const [heartAnim, setHeartAnim] = useState(false)
+  const [showPolicy, setShowPolicy] = useState(false)
+  const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
+
+  const product = products[idx]
+  const isPreorder = Boolean(product?.isPreorder)
+  const countdown = useCountdown(isPreorder ? product?.preorderWindowEnd : null)
+  const preorderExpired = countdown?.expired ?? (
+    product?.preorderWindowEnd ? new Date(product.preorderWindowEnd).getTime() < Date.now() : false
+  )
+  const shipRange = formatShipRange(product?.preorderShipStart, product?.preorderShipEnd)
+
+  const liked = likedIds.has(product?.id)
+  const likeCount = likeCounts[product?.id] ?? 0
+
+  // Fetch initial like counts for all products
+  useEffect(() => {
+    products.forEach(p => {
+      fetch(`${API_URL}/restbar/public-menu-likes/${p.id}`)
+        .then(r => r.json())
+        .then(j => { if (j.success) setLikeCounts(prev => ({ ...prev, [p.id]: j.data.likes })) })
+        .catch(() => {})
+    })
+  }, [products])
+
+  const goNext = useCallback(() => {
+    setIdx(i => Math.min(i + 1, products.length - 1))
+    setShowPolicy(false)
+  }, [products.length])
+
+  const goPrev = useCallback(() => {
+    setIdx(i => Math.max(i - 1, 0))
+    setShowPolicy(false)
+  }, [])
+
+  // Keyboard navigation
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.key === 'ArrowRight') goNext()
+      if (e.key === 'ArrowLeft') goPrev()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose, goNext, goPrev])
+
+  // Swipe handling
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = e.changedTouches[0].clientY - touchStartY.current
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+      if (dx < 0) goNext()
+      else goPrev()
+    }
+    touchStartX.current = null
+    touchStartY.current = null
+  }
+
+  const handleLike = async () => {
+    if (liked) return
+    const deviceId = getDeviceId()
+    const newLiked = new Set(likedIds)
+    newLiked.add(product.id)
+    setLikedIds(newLiked)
+    saveLikedSet(newLiked)
+    setLikeCounts(prev => ({ ...prev, [product.id]: (prev[product.id] ?? 0) + 1 }))
+    setHeartAnim(true)
+    setTimeout(() => setHeartAnim(false), 600)
+    try {
+      const r = await fetch(`${API_URL}/restbar/public-menu-like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: product.id, tenantSlug: slug, deviceId }),
+      })
+      const j = await r.json()
+      if (j.success) setLikeCounts(prev => ({ ...prev, [product.id]: j.data.likes }))
+    } catch {}
+  }
+
+  const mainImage = (product?.images && product.images[0]) || product?.imageUrl || ''
+  const isOffer = Boolean(product?.isOnOffer && product?.offerPrice)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Background blurred image */}
+      {mainImage && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={mainImage}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 w-full h-full object-cover opacity-20 blur-2xl scale-110"
+        />
+      )}
+
+      {/* Progress dots */}
+      <div className="absolute top-4 inset-x-0 flex justify-center gap-1.5 px-4 z-10">
+        {products.map((_, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => { setIdx(i); setShowPolicy(false) }}
+            className={`h-1 rounded-full transition-all ${i === idx ? 'w-6 bg-white' : 'w-3 bg-white/30'}`}
+          />
+        ))}
+      </div>
+
+      {/* Close button */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute top-10 right-4 z-10 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center backdrop-blur-sm"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+          <path d="M18 6 6 18M6 6l12 12" />
+        </svg>
+      </button>
+
+      {/* Main image */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        {mainImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={mainImage}
+            alt={product?.name}
+            className="max-h-[65vh] max-w-full object-contain"
+            style={{ filter: 'drop-shadow(0 8px 32px rgba(0,0,0,0.6))' }}
+          />
+        ) : (
+          <div className="w-64 h-64 flex items-center justify-center text-white/30">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-20 h-20 opacity-40">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            </svg>
+          </div>
+        )}
+      </div>
+
+      {/* Left / Right tap zones */}
+      <button
+        type="button"
+        onClick={goPrev}
+        disabled={idx === 0}
+        className="absolute left-0 top-0 bottom-0 w-1/4 z-10 flex items-center justify-start pl-3 opacity-0 hover:opacity-100 transition-opacity disabled:pointer-events-none"
+        aria-label="Anterior"
+      >
+        <div className="w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={goNext}
+        disabled={idx === products.length - 1}
+        className="absolute right-0 top-0 bottom-0 w-1/4 z-10 flex items-center justify-end pr-3 opacity-0 hover:opacity-100 transition-opacity disabled:pointer-events-none"
+        aria-label="Siguiente"
+      >
+        <div className="w-9 h-9 rounded-full bg-black/40 backdrop-blur-sm text-white flex items-center justify-center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Bottom info panel */}
+      <div className="absolute bottom-0 inset-x-0 z-10 bg-gradient-to-t from-black via-black/80 to-transparent pt-20 pb-8 px-5 space-y-3">
+
+        {/* Badges */}
+        <div className="flex flex-wrap gap-2">
+          {isPreorder && (
+            <span className={`text-[11px] px-3 py-1 rounded-full font-bold uppercase tracking-wide ${preorderExpired ? 'bg-gray-600 text-white' : 'bg-amber-500 text-white'}`}>
+              {preorderExpired ? 'Pre-orden cerrada' : (product?.preorderBadgeText || 'Pre-orden')}
+            </span>
+          )}
+          {isOffer && (
+            <span className="text-[11px] px-3 py-1 rounded-full bg-rose-500 text-white font-bold uppercase tracking-wide">
+              {product?.offerLabel || 'Oferta'}
+            </span>
+          )}
+          {product?.category && (
+            <span className="text-[11px] px-3 py-1 rounded-full bg-white/10 text-white/70 uppercase tracking-wide">
+              {product.category}
+            </span>
+          )}
+        </div>
+
+        {/* Name + brand */}
+        <div>
+          <h2 className="text-2xl font-bold text-white leading-tight">{product?.name}</h2>
+          {product?.brand && <p className="text-sm text-white/60 mt-0.5">{product.brand}</p>}
+        </div>
+
+        {/* Price */}
+        <div className="flex items-center gap-3">
+          {isOffer ? (
+            <>
+              <span className="text-2xl font-bold text-rose-400">{formatCOP(product?.offerPrice || 0)}</span>
+              <span className="text-base text-white/40 line-through">{formatCOP(product?.salePrice || 0)}</span>
+            </>
+          ) : (
+            <span className="text-2xl font-bold text-white">{formatCOP(product?.salePrice || 0)}</span>
+          )}
+        </div>
+
+        {/* Description */}
+        {product?.description && (
+          <p className="text-sm text-white/70 leading-relaxed line-clamp-2">{product.description}</p>
+        )}
+
+        {/* Pre-order countdown */}
+        {isPreorder && !preorderExpired && countdown && !countdown.expired && product?.preorderWindowEnd && (
+          <div>
+            <p className="text-[11px] text-amber-400 font-semibold uppercase tracking-wide mb-1.5">Cierra en</p>
+            <div className="flex gap-2">
+              {[
+                { v: countdown.days, l: 'días' },
+                { v: countdown.hours, l: 'hrs' },
+                { v: countdown.minutes, l: 'min' },
+                { v: countdown.seconds, l: 'seg' },
+              ].map(({ v, l }) => (
+                <div key={l} className="flex-1 bg-white/10 backdrop-blur rounded-xl text-center py-2 border border-white/10">
+                  <p className="text-lg font-bold text-amber-300 leading-none">{String(v).padStart(2, '0')}</p>
+                  <p className="text-[10px] text-amber-500 uppercase">{l}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Ship range */}
+        {shipRange && (
+          <div className="flex items-center gap-2 text-sm text-white/60">
+            <span>📦</span>
+            <span>Envío: {shipRange}</span>
+          </div>
+        )}
+
+        {/* Policy toggle */}
+        {product?.preorderPolicyText && (
+          <div>
+            <button type="button" onClick={() => setShowPolicy(v => !v)} className="text-xs text-amber-400 underline underline-offset-2">
+              {showPolicy ? 'Ocultar política' : '¿Qué es una pre-orden?'}
+            </button>
+            {showPolicy && <p className="mt-1.5 text-xs text-white/60 leading-relaxed">{product.preorderPolicyText}</p>}
+          </div>
+        )}
+
+        {/* Actions row */}
+        <div className="flex items-center gap-3 pt-1">
+          {/* Like button */}
+          <button
+            type="button"
+            onClick={handleLike}
+            className={`flex items-center gap-1.5 transition-all ${liked ? 'text-rose-400' : 'text-white/60 hover:text-white'}`}
+          >
+            <span className={`transition-transform ${heartAnim ? 'scale-150' : 'scale-100'}`}>
+              <HeartIcon filled={liked} />
+            </span>
+            {likeCount > 0 && <span className="text-sm font-semibold">{likeCount}</span>}
+          </button>
+
+          {/* CTA button */}
+          <a
+            href={catalogUrl}
+            className={`flex-1 block text-center py-3 px-4 rounded-2xl text-sm font-semibold tracking-wide uppercase transition-all active:scale-[0.98] ${
+              preorderExpired && isPreorder
+                ? 'bg-white/20 text-white/40 pointer-events-none'
+                : 'bg-white text-black hover:bg-gray-100'
+            }`}
+          >
+            {isPreorder && !preorderExpired ? 'Reservar ahora' : isPreorder && preorderExpired ? 'Pre-orden cerrada' : 'Ver catálogo'}
+          </a>
+        </div>
+
+        {/* Swipe hint (only on first item, first render) */}
+        {idx === 0 && products.length > 1 && (
+          <p className="text-center text-[11px] text-white/30 tracking-wide">Desliza para ver más platillos →</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function LinksPage() {
   const params = useParams()
   const slug = params?.slug as string
@@ -101,16 +479,7 @@ export default function LinksPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<'links' | 'shop'>('links')
-  const [selectedProduct, setSelectedProduct] = useState<ShopProduct | null>(null)
-
-  useEffect(() => {
-    if (!selectedProduct) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedProduct(null)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedProduct])
+  const [storyIndex, setStoryIndex] = useState<number | null>(null)
 
   useEffect(() => {
     if (!slug) return
@@ -142,7 +511,6 @@ export default function LinksPage() {
   const products = data.shopProducts || []
   const linkTheme = data.contactPageLinkTheme || 'theme1'
   const isTheme2 = linkTheme === 'theme2'
-
   const hasSocials = data.socialInstagram || data.socialFacebook || data.socialTiktok || data.socialWhatsapp || data.socialX || data.socialSnapchat
   const catalogUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/?store=${slug}`
 
@@ -190,38 +558,21 @@ export default function LinksPage() {
   return (
     <div className={`min-h-screen flex flex-col items-center pb-16 ${isTheme2 ? 'bg-black' : 'bg-gray-50'}`}>
 
-      {/* ── Theme 2: full-width cover image header ── */}
+      {/* Theme 2: full-width cover image header */}
       {isTheme2 ? (
         <div className="w-full max-w-sm mx-auto">
-          {/* Cover image with name + socials overlaid at bottom */}
           <div className="relative w-full" style={{ height: '420px' }}>
             {(data.contactPageImage || data.logoUrl) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={data.contactPageImage || data.logoUrl!}
-                alt={data.name}
-                className="absolute inset-0 w-full h-full object-cover"
-              />
+              <img src={data.contactPageImage || data.logoUrl!} alt={data.name} className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0 bg-gradient-to-b from-gray-800 to-black" />
             )}
-            {/* Gradient overlay — extends further down to cover tabs area */}
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-            {/* Name + description + socials + tabs all inside the image */}
             <div className="absolute bottom-0 inset-x-0 px-4 pb-4 flex flex-col items-center gap-2">
-              <h1 className="text-2xl font-bold text-white tracking-wide text-center">
-                {data.contactPageTitle || data.name}
-              </h1>
-              {data.contactPageDescription && (
-                <p className="text-sm text-white/70 text-center leading-snug">
-                  {data.contactPageDescription}
-                </p>
-              )}
-              {hasSocials && (
-                <div className="flex items-center gap-3 mt-1">
-                  {socialLinks}
-                </div>
-              )}
+              <h1 className="text-2xl font-bold text-white tracking-wide text-center">{data.contactPageTitle || data.name}</h1>
+              {data.contactPageDescription && <p className="text-sm text-white/70 text-center leading-snug">{data.contactPageDescription}</p>}
+              {hasSocials && <div className="flex items-center gap-3 mt-1">{socialLinks}</div>}
             </div>
           </div>
         </div>
@@ -229,39 +580,24 @@ export default function LinksPage() {
 
       <div className={`w-full max-w-sm mx-auto px-4 flex flex-col items-center ${isTheme2 ? 'pt-0' : 'pt-10'}`}>
 
-        {/* ── Theme 1: circle avatar header ── */}
+        {/* Theme 1: circle avatar header */}
         {!isTheme2 && (
           <>
             <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-gray-100 shadow-md mb-4 bg-gray-200">
               {data.logoUrl || data.contactPageImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={data.contactPageImage || data.logoUrl!}
-                  alt={data.name}
-                  className="w-full h-full object-cover"
-                />
+                <img src={data.contactPageImage || data.logoUrl!} alt={data.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gray-100">
                   <span className="text-3xl font-bold text-gray-400">{data.name.charAt(0)}</span>
                 </div>
               )}
             </div>
-            <h1 className="text-lg font-bold tracking-wide uppercase text-center text-gray-900">
-              {data.contactPageTitle || data.name}
-            </h1>
-            {data.contactPageDescription && (
-              <p className="text-sm text-center mt-1 leading-snug text-gray-500">
-                {data.contactPageDescription}
-              </p>
-            )}
-            {hasSocials && (
-              <div className="flex items-center gap-4 mt-4">
-                {socialLinks}
-              </div>
-            )}
+            <h1 className="text-lg font-bold tracking-wide uppercase text-center text-gray-900">{data.contactPageTitle || data.name}</h1>
+            {data.contactPageDescription && <p className="text-sm text-center mt-1 leading-snug text-gray-500">{data.contactPageDescription}</p>}
+            {hasSocials && <div className="flex items-center gap-4 mt-4">{socialLinks}</div>}
           </>
         )}
-
 
         {/* Tab selector */}
         <div className={`flex w-full rounded-full p-1 gap-1 ${isTheme2 ? 'bg-white/10 mt-0' : 'bg-gray-100 mt-6'}`}>
@@ -283,63 +619,59 @@ export default function LinksPage() {
                 : isTheme2 ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Shop
+            Menú
           </button>
         </div>
 
         {/* Links tab */}
         {activeTab === 'links' && (
           <div className="w-full mt-4 space-y-3">
-            {links.length === 0 ? (
+            {data.reservationsEnabled && (
+              <a
+                href={`/reservar/${slug}`}
+                className={`flex items-center justify-center gap-2 w-full py-4 px-6 rounded-2xl text-sm font-semibold tracking-wide uppercase transition-all active:scale-[0.98] ${
+                  isTheme2 ? 'bg-amber-400 text-zinc-900 hover:bg-amber-300' : 'bg-gray-900 text-white border border-gray-800 hover:bg-gray-800'
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                Reservar mesa
+              </a>
+            )}
+            {links.length === 0 && !data.reservationsEnabled ? (
               <p className={`text-center text-sm py-8 ${isTheme2 ? 'text-gray-500' : 'text-gray-400'}`}>Sin links configurados</p>
-            ) : isTheme2 ? (
-              /* ── Theme 2: image cards ── */
+            ) : links.length === 0 ? null : isTheme2 ? (
               links.map((link, i) => (
-                <a
-                  key={i}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
                   className="relative block w-full rounded-2xl overflow-hidden active:scale-[0.98] transition-all"
-                  style={{ height: '140px' }}
-                >
-                  {/* Background image or fallback gradient */}
+                  style={{ height: '140px' }}>
                   {link.image ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={link.image}
-                      alt={link.label}
-                      className="absolute inset-0 w-full h-full object-cover"
-                    />
+                    <img src={link.image} alt={link.label} className="absolute inset-0 w-full h-full object-cover" />
                   ) : (
                     <div className="absolute inset-0 bg-gradient-to-br from-gray-700 to-gray-900" />
                   )}
-                  {/* Dark overlay */}
                   <div className="absolute inset-0 bg-black/40" />
-                  {/* Link icon top-left */}
                   <div className="absolute top-3 left-3 w-7 h-7 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-white">
                       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                       <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                     </svg>
                   </div>
-                  {/* Label bottom */}
                   <div className="absolute bottom-0 inset-x-0 px-4 pb-4 pt-8 bg-gradient-to-t from-black/80 to-transparent">
                     <p className="text-white text-sm font-bold tracking-wide uppercase text-center">{link.label || link.url}</p>
                   </div>
                 </a>
               ))
             ) : (
-              /* ── Theme 1: simple buttons ── */
               links.map((link, i) => (
-                <a
-                  key={i}
-                  href={link.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
                   className="block w-full text-center py-4 px-6 rounded-2xl border border-gray-200 bg-white text-gray-900 text-sm font-semibold tracking-wide uppercase shadow-sm hover:shadow-md hover:border-gray-300 active:scale-[0.98] transition-all"
-                  style={link.color ? { borderColor: link.color, color: link.color } : {}}
-                >
+                  style={link.color ? { borderColor: link.color, color: link.color } : {}}>
                   {link.label || link.url}
                 </a>
               ))
@@ -347,21 +679,25 @@ export default function LinksPage() {
           </div>
         )}
 
-        {/* Shop tab */}
+        {/* Shop / Menú tab */}
         {activeTab === 'shop' && (
           <div className="w-full mt-4 space-y-4">
             {products.length === 0 ? (
               <p className="text-center text-sm text-gray-400 py-8">Sin productos configurados</p>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {products.map(product => {
+                {products.map((product, i) => {
                   const mainImage = (product.images && product.images[0]) || product.imageUrl || ''
                   const isOffer = Boolean(product.isOnOffer && product.offerPrice)
+                  const isPreorder = Boolean(product.isPreorder)
+                  const preorderExpired = product.preorderWindowEnd
+                    ? new Date(product.preorderWindowEnd).getTime() < Date.now()
+                    : false
                   return (
                     <button
                       key={product.id}
                       type="button"
-                      onClick={() => setSelectedProduct(product)}
+                      onClick={() => setStoryIndex(i)}
                       className="text-left rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-md active:scale-[0.98] transition-all"
                     >
                       <div className="relative w-full h-28 bg-gray-100">
@@ -369,37 +705,46 @@ export default function LinksPage() {
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={mainImage} alt={product.name} className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
-                            Sin imagen
-                          </div>
+                          <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">Sin imagen</div>
+                        )}
+                        {/* Heart indicator */}
+                        <div className="absolute bottom-1.5 right-2 text-rose-400 opacity-70">
+                          <HeartIcon filled={false} />
+                        </div>
+                        {isPreorder && !isOffer && (
+                          <span className={`absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wide font-bold ${preorderExpired ? 'bg-gray-400 text-white' : 'bg-amber-500 text-white'}`}>
+                            {preorderExpired ? 'Cerrado' : (product.preorderBadgeText || 'Pre-orden')}
+                          </span>
                         )}
                         {isOffer && (
-                          <span className="absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full bg-black text-white uppercase tracking-wide">
+                          <span className="absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full bg-rose-500 text-white uppercase tracking-wide font-bold">
                             {product.offerLabel || 'Oferta'}
                           </span>
                         )}
                       </div>
                       <div className="p-3 space-y-1">
-                        <p className="text-sm font-semibold text-gray-900 line-clamp-2">
-                          {product.name}
-                        </p>
+                        <p className="text-sm font-semibold text-gray-900 line-clamp-2">{product.name}</p>
                         <div className="text-xs text-gray-500">
                           {isOffer ? (
                             <div className="flex items-center gap-2">
-                              <span className="text-gray-900 font-semibold">{formatCOP(product.offerPrice || 0)}</span>
+                              <span className="text-rose-600 font-semibold">{formatCOP(product.offerPrice || 0)}</span>
                               <span className="line-through">{formatCOP(product.salePrice)}</span>
                             </div>
                           ) : (
                             <span className="text-gray-900 font-semibold">{formatCOP(product.salePrice)}</span>
                           )}
                         </div>
+                        {isPreorder && product.preorderShipStart && (
+                          <p className="text-[10px] text-amber-600 font-medium truncate">
+                            Envío: {formatShipRange(product.preorderShipStart, product.preorderShipEnd)}
+                          </p>
+                        )}
                       </div>
                     </button>
                   )
                 })}
               </div>
             )}
-
             <a
               href={catalogUrl}
               className="block w-full text-center py-4 px-6 rounded-2xl bg-gray-900 text-white text-sm font-semibold tracking-wide uppercase shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all"
@@ -410,86 +755,15 @@ export default function LinksPage() {
         )}
       </div>
 
-      {selectedProduct && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Cerrar"
-            onClick={() => setSelectedProduct(null)}
-          />
-          <div className="relative w-full max-w-sm bg-white rounded-t-3xl sm:rounded-3xl shadow-xl overflow-hidden">
-            <div className="relative h-56 bg-gray-100">
-              {((selectedProduct.images && selectedProduct.images[0]) || selectedProduct.imageUrl) ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={(selectedProduct.images && selectedProduct.images[0]) || selectedProduct.imageUrl || ''}
-                  alt={selectedProduct.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-sm text-gray-400">
-                  Sin imagen
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => setSelectedProduct(null)}
-                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 text-gray-700 shadow flex items-center justify-center"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="p-5 space-y-3">
-              <div className="space-y-1">
-                <h2 className="text-lg font-bold text-gray-900">{selectedProduct.name}</h2>
-                {(selectedProduct.brand || selectedProduct.category) && (
-                  <p className="text-xs text-gray-500">
-                    {[selectedProduct.brand, selectedProduct.category].filter(Boolean).join(' • ')}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                {Boolean(selectedProduct.isOnOffer && selectedProduct.offerPrice) ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-semibold text-gray-900">{formatCOP(selectedProduct.offerPrice || 0)}</span>
-                    <span className="text-sm text-gray-400 line-through">{formatCOP(selectedProduct.salePrice)}</span>
-                    {selectedProduct.offerLabel && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-black text-white uppercase tracking-wide">
-                        {selectedProduct.offerLabel}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-lg font-semibold text-gray-900">{formatCOP(selectedProduct.salePrice)}</span>
-                )}
-              </div>
-
-              {selectedProduct.description && (
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  {selectedProduct.description}
-                </p>
-              )}
-
-              {(selectedProduct.color || selectedProduct.size) && (
-                <div className="text-xs text-gray-500">
-                  {selectedProduct.color && <span>Color: {selectedProduct.color}</span>}
-                  {selectedProduct.color && selectedProduct.size && <span className="mx-2">|</span>}
-                  {selectedProduct.size && <span>Talla: {selectedProduct.size}</span>}
-                </div>
-              )}
-
-              <a
-                href={catalogUrl}
-                className="block w-full text-center py-3 px-4 rounded-2xl bg-gray-900 text-white text-sm font-semibold tracking-wide uppercase shadow-sm hover:bg-gray-800 active:scale-[0.98] transition-all"
-              >
-                Ir al catálogo
-              </a>
-            </div>
-          </div>
-        </div>
+      {/* Full-screen story viewer */}
+      {storyIndex !== null && products.length > 0 && (
+        <MenuStoryViewer
+          products={products}
+          initialIndex={storyIndex}
+          slug={slug}
+          catalogUrl={catalogUrl}
+          onClose={() => setStoryIndex(null)}
+        />
       )}
 
       {/* Footer */}

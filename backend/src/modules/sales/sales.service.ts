@@ -127,7 +127,9 @@ export interface CreateSaleData {
   sedeId?: string;
   creditDays?: number;
   notes?: string;
-  applyTax?: boolean; // true = aplica IVA 19% (factura electrónica solicitada)
+  applyTax?: boolean;
+  vehicleId?: string;
+  totalWeightKg?: number;
 }
 
 export class SalesService {
@@ -604,8 +606,9 @@ export class SalesService {
         `INSERT INTO sales (id, tenant_id, invoice_number, customer_id, customer_name, customer_phone, customer_email,
           subtotal, tax, discount, total, payment_method, amount_paid, change_amount,
           mixed_efectivo_amount, mixed_second_method, mixed_second_amount,
-          seller_id, seller_name, sede_id, cash_session_id, credit_status, due_date, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          seller_id, seller_name, sede_id, cash_session_id, credit_status, due_date, notes,
+          vehicle_id, total_weight_kg)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           saleId,
           tenantId,
@@ -631,6 +634,8 @@ export class SalesService {
           creditStatus,
           dueDate,
           data.applyTax ? (data.notes ? `FACTURA_ELECTRONICA | ${data.notes}` : 'FACTURA_ELECTRONICA') : (data.notes || null),
+          data.vehicleId || null,
+          data.totalWeightKg || null,
         ]
       );
 

@@ -27,9 +27,13 @@ router.get(
                o.address, o.neighborhood, o.delivery_latitude as deliveryLatitude,
                o.delivery_longitude as deliveryLongitude, o.delivery_status as deliveryStatus,
                o.total, o.status, o.notes, o.created_at as createdAt,
-               t.name as storeName
+               t.name as storeName,
+               o.vehicle_id as vehicleId, o.dispatch_status as dispatchStatus,
+               o.total_weight_kg as totalWeightKg,
+               fv.name as vehicleName, fv.plate as vehiclePlate, fv.type as vehicleType
         FROM storefront_orders o
         LEFT JOIN tenants t ON t.id = o.tenant_id
+        LEFT JOIN fleet_vehicles fv ON fv.id = o.vehicle_id
         WHERE o.delivery_driver_id = ?
           ${tenantId ? 'AND o.tenant_id = ?' : ''}
           AND o.status NOT IN ('cancelado')
@@ -105,9 +109,13 @@ router.get(
                o.address, o.neighborhood, o.delivery_latitude as deliveryLatitude,
                o.delivery_longitude as deliveryLongitude, o.total, o.notes,
                o.created_at as createdAt,
-               t.name as storeName
+               t.name as storeName,
+               o.vehicle_id as vehicleId, o.dispatch_status as dispatchStatus,
+               o.total_weight_kg as totalWeightKg,
+               fv.name as vehicleName, fv.plate as vehiclePlate, fv.type as vehicleType
         FROM storefront_orders o
         LEFT JOIN tenants t ON t.id = o.tenant_id
+        LEFT JOIN fleet_vehicles fv ON fv.id = o.vehicle_id
         WHERE ${tenantId ? 'o.tenant_id = ? AND' : ''}
               o.delivery_driver_id IS NULL
           AND o.delivery_status = 'sin_asignar'

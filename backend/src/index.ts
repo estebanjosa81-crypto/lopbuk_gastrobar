@@ -43,6 +43,11 @@ import { financesRoutes } from './modules/finances';
 import { portfolioRoutes } from './modules/portfolio';
 import devRequestsRoutes from './modules/dev-requests/dev-requests.routes';
 import { fleetRoutes } from './modules/fleet';
+import { realEstateRoutes } from './modules/realestate';
+import { workOrderRoutes } from './modules/workorders';
+import whatsappRoutes from './modules/whatsapp/whatsapp.routes';
+import { mermaRoutes } from './modules/merma';
+import { gastrobarRoutes } from './modules/gastrobar-ops';
 
 const app = express();
 
@@ -150,6 +155,11 @@ app.use(`${apiPrefix}/finances`, financesRoutes);
 app.use(`${apiPrefix}/portfolio`, portfolioRoutes);
 app.use(`${apiPrefix}/dev-requests`, devRequestsRoutes);
 app.use(`${apiPrefix}/fleet`, fleetRoutes);
+app.use(`${apiPrefix}/realestate`, realEstateRoutes);
+app.use(`${apiPrefix}/workorders`, workOrderRoutes);
+app.use(`${apiPrefix}/whatsapp`, whatsappRoutes);
+app.use(`${apiPrefix}/merma`, mermaRoutes);
+app.use(`${apiPrefix}/gastrobar-ops`, gastrobarRoutes);
 
 // Error handling
 app.use(notFoundHandler);
@@ -222,6 +232,52 @@ const startServer = async () => {
       `);
     } catch { /* column may already exist or DB doesn't support IF NOT EXISTS */ }
 
+    // ── inventory_holds + storefront_orders + store_info ────────────────────
+    {
+      const mPool = (await import('./config/database')).default;
+      const addCol = async (sql: string) => {
+        try { await mPool.query(sql); } catch (e: any) { if (e?.errno !== 1060) console.warn('[migration]', e?.message); }
+      };
+
+      // inventory_holds — reserva de stock durante checkout
+      await mPool.query(`
+        CREATE TABLE IF NOT EXISTS inventory_holds (
+          id         VARCHAR(36) NOT NULL,
+          order_id   VARCHAR(36) NOT NULL,
+          product_id VARCHAR(36) NOT NULL,
+          tenant_id  VARCHAR(36) NOT NULL,
+          quantity   INT         NOT NULL,
+          expires_at TIMESTAMP   NOT NULL,
+          created_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          INDEX idx_holds_product (product_id),
+          INDEX idx_holds_order   (order_id),
+          INDEX idx_holds_tenant  (tenant_id),
+          INDEX idx_holds_expires (expires_at),
+          CONSTRAINT fk_holds_order FOREIGN KEY (order_id)
+            REFERENCES storefront_orders(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `).catch(() => {});
+
+      // storefront_orders nuevas columnas
+      await addCol(`ALTER TABLE storefront_orders ADD COLUMN gateway_payment_id VARCHAR(255) NULL COMMENT 'ID del pago en pasarela para reembolsos'`);
+      await addCol(`ALTER TABLE storefront_orders ADD COLUMN refund_status VARCHAR(20) NULL COMMENT 'none, pending, refunded, manual'`);
+
+      // store_info nuevas columnas
+      await addCol(`ALTER TABLE store_info ADD COLUMN allow_contraentrega TINYINT(1) NOT NULL DEFAULT 1`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN online_discount_enabled TINYINT(1) NOT NULL DEFAULT 0`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN show_info_module TINYINT(1) NOT NULL DEFAULT 0`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN info_module_description TEXT NULL`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN contact_page_enabled TINYINT(1) NOT NULL DEFAULT 0`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN contact_page_title VARCHAR(255) NULL`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN contact_page_description TEXT NULL`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN contact_page_products TEXT NULL`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN contact_page_links TEXT NULL`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN contact_page_image VARCHAR(500) NULL`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN meta_pixel_id VARCHAR(50) NULL DEFAULT NULL COMMENT 'ID del pixel de Meta/Facebook para tracking de conversiones'`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN enable_iva TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = aplicar IVA 19% al registrar venta'`);
+    }
+
     // ── restBar + Finances migrations ────────────────────────────────────────
     try {
       const pool2 = (await import('./config/database')).default;
@@ -250,6 +306,83 @@ const startServer = async () => {
       // Presupuestos
       await pool2.query(`CREATE TABLE IF NOT EXISTS finance_budgets (id VARCHAR(36) PRIMARY KEY, tenant_id VARCHAR(36) NOT NULL, category_id VARCHAR(36) NOT NULL, year SMALLINT NOT NULL, month TINYINT NOT NULL, budgeted_amount DECIMAL(12,2) NOT NULL DEFAULT 0, notes TEXT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, FOREIGN KEY (category_id) REFERENCES finance_categories(id) ON DELETE CASCADE, UNIQUE INDEX idx_budget_unique (tenant_id, category_id, year, month), INDEX idx_budget_period (tenant_id, year, month)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch { /* tables may already exist */ }
+
+    // ── Agent / WhatsApp module migrations ───────────────────────────────────
+    try {
+      const poolAgent = (await import('./config/database')).default;
+      // chatbot_sessions: human takeover flag and channel tracking
+      await poolAgent.query(`ALTER TABLE chatbot_sessions ADD COLUMN IF NOT EXISTS human_takeover TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = agente silenciado, responde un humano'`);
+      await poolAgent.query(`ALTER TABLE chatbot_sessions ADD COLUMN IF NOT EXISTS channel ENUM('web','whatsapp','voice','api') NOT NULL DEFAULT 'web' COMMENT 'Canal de origen de la sesión'`);
+      await poolAgent.query(`ALTER TABLE chatbot_sessions ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50) NULL COMMENT 'Teléfono capturado por el agente'`);
+      // chatbot_config: WhatsApp / Evolution API fields
+      await poolAgent.query(`ALTER TABLE chatbot_config ADD COLUMN IF NOT EXISTS whatsapp_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = agente activo en WhatsApp'`);
+      await poolAgent.query(`ALTER TABLE chatbot_config ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(50) NULL COMMENT 'Número de WhatsApp del negocio'`);
+      await poolAgent.query(`ALTER TABLE chatbot_config ADD COLUMN IF NOT EXISTS evolution_instance VARCHAR(100) NULL COMMENT 'Nombre de la instancia en Evolution API'`);
+      await poolAgent.query(`ALTER TABLE chatbot_config ADD COLUMN IF NOT EXISTS agent_tools JSON NULL COMMENT 'Herramientas habilitadas para el agente'`);
+      await poolAgent.query(`ALTER TABLE chatbot_config ADD COLUMN IF NOT EXISTS working_hours JSON NULL COMMENT 'Horario activo del agente'`);
+      // agent_actions: audit log of tool calls
+      await poolAgent.query(`
+        CREATE TABLE IF NOT EXISTS agent_actions (
+          id          VARCHAR(36)  PRIMARY KEY,
+          tenant_id   VARCHAR(36)  NOT NULL,
+          session_id  VARCHAR(36)  NULL,
+          channel     ENUM('chat','whatsapp','voice','web') NOT NULL DEFAULT 'chat',
+          tool_name   VARCHAR(100) NOT NULL,
+          tool_input  JSON         NULL,
+          tool_output JSON         NULL,
+          success     TINYINT(1)   NOT NULL DEFAULT 1,
+          created_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+          updated_at  TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+          INDEX idx_agent_actions_tenant  (tenant_id),
+          INDEX idx_agent_actions_session (session_id),
+          INDEX idx_agent_actions_tool    (tenant_id, tool_name),
+          INDEX idx_agent_actions_created (tenant_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    } catch { /* columns/table may already exist */ }
+
+    // ── Work Orders (Tapicería) migration ────────────────────────────────────
+    try {
+      const poolWO = (await import('./config/database')).default;
+      await poolWO.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS module_workorders TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Módulo Tapicería/Órdenes de Trabajo habilitado'`);
+      await poolWO.query(`CREATE TABLE IF NOT EXISTS work_order_sequence (id INT PRIMARY KEY AUTO_INCREMENT, tenant_id VARCHAR(36) NOT NULL, prefix VARCHAR(10) NOT NULL DEFAULT 'OT', current_number INT NOT NULL DEFAULT 0, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, UNIQUE INDEX idx_wo_seq_tenant (tenant_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+      await poolWO.query(`CREATE TABLE IF NOT EXISTS work_orders (id VARCHAR(36) PRIMARY KEY, tenant_id VARCHAR(36) NOT NULL, order_number VARCHAR(20) NOT NULL, customer_id VARCHAR(36) NULL, customer_name VARCHAR(255) NOT NULL, customer_phone VARCHAR(50) NULL, item_description VARCHAR(500) NOT NULL, item_type VARCHAR(100) NOT NULL DEFAULT 'vehiculo', job_type VARCHAR(100) NOT NULL DEFAULT 'tapizado_completo', fabric_description VARCHAR(300) NULL, quoted_price DECIMAL(12,2) NOT NULL DEFAULT 0, advance_paid DECIMAL(12,2) NOT NULL DEFAULT 0, received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, promised_at DATE NULL, delivered_at TIMESTAMP NULL, status ENUM('recibido','cotizado','aprobado','en_proceso','listo','entregado','cancelado') NOT NULL DEFAULT 'recibido', notes TEXT NULL, assigned_to VARCHAR(36) NULL, sale_id VARCHAR(36) NULL, photos_in JSON NULL, photos_out JSON NULL, created_by VARCHAR(36) NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL, FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL, UNIQUE INDEX idx_wo_number (tenant_id, order_number), INDEX idx_wo_tenant_status (tenant_id, status), INDEX idx_wo_promised (tenant_id, promised_at), INDEX idx_wo_customer (tenant_id, customer_name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+      await poolWO.query(`CREATE TABLE IF NOT EXISTS work_order_materials (id INT PRIMARY KEY AUTO_INCREMENT, tenant_id VARCHAR(36) NOT NULL, work_order_id VARCHAR(36) NOT NULL, product_id VARCHAR(36) NULL, product_name VARCHAR(255) NOT NULL, quantity DECIMAL(10,3) NOT NULL DEFAULT 1, unit VARCHAR(50) NOT NULL DEFAULT 'unidad', unit_cost DECIMAL(12,2) NOT NULL DEFAULT 0, total_cost DECIMAL(12,2) NOT NULL DEFAULT 0, notes TEXT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE, INDEX idx_wo_mat_order (work_order_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+      await poolWO.query(`CREATE TABLE IF NOT EXISTS work_order_payments (id INT PRIMARY KEY AUTO_INCREMENT, tenant_id VARCHAR(36) NOT NULL, work_order_id VARCHAR(36) NOT NULL, amount DECIMAL(12,2) NOT NULL, payment_method ENUM('efectivo','tarjeta','transferencia','nequi','otro') NOT NULL DEFAULT 'efectivo', notes TEXT NULL, received_by VARCHAR(36) NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, FOREIGN KEY (work_order_id) REFERENCES work_orders(id) ON DELETE CASCADE, FOREIGN KEY (received_by) REFERENCES users(id) ON DELETE SET NULL, INDEX idx_wo_pay_order (work_order_id), INDEX idx_wo_pay_tenant (tenant_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch { /* tables may already exist */ }
+
+    // ── Widen users encrypted-field columns (AES ciphertext exceeds old VARCHAR sizes) ──
+    try {
+      const poolU = (await import('./config/database')).default;
+      await poolU.query(`ALTER TABLE users MODIFY COLUMN phone VARCHAR(500) NULL`);
+      await poolU.query(`ALTER TABLE users MODIFY COLUMN cedula VARCHAR(500) NULL`);
+      await poolU.query(`ALTER TABLE users MODIFY COLUMN department VARCHAR(500) NULL`);
+      await poolU.query(`ALTER TABLE users MODIFY COLUMN municipality VARCHAR(500) NULL`);
+      await poolU.query(`ALTER TABLE users MODIFY COLUMN address VARCHAR(500) NULL`);
+      await poolU.query(`ALTER TABLE users MODIFY COLUMN neighborhood VARCHAR(500) NULL`);
+    } catch { /* columns may already be wide enough */ }
+
+    // ── User saved addresses ─────────────────────────────────────────────────
+    try {
+      const poolA = (await import('./config/database')).default;
+      await poolA.query(`CREATE TABLE IF NOT EXISTS user_addresses (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        label VARCHAR(100) NOT NULL DEFAULT 'Mi dirección',
+        department VARCHAR(500) NULL,
+        municipality VARCHAR(500) NULL,
+        address VARCHAR(500) NULL,
+        neighborhood VARCHAR(500) NULL,
+        delivery_latitude DECIMAL(10,7) NULL,
+        delivery_longitude DECIMAL(10,7) NULL,
+        is_default TINYINT(1) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_ua_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch { /* table may already exist */ }
 
     // ── Dev Requests migration ────────────────────────────────────────────────
     try {
@@ -283,6 +416,69 @@ const startServer = async () => {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `);
     } catch { /* table may already exist */ }
+
+    // ── Tenant module control ────────────────────────────────────────────────
+    try {
+      const mPool = (await import('./config/database')).default;
+      await mPool.query(
+        `ALTER TABLE tenants ADD COLUMN IF NOT EXISTS enabled_modules JSON NULL
+         COMMENT 'Array de IDs de módulos habilitados. NULL = usar defaults por tipo de negocio'`
+      );
+    } catch { /* column may already exist */ }
+
+    // ── Announcement bar: scroll_speed column ────────────────────────────────
+    try {
+      const abPool = (await import('./config/database')).default;
+      await abPool.query(
+        `ALTER TABLE store_announcement_bar ADD COLUMN scroll_speed TINYINT NOT NULL DEFAULT 3
+         COMMENT 'Velocidad del marquee: 1=muy lento, 5=muy rapido'`
+      );
+    } catch (e: any) { if (e?.errno !== 1060) console.warn('scroll_speed migration:', e?.message); }
+
+    // ── Gastrobar Ops migrations (merma + PAR levels) ────────────────────────
+    try {
+      const gPool = (await import('./config/database')).default;
+      await gPool.query(`
+        CREATE TABLE IF NOT EXISTS waste_records (
+          id             VARCHAR(36)   NOT NULL PRIMARY KEY,
+          tenant_id      VARCHAR(36)   NOT NULL,
+          product_id     VARCHAR(36)   NULL,
+          product_name   VARCHAR(200)  NOT NULL,
+          quantity       DECIMAL(10,3) NOT NULL,
+          unit           VARCHAR(20)   NOT NULL DEFAULT 'unidad',
+          waste_type     ENUM('natural','operativa','administrativa','vencimiento') NOT NULL DEFAULT 'operativa',
+          reason         ENUM('quemado','vencido','mal_corte','devolucion','consumo_interno','robo','cortesia','sobreporcion','dano','otro') NOT NULL DEFAULT 'otro',
+          cost_value     DECIMAL(12,2) NOT NULL DEFAULT 0,
+          area           ENUM('cocina','bar','general') NOT NULL DEFAULT 'cocina',
+          responsible_id   VARCHAR(36)  NULL,
+          responsible_name VARCHAR(100) NULL,
+          notes          TEXT          NULL,
+          photo_url      VARCHAR(500)  NULL,
+          recorded_by      VARCHAR(36)  NOT NULL,
+          recorded_by_name VARCHAR(100) NOT NULL,
+          created_at     TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_wr_tenant_date (tenant_id, created_at),
+          INDEX idx_wr_product     (product_id),
+          INDEX idx_wr_area        (area)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      await gPool.query(`
+        CREATE TABLE IF NOT EXISTS par_levels (
+          id                  VARCHAR(36)   NOT NULL PRIMARY KEY,
+          tenant_id           VARCHAR(36)   NOT NULL,
+          product_id          VARCHAR(36)   NOT NULL,
+          daily_usage         DECIMAL(10,3) NOT NULL DEFAULT 0,
+          days_between_orders INT           NOT NULL DEFAULT 1,
+          safety_stock        DECIMAL(10,3) NOT NULL DEFAULT 0,
+          area                ENUM('cocina','bar','general') NOT NULL DEFAULT 'cocina',
+          notes               TEXT          NULL,
+          created_at          TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at          TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_pl_tenant_product (tenant_id, product_id),
+          INDEX idx_pl_tenant (tenant_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+    } catch { /* tables may already exist */ }
 
     // Run AES encryption migration for existing plaintext sensitive data
     try {

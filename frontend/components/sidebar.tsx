@@ -35,8 +35,14 @@ import {
   Paintbrush,
   MessageSquarePlus,
   Truck,
+  Building2,
+  Wrench,
+  Gauge,
+  Flame,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { resolveActiveModules } from '@/lib/modules'
+import { GuideButton } from '@/components/AppGuide'
 
 interface NavChild {
   id: string
@@ -84,6 +90,9 @@ const navigation: NavItem[] = [
       { id: 'services', name: 'Servicios', icon: Scissors, adminOnly: true, superadminOnly: false, merchantOnly: true },
     ],
   },
+  // gastrobar ops
+  { id: 'gastrobar-ops', name: 'Centro de Mando', icon: Gauge, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'gastrobar' },
+  { id: 'merma', name: 'Control de Merma', icon: Flame, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'gastrobar' },
   // operations
   { id: 'restbar', name: 'RestBar', icon: UtensilsCrossed, adminOnly: false, superadminOnly: false, merchantOnly: true, group: 'ops' },
   { id: 'pos', name: 'Punto de Venta', icon: ShoppingCart, adminOnly: false, superadminOnly: false, merchantOnly: true, group: 'ops' },
@@ -94,6 +103,9 @@ const navigation: NavItem[] = [
   { id: 'vendedores', name: 'Empleados', icon: UserCheck, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
   // flota ferretería
   { id: 'fleet', name: 'Mi Flota', icon: Truck, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
+  // inmobiliaria
+  { id: 'realestate', name: 'Inmobiliaria', icon: Building2, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
+  { id: 'workorders', name: 'Tapicería', icon: Wrench, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
   // reports
   { id: 'history', name: 'Historial', icon: History, adminOnly: false, superadminOnly: false, merchantOnly: true, group: 'reports' },
   { id: 'analytics', name: 'Análisis', icon: TrendingUp, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'reports' },
@@ -106,11 +118,12 @@ const navigation: NavItem[] = [
 ]
 
 const groups = [
-  { key: 'admin',   label: null },
-  { key: 'core',    label: 'Gestión' },
-  { key: 'ops',     label: 'Operaciones' },
-  { key: 'reports', label: 'Reportes' },
-  { key: 'config',  label: null },
+  { key: 'admin',     label: null },
+  { key: 'core',      label: 'Gestión' },
+  { key: 'gastrobar', label: 'Gastrobar' },
+  { key: 'ops',       label: 'Operaciones' },
+  { key: 'reports',   label: 'Reportes' },
+  { key: 'config',    label: null },
 ]
 
 // IDs that belong to the Tienda submenu (to detect active state for parent)
@@ -136,11 +149,14 @@ export function Sidebar() {
 
   const isEmpresarial = user?.tenantPlan === 'empresarial'
 
+  const activeModules = isSuperadmin ? null : resolveActiveModules(user?.enabledModules)
+
   const filterItem = (item: { adminOnly: boolean; superadminOnly: boolean; merchantOnly: boolean; id?: string }) => {
     if (item.superadminOnly && !isSuperadmin) return false
     if (item.merchantOnly && isSuperadmin) return false
     if (item.adminOnly && !isAdmin) return false
     if (item.id === 'tienda' && !isSuperadmin && !isEmpresarial) return false
+    if (activeModules && item.id && !activeModules.includes(item.id)) return false
     return true
   }
 
@@ -189,7 +205,7 @@ export function Sidebar() {
 
         {/* ── Logo ── */}
         <div className="flex h-14 shrink-0 items-center border-b border-black/[0.06] px-3">
-          <div className={cn("flex items-center gap-2.5 min-w-0", !isExpanded && "justify-center w-full")}>
+          <div data-tour="sidebar-logo" className={cn("flex items-center gap-2.5 min-w-0", !isExpanded && "justify-center w-full")}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/image/lopbukicon.png" alt="Lopbuk" width={30} height={30} className="rounded-md shrink-0" />
             {isExpanded && (
@@ -240,6 +256,7 @@ export function Sidebar() {
                       <div key={item.id}>
                         {/* Parent button */}
                         <button
+                            data-tour="sidebar-tienda"
                             onClick={handleTiendaClick}
                             className={cn(
                               "group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150",
@@ -306,6 +323,7 @@ export function Sidebar() {
                   return (
                     <div key={item.id}>
                       <button
+                        data-tour={`sidebar-${item.id}`}
                         onClick={() => navigate(item.id)}
                         className={cn(
                           "group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150",
@@ -359,21 +377,25 @@ export function Sidebar() {
               <div className={cn('mx-1 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-center', roleColor)}>
                 {roleLabel}
               </div>
-              {/* Logout */}
-              <button
-                onClick={logout}
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-xs text-gray-400 hover:bg-black/[0.06] hover:text-red-500 transition-colors"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Cerrar sesión
-              </button>
+              {/* Guide + Logout row */}
+              <div className="flex items-center gap-1">
+                <GuideButton />
+                <button
+                  onClick={logout}
+                  className="flex flex-1 items-center gap-2 rounded-xl px-3 py-1.5 text-xs text-gray-400 hover:bg-black/[0.06] hover:text-red-500 transition-colors"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Cerrar sesión
+                </button>
+              </div>
             </>
           ) : (
-            /* Collapsed footer — just avatar + logout icon */
+            /* Collapsed footer — avatar + guide + logout */
             <div className="flex flex-col items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold cursor-default">
                 {user?.name?.charAt(0).toUpperCase() ?? '?'}
               </div>
+              <GuideButton />
               <button
                 onClick={logout}
                 className="flex items-center justify-center h-7 w-7 rounded-xl text-gray-400 hover:bg-black/[0.06] hover:text-red-500 transition-colors"

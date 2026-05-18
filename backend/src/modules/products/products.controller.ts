@@ -218,6 +218,37 @@ export class ProductsController {
       next(error);
     }
   }
+
+  async updatePreorder(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const {
+        isPreorder,
+        preorderWindowEnd = null,
+        preorderShipStart = null,
+        preorderShipEnd = null,
+        preorderBadgeText = 'Pre-orden',
+        preorderPolicyText = null,
+      } = req.body;
+
+      const product = await productsService.updatePreorder(req.params.id, tenantId, {
+        isPreorder,
+        preorderWindowEnd,
+        preorderShipStart,
+        preorderShipEnd,
+        preorderBadgeText,
+        preorderPolicyText,
+      });
+
+      res.json({
+        success: true,
+        data: product,
+        message: isPreorder ? 'Pre-orden activada' : 'Pre-orden desactivada',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const productsController = new ProductsController();

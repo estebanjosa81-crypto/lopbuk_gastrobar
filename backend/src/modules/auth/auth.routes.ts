@@ -84,6 +84,32 @@ router.put(
   authController.updateProfile.bind(authController)
 );
 
+// GET /api/auth/addresses
+router.get('/addresses', authenticate, authController.getAddresses.bind(authController));
+
+// POST /api/auth/addresses
+router.post(
+  '/addresses',
+  authenticate,
+  [
+    body('label').notEmpty().withMessage('El nombre de la dirección es requerido'),
+    body('department').notEmpty().withMessage('El departamento es requerido'),
+    body('municipality').notEmpty().withMessage('El municipio es requerido'),
+    body('address').notEmpty().withMessage('La dirección es requerida'),
+    validateRequest,
+  ],
+  authController.addAddress.bind(authController)
+);
+
+// PUT /api/auth/addresses/:id
+router.put('/addresses/:id', authenticate, authController.updateAddress.bind(authController));
+
+// DELETE /api/auth/addresses/:id
+router.delete('/addresses/:id', authenticate, authController.deleteAddress.bind(authController));
+
+// PATCH /api/auth/addresses/:id/default
+router.patch('/addresses/:id/default', authenticate, authController.setDefaultAddress.bind(authController));
+
 // PUT /api/auth/change-password
 router.put(
   '/change-password',

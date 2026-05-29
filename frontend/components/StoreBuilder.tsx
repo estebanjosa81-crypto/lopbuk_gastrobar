@@ -17,16 +17,42 @@ interface BuilderState {
   heroBannerTitle: string
   heroBannerSubtitle: string
   heroBannerLink: string
+  secondaryBannerId?: number
+  secondaryBannerImage: string
+  secondaryBannerTitle: string
+  secondaryBannerSubtitle: string
+  secondaryBannerLink: string
   announcementText: string
+  announcementLink: string
   announcementBgColor: string
   announcementTextColor: string
   announcementActive: boolean
+  announcementSpeed: number
   socialWhatsapp: string
   socialInstagram: string
   socialFacebook: string
   socialTiktok: string
   schedule: string
+  locationMapUrl: string
+  termsContent: string
+  privacyContent: string
+  shippingTerms: string
+  paymentMethods: string
+  department: string
+  municipality: string
+  productCardStyle: string
+  showInfoModule: boolean
+  infoModuleDescription: string
+  metaPixelId: string
   allowContraentrega: boolean
+  cartMinPurchase: number
+  cartDeliveryFee: number
+  contactPageEnabled: boolean
+  contactPageTitle: string
+  contactPageDescription: string
+  contactPageImage: string
+  ageGateEnabled: boolean
+  ageGateDescription: string
 }
 
 const DEFAULT: BuilderState = {
@@ -35,16 +61,41 @@ const DEFAULT: BuilderState = {
   heroBannerTitle: '',
   heroBannerSubtitle: '',
   heroBannerLink: '',
+  secondaryBannerImage: '',
+  secondaryBannerTitle: '',
+  secondaryBannerSubtitle: '',
+  secondaryBannerLink: '',
   announcementText: '',
+  announcementLink: '',
   announcementBgColor: '#000000',
   announcementTextColor: '#ffffff',
   announcementActive: false,
+  announcementSpeed: 3,
   socialWhatsapp: '',
   socialInstagram: '',
   socialFacebook: '',
   socialTiktok: '',
   schedule: '',
+  locationMapUrl: '',
+  termsContent: '',
+  privacyContent: '',
+  shippingTerms: '',
+  paymentMethods: '',
+  department: '',
+  municipality: '',
+  productCardStyle: 'style1',
+  showInfoModule: false,
+  infoModuleDescription: '',
+  metaPixelId: '',
   allowContraentrega: false,
+  cartMinPurchase: 0,
+  cartDeliveryFee: 0,
+  contactPageEnabled: false,
+  contactPageTitle: '',
+  contactPageDescription: '',
+  contactPageImage: '',
+  ageGateEnabled: false,
+  ageGateDescription: '',
 }
 
 // ── Small reusable UI pieces ─────────────────────────────────────────────────
@@ -65,6 +116,43 @@ function TextInput({ value, onChange, placeholder }: { value: string; onChange: 
       placeholder={placeholder}
       style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#1f2937', outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }}
     />
+  )
+}
+
+function TextArea({ value, onChange, placeholder, rows = 3 }: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number }) {
+  return (
+    <textarea
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={rows}
+      style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#1f2937', outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.35 }}
+    />
+  )
+}
+
+function NumberInput({ value, onChange, placeholder }: { value: number; onChange: (v: number) => void; placeholder?: string }) {
+  return (
+    <input
+      type="number"
+      min={0}
+      value={Number.isFinite(value) ? value : 0}
+      onChange={e => onChange(Math.max(0, Number(e.target.value) || 0))}
+      placeholder={placeholder}
+      style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#1f2937', outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }}
+    />
+  )
+}
+
+function SelectInput({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{ width: '100%', padding: '8px 10px', border: '1.5px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#1f2937', outline: 'none', boxSizing: 'border-box', background: 'white', fontFamily: 'inherit' }}
+    >
+      {children}
+    </select>
   )
 }
 
@@ -143,7 +231,9 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
   const [openSection, setOpenSection] = useState('identity')
 
   const slug     = user?.tenantSlug
-  const storeUrl = slug ? `${typeof window !== 'undefined' ? window.location.origin : ''}/menu/${slug}` : null
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const storeUrl = slug ? `${origin}/?store=${encodeURIComponent(slug)}&preview=home` : null
+  const publicStoreUrl = slug ? `${origin}/?store=${encodeURIComponent(slug)}` : null
 
   // Load settings
   useEffect(() => {
@@ -153,6 +243,7 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
         if (res.success && res.data) {
           const { storeInfo: si, banners, announcementBar: ab } = res.data
           const hero = (banners ?? []).find((b: any) => b.position === 'hero1')
+          const secondary = (banners ?? []).find((b: any) => b.position === 'hero4')
           setState({
             logoUrl:              si?.logoUrl              ?? '',
             heroBannerId:         hero?.id,
@@ -160,16 +251,42 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
             heroBannerTitle:      hero?.title              ?? '',
             heroBannerSubtitle:   hero?.subtitle           ?? '',
             heroBannerLink:       hero?.linkUrl            ?? '',
+            secondaryBannerId:       secondary?.id,
+            secondaryBannerImage:    secondary?.imageUrl    ?? '',
+            secondaryBannerTitle:    secondary?.title       ?? '',
+            secondaryBannerSubtitle: secondary?.subtitle    ?? '',
+            secondaryBannerLink:     secondary?.linkUrl     ?? '',
             announcementText:     ab?.text                 ?? '',
+            announcementLink:     ab?.linkUrl              ?? '',
             announcementBgColor:  ab?.bgColor              ?? '#000000',
             announcementTextColor:ab?.textColor            ?? '#ffffff',
             announcementActive:   ab?.isActive             ?? false,
+            announcementSpeed:    ab?.scrollSpeed          ?? 3,
             socialWhatsapp:       si?.socialWhatsapp       ?? '',
             socialInstagram:      si?.socialInstagram      ?? '',
             socialFacebook:       si?.socialFacebook       ?? '',
             socialTiktok:         si?.socialTiktok         ?? '',
             schedule:             si?.schedule             ?? '',
+            locationMapUrl:       si?.locationMapUrl       ?? '',
+            termsContent:         si?.termsContent         ?? '',
+            privacyContent:       si?.privacyContent       ?? '',
+            shippingTerms:        si?.shippingTerms        ?? '',
+            paymentMethods:       si?.paymentMethods       ?? '',
+            department:           si?.department           ?? '',
+            municipality:         si?.municipality         ?? '',
+            productCardStyle:     si?.productCardStyle     ?? 'style1',
+            showInfoModule:       !!si?.showInfoModule,
+            infoModuleDescription:si?.infoModuleDescription ?? '',
+            metaPixelId:          si?.metaPixelId          ?? '',
             allowContraentrega:   si?.allowContraentrega   ?? false,
+            cartMinPurchase:      Number(res.data.cartMinPurchase || 0),
+            cartDeliveryFee:      Number(res.data.cartDeliveryFee || 0),
+            contactPageEnabled:   !!si?.contactPageEnabled,
+            contactPageTitle:     si?.contactPageTitle     ?? '',
+            contactPageDescription: si?.contactPageDescription ?? '',
+            contactPageImage:     si?.contactPageImage     ?? '',
+            ageGateEnabled:       !!si?.ageGateEnabled,
+            ageGateDescription:   si?.ageGateDescription   ?? '',
           })
         }
       } finally {
@@ -189,26 +306,65 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
       await Promise.all([
         api.updateStoreExtendedInfo({
           logoUrl:           state.logoUrl,
+          schedule:          state.schedule,
+          locationMapUrl:    state.locationMapUrl,
+          termsContent:      state.termsContent,
+          privacyContent:    state.privacyContent,
+          shippingTerms:     state.shippingTerms,
+          paymentMethods:    state.paymentMethods,
           socialWhatsapp:    state.socialWhatsapp,
           socialInstagram:   state.socialInstagram,
           socialFacebook:    state.socialFacebook,
           socialTiktok:      state.socialTiktok,
-          schedule:          state.schedule,
+          department:        state.department,
+          municipality:      state.municipality,
+          productCardStyle:  state.productCardStyle,
+          showInfoModule:    state.showInfoModule,
+          infoModuleDescription: state.infoModuleDescription,
+          metaPixelId:       state.metaPixelId,
           allowContraentrega:state.allowContraentrega,
         }),
-        api.updateBanner({
+        state.heroBannerImage ? api.updateBanner({
           id:       state.heroBannerId,
           position: 'hero1',
           imageUrl: state.heroBannerImage,
           title:    state.heroBannerTitle,
           subtitle: state.heroBannerSubtitle,
           linkUrl:  state.heroBannerLink,
-        }),
+        }) : Promise.resolve(),
+        state.secondaryBannerImage ? api.updateBanner({
+          id:       state.secondaryBannerId,
+          position: 'hero4',
+          imageUrl: state.secondaryBannerImage,
+          title:    state.secondaryBannerTitle,
+          subtitle: state.secondaryBannerSubtitle,
+          linkUrl:  state.secondaryBannerLink,
+        }) : Promise.resolve(),
         api.updateAnnouncementBar({
           text:      state.announcementText,
+          linkUrl:   state.announcementLink,
           bgColor:   state.announcementBgColor,
           textColor: state.announcementTextColor,
           isActive:  state.announcementActive,
+          scrollSpeed: state.announcementSpeed,
+        }),
+        api.updateCartSettings({
+          cartMinPurchase: state.cartMinPurchase,
+          cartDeliveryFee: state.cartDeliveryFee,
+        }),
+        api.updateContactPage({
+          contactPageEnabled: state.contactPageEnabled,
+          contactPageTitle: state.contactPageTitle,
+          contactPageDescription: state.contactPageDescription,
+          contactPageImage: state.contactPageImage,
+          socialWhatsapp: state.socialWhatsapp,
+          socialInstagram: state.socialInstagram,
+          socialFacebook: state.socialFacebook,
+          socialTiktok: state.socialTiktok,
+        }),
+        api.updateAgeGate({
+          ageGateEnabled: state.ageGateEnabled,
+          ageGateDescription: state.ageGateDescription,
         }),
       ])
       setSaved(true)
@@ -249,8 +405,8 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
           ))}
         </div>
 
-        {storeUrl && (
-          <a href={storeUrl} target="_blank" rel="noopener noreferrer" style={btnBase}>
+        {publicStoreUrl && (
+          <a href={publicStoreUrl} target="_blank" rel="noopener noreferrer" style={btnBase}>
             <ExternalLink size={12} /> Ver tienda
           </a>
         )}
@@ -303,14 +459,42 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
                 </Field>
               </Section>
 
+              <Section id="secondary-banner" open={openSection === 'secondary-banner'} onToggle={toggleSection} emoji="🧱" title="Segundo Banner">
+                <Field label="Imagen del segundo banner">
+                  <TextInput value={state.secondaryBannerImage} onChange={v => set('secondaryBannerImage', v)} placeholder="https://... url de imagen" />
+                </Field>
+                <Field label="Título">
+                  <TextInput value={state.secondaryBannerTitle} onChange={v => set('secondaryBannerTitle', v)} placeholder="Nueva colección, combos, promociones..." />
+                </Field>
+                <Field label="Subtítulo">
+                  <TextInput value={state.secondaryBannerSubtitle} onChange={v => set('secondaryBannerSubtitle', v)} placeholder="Texto de apoyo" />
+                </Field>
+                <Field label="Enlace (opcional)">
+                  <TextInput value={state.secondaryBannerLink} onChange={v => set('secondaryBannerLink', v)} placeholder="https://..." />
+                </Field>
+              </Section>
+
               <Section id="announcement" open={openSection === 'announcement'} onToggle={toggleSection} emoji="📢" title="Barra de Anuncios">
                 <Field label="Texto del anuncio">
                   <TextInput value={state.announcementText} onChange={v => set('announcementText', v)} placeholder="¡Envíos gratis hoy!" />
+                </Field>
+                <Field label="Enlace del anuncio">
+                  <TextInput value={state.announcementLink} onChange={v => set('announcementLink', v)} placeholder="https://... opcional" />
                 </Field>
                 <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
                   <ColorPicker label="Fondo"  value={state.announcementBgColor}   onChange={v => set('announcementBgColor', v)} />
                   <ColorPicker label="Texto"  value={state.announcementTextColor} onChange={v => set('announcementTextColor', v)} />
                 </div>
+                <Field label="Velocidad de movimiento">
+                  <SelectInput value={String(state.announcementSpeed)} onChange={v => set('announcementSpeed', Number(v))}>
+                    <option value="0">Sin movimiento</option>
+                    <option value="1">Muy lento</option>
+                    <option value="2">Lento</option>
+                    <option value="3">Normal</option>
+                    <option value="4">Rápido</option>
+                    <option value="5">Muy rápido</option>
+                  </SelectInput>
+                </Field>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                   <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>Activar barra</span>
                   <Toggle value={state.announcementActive} onChange={v => set('announcementActive', v)} />
@@ -329,9 +513,44 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
                 <Field label="TikTok"><TextInput value={state.socialTiktok}    onChange={v => set('socialTiktok', v)}    placeholder="@tutienda" /></Field>
               </Section>
 
-              <Section id="settings" open={openSection === 'settings'} onToggle={toggleSection} emoji="⚙️" title="Configuración">
-                <Field label="Horario de atención">
-                  <TextInput value={state.schedule} onChange={v => set('schedule', v)} placeholder="Lun–Vie 8am–6pm" />
+              <Section id="info-module" open={openSection === 'info-module'} onToggle={toggleSection} emoji="ℹ️" title="Módulo de Información">
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '8px 0', marginBottom: 10 }}>
+                  <div>
+                    <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>Mostrar módulo informativo</span>
+                    <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>Bloque para contar beneficios, historia o instrucciones.</p>
+                  </div>
+                  <Toggle value={state.showInfoModule} onChange={v => set('showInfoModule', v)} />
+                </div>
+                <Field label="Descripción del módulo">
+                  <TextArea value={state.infoModuleDescription} onChange={v => set('infoModuleDescription', v)} placeholder="Ej: Productos frescos, atención personalizada, pagos seguros..." rows={4} />
+                </Field>
+              </Section>
+
+              <Section id="contact-page" open={openSection === 'contact-page'} onToggle={toggleSection} emoji="☎️" title="Página de Contacto">
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '8px 0', marginBottom: 10 }}>
+                  <div>
+                    <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>Activar página de contacto</span>
+                    <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>Crea una página tipo link-in-bio para redes.</p>
+                  </div>
+                  <Toggle value={state.contactPageEnabled} onChange={v => set('contactPageEnabled', v)} />
+                </div>
+                <Field label="Título">
+                  <TextInput value={state.contactPageTitle} onChange={v => set('contactPageTitle', v)} placeholder="Contáctanos" />
+                </Field>
+                <Field label="Descripción">
+                  <TextArea value={state.contactPageDescription} onChange={v => set('contactPageDescription', v)} placeholder="Pedidos, reservas, asesoría..." />
+                </Field>
+                <Field label="Imagen principal">
+                  <TextInput value={state.contactPageImage} onChange={v => set('contactPageImage', v)} placeholder="https://... imagen de contacto" />
+                </Field>
+              </Section>
+
+              <Section id="cart" open={openSection === 'cart'} onToggle={toggleSection} emoji="🛒" title="Carrito y Domicilios">
+                <Field label="Compra mínima para domicilio">
+                  <NumberInput value={state.cartMinPurchase} onChange={v => set('cartMinPurchase', v)} placeholder="0" />
+                </Field>
+                <Field label="Tarifa de domicilio">
+                  <NumberInput value={state.cartDeliveryFee} onChange={v => set('cartDeliveryFee', v)} placeholder="0" />
                 </Field>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '8px 0' }}>
                   <div>
@@ -340,6 +559,56 @@ export function StoreBuilder({ onClose }: StoreBuilderProps) {
                   </div>
                   <Toggle value={state.allowContraentrega} onChange={v => set('allowContraentrega', v)} />
                 </div>
+              </Section>
+
+              <Section id="legal" open={openSection === 'legal'} onToggle={toggleSection} emoji="📄" title="Textos Legales">
+                <Field label="Términos y condiciones">
+                  <TextArea value={state.termsContent} onChange={v => set('termsContent', v)} placeholder="Políticas de compra, cambios y garantías..." rows={4} />
+                </Field>
+                <Field label="Política de privacidad">
+                  <TextArea value={state.privacyContent} onChange={v => set('privacyContent', v)} placeholder="Tratamiento de datos personales..." rows={4} />
+                </Field>
+                <Field label="Condiciones de envío">
+                  <TextArea value={state.shippingTerms} onChange={v => set('shippingTerms', v)} placeholder="Zonas, tiempos, costos y restricciones..." rows={4} />
+                </Field>
+              </Section>
+
+              <Section id="settings" open={openSection === 'settings'} onToggle={toggleSection} emoji="⚙️" title="Configuración">
+                <Field label="Horario de atención">
+                  <TextInput value={state.schedule} onChange={v => set('schedule', v)} placeholder="Lun–Vie 8am–6pm" />
+                </Field>
+                <Field label="URL de Google Maps">
+                  <TextInput value={state.locationMapUrl} onChange={v => set('locationMapUrl', v)} placeholder="https://maps.google.com/..." />
+                </Field>
+                <Field label="Departamento">
+                  <TextInput value={state.department} onChange={v => set('department', v)} placeholder="Antioquia, Cundinamarca..." />
+                </Field>
+                <Field label="Municipio">
+                  <TextInput value={state.municipality} onChange={v => set('municipality', v)} placeholder="Medellín, Bogotá..." />
+                </Field>
+                <Field label="Métodos de pago visibles">
+                  <TextInput value={state.paymentMethods} onChange={v => set('paymentMethods', v)} placeholder="Nequi, tarjeta, efectivo, transferencia..." />
+                </Field>
+                <Field label="Estilo de tarjeta de producto">
+                  <SelectInput value={state.productCardStyle} onChange={v => set('productCardStyle', v)}>
+                    <option value="style1">Estilo 1 - Clásico</option>
+                    <option value="style2">Estilo 2 - Editorial</option>
+                    <option value="style3">Estilo 3 - Compacto</option>
+                  </SelectInput>
+                </Field>
+                <Field label="Meta Pixel ID">
+                  <TextInput value={state.metaPixelId} onChange={v => set('metaPixelId', v)} placeholder="1234567890" />
+                </Field>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '8px 0' }}>
+                  <div>
+                    <span style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>Verificación de edad</span>
+                    <p style={{ fontSize: 11, color: '#9ca3af', margin: '2px 0 0' }}>Solicita confirmación antes de entrar.</p>
+                  </div>
+                  <Toggle value={state.ageGateEnabled} onChange={v => set('ageGateEnabled', v)} />
+                </div>
+                <Field label="Texto de verificación de edad">
+                  <TextArea value={state.ageGateDescription} onChange={v => set('ageGateDescription', v)} placeholder="Debes ser mayor de edad para continuar." />
+                </Field>
               </Section>
             </>
           )}

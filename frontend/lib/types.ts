@@ -281,6 +281,9 @@ export interface CategoryItem {
   id: string
   name: string
   description?: string
+  isActive?: boolean
+  color?: string
+  sortOrder?: number
 }
 
 export const SIZES: Size[] = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']

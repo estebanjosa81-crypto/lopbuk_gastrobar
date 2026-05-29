@@ -1,0 +1,219 @@
+{
+  "main": {
+    "id": "41e7c10fe5045130",
+    "type": "split",
+    "children": [
+      {
+        "id": "cbbe078c0719b23a",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d9fb8978ba0a5655",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Vista gráfica"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "e29a52aace6196ac",
+    "type": "split",
+    "children": [
+      {
+        "id": "4b2157985a361683",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "3830128029080e97",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Explorador de archivos"
+            }
+          },
+          {
+            "id": "cd418526a0b1db23",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Buscar"
+            }
+          },
+          {
+            "id": "504d0d076b688c38",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Marcadores"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "e7162b65df9de708",
+    "type": "split",
+    "children": [
+      {
+        "id": "cd0d67f20a62fbcc",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7fae2334bff5b485",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Enlaces entrantes"
+            }
+          },
+          {
+            "id": "20469955da00087e",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Enlaces salientes"
+            }
+          },
+          {
+            "id": "bf10fdaddca729e2",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiquetas"
+            }
+          },
+          {
+            "id": "91a165f911e4333a",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Todas las propiedades"
+            }
+          },
+          {
+            "id": "e27fbd14282ff250",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Esquema"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Abrir selector rápido": false,
+      "graph:Abrir vista gráfica": false,
+      "canvas:Crear nuevo lienzo": false,
+      "daily-notes:Abrir la nota de hoy": false,
+      "templates:Insertar plantilla": false,
+      "command-palette:Abrir paleta de comandos": false,
+      "bases:Crear nueva base": false
+    }
+  },
+  "active": "d9fb8978ba0a5655",
+  "lastOpenFiles": [
+    "modules/gastrobar-ops/compressed.md.tmp.17900.8943152a8597",
+    "memory/completed-features.md.tmp.17900.c9ce20b1094d",
+    "ontology/entities.md",
+    "architecture/backend.md",
+    "DAIMUZ.md",
+    "synapses.md",
+    "modules/stripe/compressed.md",
+    "modules/stripe",
+    "modules/dev-requests/compressed.md",
+    "modules/dev-requests/compressed.md.tmp.13304.8d423ade18ac",
+    "modules/dev-requests",
+    "modules/chatbot/compressed.md",
+    "modules/chatbot",
+    "modules/media-library/compressed.md",
+    "modules/media-library/compressed.md.tmp.13304.08788f7030cc",
+    "modules/media-library",
+    "modules/portfolio/compressed.md",
+    "modules/portfolio/compressed.md.tmp.13304.e8447d3331f9",
+    "modules/portfolio",
+    "modules/services/compressed.md",
+    "modules/services/compressed.md.tmp.13304.59ebaeb51a56",
+    "modules/fleet/compressed.md",
+    "modules/client/compressed.md",
+    "modules/novedades/compressed.md",
+    "modules/vendedores/compressed.md",
+    "modules/reviews/compressed.md",
+    "modules/coupons/compressed.md",
+    "modules/sync/compressed.md",
+    "modules/printers/compressed.md",
+    "modules/sedes/compressed.md",
+    "modules/users/compressed.md",
+    "modules/cargos/compressed.md",
+    "modules/storefront/compressed.md",
+    "modules/workorders/compressed.md",
+    "modules/finances/compressed.md",
+    "context/pending.md",
+    "Sin título.canvas"
+  ]
+}

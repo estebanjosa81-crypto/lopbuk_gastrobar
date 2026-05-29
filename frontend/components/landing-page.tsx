@@ -184,6 +184,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [showCatalog, setShowCatalog] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
+      if (params.get('preview') === 'home') return false
       return Boolean(params.get('store') || params.get('product'))
     }
     return false
@@ -227,6 +228,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [showStoresView, setShowStoresView] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
+      if (params.get('store') && params.get('preview') === 'home') return false
       return !(params.get('store') || params.get('product'))
     }
     return true
@@ -414,8 +416,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     const params = new URLSearchParams(window.location.search)
     const storeSlug = params.get('store')
     if (storeSlug) {
+      const previewHome = params.get('preview') === 'home'
       setSelectedStore(storeSlug)
-      setShowCatalog(true)
+      setShowCatalog(!previewHome)
       setShowStoresView(false)
       window.history.replaceState({}, '', window.location.pathname)
     }

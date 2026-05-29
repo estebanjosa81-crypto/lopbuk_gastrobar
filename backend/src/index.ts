@@ -193,6 +193,63 @@ const startServer = async () => {
         `ALTER TABLE users ADD COLUMN IF NOT EXISTS data_encrypted TINYINT(1) NOT NULL DEFAULT 0
          COMMENT '1 = campos sensibles cifrados con AES-256'`
       );
+      // ── Restbar Finanzas: gastos variables ───────────────────────────────────
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rb_gastos (
+          id            VARCHAR(36)    PRIMARY KEY,
+          tenant_id     VARCHAR(36)    NOT NULL,
+          concepto      VARCHAR(200)   NOT NULL,
+          categoria     VARCHAR(50)    NOT NULL DEFAULT 'egreso',
+          cantidad      DECIMAL(10,2)  NOT NULL DEFAULT 1,
+          valor_unitario DECIMAL(12,2) NOT NULL,
+          total         DECIMAL(12,2)  NOT NULL,
+          notas         TEXT           NULL,
+          registered_at DATETIME       NOT NULL,
+          created_by    VARCHAR(36)    NULL,
+          INDEX idx_rb_gastos_tenant_date (tenant_id, registered_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      // ── Restbar Finanzas: ingresos diarios ────────────────────────────────────
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rb_ingresos_diarios (
+          id            VARCHAR(36)    PRIMARY KEY,
+          tenant_id     VARCHAR(36)    NOT NULL,
+          fecha         DATE           NOT NULL,
+          num_pedidos   INT            NOT NULL DEFAULT 0,
+          valor_ventas  DECIMAL(12,2)  NOT NULL DEFAULT 0,
+          ganancia      DECIMAL(12,2)  NOT NULL DEFAULT 0,
+          notas         TEXT           NULL,
+          created_at    TIMESTAMP      DEFAULT CURRENT_TIMESTAMP,
+          updated_at    TIMESTAMP      DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_tenant_fecha (tenant_id, fecha)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      // ── Restbar Finanzas: gastos fijos (nómina, servicios) ────────────────────
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rb_gastos_fijos (
+          id         VARCHAR(36)   PRIMARY KEY,
+          tenant_id  VARCHAR(36)   NOT NULL,
+          nombre     VARCHAR(200)  NOT NULL,
+          valor      DECIMAL(12,2) NOT NULL,
+          periodo    ENUM('semanal','quincenal','mensual') NOT NULL DEFAULT 'quincenal',
+          is_active  TINYINT(1)    NOT NULL DEFAULT 1,
+          created_at TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_rb_gastos_fijos_tenant (tenant_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      `);
+      // ── Categories: columnas adicionales ──────────────────────────────────────
+      await pool.query(
+        `ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1
+         COMMENT 'Soft delete: 0 = oculta'`
+      );
+      await pool.query(
+        `ALTER TABLE categories ADD COLUMN IF NOT EXISTS color VARCHAR(7) NULL DEFAULT '#6366f1'
+         COMMENT 'Color hex para la UI'`
+      );
+      await pool.query(
+        `ALTER TABLE categories ADD COLUMN IF NOT EXISTS sort_order INT NOT NULL DEFAULT 0
+         COMMENT 'Orden de visualización'`
+      );
       // Sedes table
       await pool.query(`
         CREATE TABLE IF NOT EXISTS sedes (

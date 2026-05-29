@@ -13,10 +13,11 @@ import {
   BookOpen, Search, ToggleLeft, ToggleRight, ChevronLeft,
   Banknote, CreditCard, Smartphone, ArrowLeftRight, Layers,
   ChevronRight, User, DollarSign, FileText, Printer, TrendingDown, Download,
-  CalendarDays,
+  CalendarDays, Wallet,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { RestBarReservations } from '@/components/restbar-reservations'
+import { RestBarFinanzas } from '@/components/restbar-finanzas'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const formatCOP = (n: number) =>
@@ -36,7 +37,7 @@ const ITEM_STATUS: Record<string, { label: string; color: string }> = {
   cancelado:      { label: 'Cancelado',    color: 'bg-red-500/20 text-red-400' },
 }
 
-type Tab = 'mesas' | 'reservas' | 'comandas' | 'cocina' | 'bar' | 'caja' | 'reportes' | 'menu'
+type Tab = 'mesas' | 'reservas' | 'comandas' | 'cocina' | 'bar' | 'caja' | 'reportes' | 'menu' | 'finanzas'
 
 const RESTAURANT_ROLES = ['mesero', 'cocinero', 'cajero', 'bartender', 'administrador_rb']
 
@@ -73,6 +74,7 @@ export function RestBar() {
     { id: 'bar',      label: 'Bar',      icon: GlassWater },
     { id: 'caja',     label: 'Caja',     icon: Receipt },
     { id: 'reportes', label: 'Reportes', icon: TrendingUp },
+    { id: 'finanzas', label: 'Finanzas', icon: Wallet },
   ]
 
   const visibleTabs = tabs.filter(t => {
@@ -80,6 +82,7 @@ export function RestBar() {
     if (!isAdmin && t.id === 'reservas') return false
     if (!isAdmin && t.id === 'menu')     return false
     if (!isAdmin && t.id === 'reportes') return false
+    if (!isAdmin && t.id === 'finanzas') return false
     if (role === 'mesero' && t.id === 'cocina') return false
     if (role === 'mesero' && t.id === 'bar')    return false
     return true
@@ -133,6 +136,7 @@ export function RestBar() {
         {tab === 'bar'      && <AreaDisplayTab area="bar" />}
         {tab === 'caja'     && <CajaTab />}
         {tab === 'reportes' && <ReportesTab />}
+        {tab === 'finanzas' && <RestBarFinanzas />}
       </div>
     </div>
   )
@@ -1161,13 +1165,14 @@ function CajaTab() {
   const [breakdown, setBreakdown]   = useState<any>(null)
   const [loading, setLoading]       = useState(true)
   const [paying, setPaying]         = useState(false)
-  // payMode: null=not chosen yet, 'table'=whole table, 'individual'=per guest
-  const [payMode, setPayMode]       = useState<null | 'table' | 'individual'>(null)
+  // payMode: null=not chosen yet, 'table'=whole table, 'individual'=per guest, 'equal-split'=dividir en partes iguales
+  const [payMode, setPayMode]       = useState<null | 'table' | 'individual' | 'equal-split'>(null)
   // payTarget: null=whole table, 'general'=no-guest items, number=specific guest
   const [payTarget, setPayTarget]   = useState<null | 'general' | number>(null)
   const [payMethod, setPayMethod]   = useState('efectivo')
   const [amountPaid, setAmountPaid] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
+  const [splitCount, setSplitCount] = useState(2)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1186,16 +1191,16 @@ function CajaTab() {
     if (orderR.success) setSelected(orderR.data)
     if (bdR.success) {
       setBreakdown(bdR.data)
-      // If no guest split → auto table mode; else wait for user to choose
-      setPayMode((bdR.data?.guests?.length ?? 0) > 0 ? null : 'table')
+      setPayMode(null)
     }
     setPayTarget(null)
     setAmountPaid('')
+    setSplitCount(2)
   }
 
   const clearSelection = () => {
     setSelected(null); setBreakdown(null)
-    setPayTarget(null); setPayMode(null); setAmountPaid('')
+    setPayTarget(null); setPayMode(null); setAmountPaid(''); setSplitCount(2)
   }
 
   const refreshBreakdown = async () => {
@@ -1210,6 +1215,7 @@ function CajaTab() {
   }
 
   const targetAmount = (() => {
+    if (payMode === 'equal-split') return selected?.total ?? 0
     if (!breakdown) return selected?.total ?? 0
     if (payTarget === null) return selected?.total ?? 0
     const group = breakdown.guests?.find((g: any) =>
@@ -1263,9 +1269,12 @@ function CajaTab() {
     setPaying(false)
   }
 
-  const hasSplit    = (breakdown?.guests?.length ?? 0) > 0
-  const activeItems = selected?.items?.filter((i: any) => i.status !== 'cancelado') ?? []
-  const posActive   = payMode === 'table' || (payMode === 'individual' && payTarget !== null)
+  const hasSplit        = (breakdown?.guests?.length ?? 0) > 0
+  const activeItems     = selected?.items?.filter((i: any) => i.status !== 'cancelado') ?? []
+  const posActive       = payMode === 'table' || (payMode === 'individual' && payTarget !== null) || payMode === 'equal-split'
+  const totalRounded    = Math.ceil(selected?.total ?? 0)
+  const amountPerSplit  = splitCount > 0 ? Math.floor(totalRounded / splitCount) : 0
+  const splitRemainder  = totalRounded - amountPerSplit * splitCount
 
   // ── Shared sub-components ──
 
@@ -1341,13 +1350,13 @@ function CajaTab() {
         </div>
       </div>
 
-      {/* ── Selector de modo (solo si hay comensales) ── */}
-      {hasSplit && payMode === null && (
+      {/* ── Selector de modo ── */}
+      {payMode === null && (
         <div className="rounded-2xl border-2 border-dashed border-border bg-card/50 p-5 space-y-3 shrink-0">
           <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground text-center">¿Cómo deseas cobrar?</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className={cn('grid gap-3', hasSplit ? 'grid-cols-3' : 'grid-cols-2')}>
             <button
-              onClick={() => { setPayMode('table'); setPayTarget(null); setAmountPaid(String(selected.total)) }}
+              onClick={() => { setPayMode('table'); setPayTarget(null); setAmountPaid(String(Math.ceil(selected.total))) }}
               className="flex flex-col items-center gap-2.5 rounded-xl border-2 border-border bg-card p-4 hover:border-green-500/50 hover:bg-green-500/5 transition-all active:scale-[0.98] group"
             >
               <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center group-hover:bg-green-500/20 transition-colors">
@@ -1359,23 +1368,41 @@ function CajaTab() {
               </div>
             </button>
             <button
-              onClick={() => { setPayMode('individual'); setPayTarget(null); setAmountPaid('') }}
-              className="flex flex-col items-center gap-2.5 rounded-xl border-2 border-border bg-card p-4 hover:border-primary/50 hover:bg-primary/5 transition-all active:scale-[0.98] group"
+              onClick={() => {
+                setPayMode('equal-split')
+                setSplitCount(Math.max(2, selected.guestsCount || 2))
+                setAmountPaid(String(Math.ceil(selected.total)))
+              }}
+              className="flex flex-col items-center gap-2.5 rounded-xl border-2 border-border bg-card p-4 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all active:scale-[0.98] group"
             >
-              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                <Users className="h-5 w-5 text-primary" />
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
+                <Users className="h-5 w-5 text-amber-400" />
               </div>
               <div className="text-center">
-                <p className="font-bold text-sm">Por comensal</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">{breakdown?.guests?.length ?? 0} personas</p>
+                <p className="font-bold text-sm">Dividir cuenta</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">partes iguales</p>
               </div>
             </button>
+            {hasSplit && (
+              <button
+                onClick={() => { setPayMode('individual'); setPayTarget(null); setAmountPaid('') }}
+                className="flex flex-col items-center gap-2.5 rounded-xl border-2 border-border bg-card p-4 hover:border-primary/50 hover:bg-primary/5 transition-all active:scale-[0.98] group"
+              >
+                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div className="text-center">
+                  <p className="font-bold text-sm">Por comensal</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{breakdown?.guests?.length ?? 0} personas</p>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── Vista: toda la mesa (no split o payMode=table) ── */}
-      {(!hasSplit || payMode === 'table') && (
+      {/* ── Vista: toda la mesa ── */}
+      {(payMode === 'table' || payMode === 'equal-split' || (!hasSplit && payMode !== null && payMode !== 'individual')) && (
         <div className="rounded-xl border border-border bg-card overflow-hidden shrink-0">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-accent/30">
             <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -1404,6 +1431,70 @@ function CajaTab() {
             <p className="text-sm font-semibold text-green-400/60">Total comanda</p>
             <p className="text-xl font-black text-green-400 tabular-nums">{formatCOP(selected.total)}</p>
           </div>
+        </div>
+      )}
+
+      {/* ── Panel: dividir en partes iguales ── */}
+      {payMode === 'equal-split' && (
+        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 p-4 space-y-3 shrink-0">
+          {/* Header + contador */}
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Dividir cuenta</p>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">Personas:</span>
+              <button
+                onClick={() => setSplitCount(c => Math.max(2, c - 1))}
+                className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center hover:bg-accent disabled:opacity-30 transition-colors"
+                disabled={splitCount <= 2}
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-base font-black w-6 text-center tabular-nums">{splitCount}</span>
+              <button
+                onClick={() => setSplitCount(c => c + 1)}
+                className="h-7 w-7 rounded-lg border border-border bg-card flex items-center justify-center hover:bg-accent transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Monto por persona */}
+          <div className="rounded-xl bg-amber-950/40 border border-amber-500/20 px-4 py-3 text-center">
+            <p className="text-[11px] text-amber-400/70 uppercase tracking-wider font-bold">Cada persona paga</p>
+            <p className="text-3xl font-black text-amber-300 tabular-nums mt-1">{formatCOP(amountPerSplit)}</p>
+            {splitRemainder > 0 && (
+              <p className="text-[11px] text-amber-400/50 mt-1">
+                La última persona paga {formatCOP(amountPerSplit + splitRemainder)}
+              </p>
+            )}
+          </div>
+
+          {/* Desglose por persona */}
+          <div className="space-y-1.5">
+            {Array.from({ length: splitCount }, (_, i) => {
+              const isLast = i === splitCount - 1
+              const personAmount = isLast ? amountPerSplit + splitRemainder : amountPerSplit
+              return (
+                <div key={i} className="flex items-center justify-between rounded-lg bg-card border border-border px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="h-5 w-5 rounded-full bg-amber-500/20 flex items-center justify-center">
+                      <span className="text-[10px] font-black text-amber-400">{i + 1}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-muted-foreground">Persona {i + 1}</span>
+                  </div>
+                  <span className="text-sm font-black tabular-nums">{formatCOP(personAmount)}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <button
+            onClick={() => { setPayMode(null); setAmountPaid('') }}
+            className="w-full text-[11px] text-muted-foreground hover:text-foreground text-center transition-colors pt-1"
+          >
+            ← Cambiar modo de cobro
+          </button>
         </div>
       )}
 
@@ -1460,7 +1551,7 @@ function CajaTab() {
                       onClick={() => {
                         const target = g.guestNumber ?? 'general'
                         setPayTarget(target)
-                        setAmountPaid(String(g.subtotal))
+                        setAmountPaid(String(Math.ceil(g.subtotal)))
                       }}
                       className={cn(
                         'w-full rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98]',
@@ -1487,7 +1578,7 @@ function CajaTab() {
           {/* Option: charge all remaining */}
           {breakdown.guests.some((g: any) => !g.paid) && (
             <button
-              onClick={() => { setPayMode('table'); setPayTarget(null); setAmountPaid(String(selected.total)) }}
+              onClick={() => { setPayMode('table'); setPayTarget(null); setAmountPaid(String(Math.ceil(selected.total))) }}
               className="w-full rounded-xl border border-dashed border-green-500/30 py-2.5 text-sm font-semibold text-green-400 hover:bg-green-500/5 transition-colors flex items-center justify-center gap-2">
               <Receipt className="h-4 w-4" /> Cobrar toda la mesa de una vez
             </button>
@@ -1498,7 +1589,8 @@ function CajaTab() {
   )
 
   /** Right column: POS terminal */
-  const posLabel = payMode === 'table' ? 'Mesa completa'
+  const posLabel = payMode === 'equal-split' ? `Mesa completa (÷${splitCount} personas)`
+    : payMode === 'table' ? 'Mesa completa'
     : payTarget === 'general' ? 'Mesa general'
     : payTarget != null ? (breakdown?.guests?.find((g: any) => g.guestNumber === payTarget)?.guestName ?? `Comensal ${payTarget}`)
     : ''
@@ -1557,12 +1649,15 @@ function CajaTab() {
       <div className="space-y-1.5 shrink-0">
         <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground px-1">Monto recibido</p>
         <input
-          type="number"
+          type="text"
           inputMode="numeric"
           placeholder="0"
           className="w-full h-20 text-4xl font-black text-center rounded-xl border-2 border-border bg-background focus:border-primary focus:outline-none tabular-nums transition-colors"
-          value={amountPaid}
-          onChange={e => setAmountPaid(e.target.value)}
+          value={amountPaid ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Number(amountPaid)) : ''}
+          onChange={e => {
+            const raw = e.target.value.replace(/\./g, '').replace(/[^\d]/g, '')
+            setAmountPaid(raw)
+          }}
         />
       </div>
 
@@ -1689,9 +1784,10 @@ function CajaTab() {
                   ))}
                 </div>
                 <input
-                  type="number" inputMode="numeric" placeholder="0"
+                  type="text" inputMode="numeric" placeholder="0"
                   className="w-full h-20 text-4xl font-black text-center rounded-xl border-2 border-border bg-background focus:border-primary focus:outline-none tabular-nums"
-                  value={amountPaid} onChange={e => setAmountPaid(e.target.value)}
+                  value={amountPaid ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(Number(amountPaid)) : ''}
+                  onChange={e => { const raw = e.target.value.replace(/\./g, '').replace(/[^\d]/g, ''); setAmountPaid(raw) }}
                 />
                 {amountPaid && (
                   <div className={cn('rounded-xl border-2 p-4 flex justify-between items-center',

@@ -29,6 +29,8 @@ COLLATE utf8mb4_unicode_ci;
 
 USE stockpro_db;
 
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- ============================================
 -- TABLA: tenants (Negocios/Inquilinos)
 -- Cada comerciante tiene un tenant que agrupa todos sus datos
@@ -185,14 +187,13 @@ CREATE TABLE IF NOT EXISTS categories (
     description VARCHAR(255) NULL,
     image_url VARCHAR(500) NULL,
     hidden_in_store TINYINT(1) NOT NULL DEFAULT 0,
+    is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Visible en POS/inventario (1=activa, 0=oculta)',
+    color VARCHAR(7) NULL COMMENT 'Color hex de la categoría: "#6366f1"',
+    sort_order INT NOT NULL DEFAULT 0 COMMENT 'Orden de visualización ascendente',
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     UNIQUE INDEX idx_category_tenant_name (tenant_id, name),
     INDEX idx_category_tenant (tenant_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Migration: add hidden_in_store if not exists
--- Run manually on existing databases:
--- ALTER TABLE categories ADD COLUMN IF NOT EXISTS hidden_in_store TINYINT(1) NOT NULL DEFAULT 0;
 
 -- ============================================
 -- TABLA: sedes (Sucursales por tenant)
@@ -4318,7 +4319,97 @@ CALL sp_migrate_v34_announcement();
 DROP PROCEDURE IF EXISTS sp_migrate_v34_announcement;
 
 -- ============================================================
--- FIN DEL SCRIPT v3.3 Multi-Tenant
+-- MIGRACIÓN v3.8 — Tracker Financiero Gastrobar + Categorías CRUD
+-- [2026-05-27]
+-- ============================================================
+
+-- ── 1. categories: nuevas columnas para CRUD completo ─────────────────────────
+DELIMITER //
+DROP PROCEDURE IF EXISTS sp_migrate_v38_categories //
+CREATE PROCEDURE sp_migrate_v38_categories()
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'categories' AND COLUMN_NAME = 'is_active'
+    ) THEN
+        ALTER TABLE categories
+            ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1
+                COMMENT 'Visible en POS/inventario (1=activa, 0=oculta)';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'categories' AND COLUMN_NAME = 'color'
+    ) THEN
+        ALTER TABLE categories
+            ADD COLUMN color VARCHAR(7) NULL
+                COMMENT 'Color hex de la categoría: "#6366f1"';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'categories' AND COLUMN_NAME = 'sort_order'
+    ) THEN
+        ALTER TABLE categories
+            ADD COLUMN sort_order INT NOT NULL DEFAULT 0
+                COMMENT 'Orden de visualización ascendente';
+    END IF;
+END //
+DELIMITER ;
+CALL sp_migrate_v38_categories();
+DROP PROCEDURE IF EXISTS sp_migrate_v38_categories;
+
+-- ── 2. rb_gastos — Gastos variables del gastrobar ────────────────────────────
+CREATE TABLE IF NOT EXISTS rb_gastos (
+    id            VARCHAR(36)   NOT NULL PRIMARY KEY,
+    tenant_id     VARCHAR(36)   NOT NULL,
+    concepto      VARCHAR(255)  NOT NULL     COMMENT 'Descripción del gasto',
+    categoria     VARCHAR(50)   NOT NULL DEFAULT 'egreso',
+    cantidad      DECIMAL(10,2) NOT NULL DEFAULT 1,
+    valor_unitario DECIMAL(12,2) NOT NULL,
+    total         DECIMAL(12,2) NOT NULL,
+    notas         TEXT          NULL,
+    registered_at TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                  COMMENT 'Timestamp automático del servidor al registrar',
+    created_by    VARCHAR(36)   NULL,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    INDEX idx_rb_gastos_tenant_date (tenant_id, registered_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT 'Gastos variables del gastrobar (egresos operativos)';
+
+-- ── 3. rb_ingresos_diarios — Ingresos diarios del gastrobar ──────────────────
+CREATE TABLE IF NOT EXISTS rb_ingresos_diarios (
+    id           VARCHAR(36)   NOT NULL PRIMARY KEY,
+    tenant_id    VARCHAR(36)   NOT NULL,
+    fecha        DATE          NOT NULL     COMMENT 'Fecha del día reportado',
+    num_pedidos  INT           NOT NULL DEFAULT 0,
+    valor_ventas DECIMAL(12,2) NOT NULL DEFAULT 0,
+    ganancia     DECIMAL(12,2) NOT NULL DEFAULT 0,
+    notas        TEXT          NULL,
+    created_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    UNIQUE INDEX idx_rb_ing_tenant_fecha (tenant_id, fecha)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT 'Ingresos diarios del gastrobar (upsert por fecha)';
+
+-- ── 4. rb_gastos_fijos — Gastos fijos recurrentes del gastrobar ──────────────
+CREATE TABLE IF NOT EXISTS rb_gastos_fijos (
+    id        VARCHAR(36)   NOT NULL PRIMARY KEY,
+    tenant_id VARCHAR(36)   NOT NULL,
+    nombre    VARCHAR(255)  NOT NULL     COMMENT 'Nombre del gasto fijo (arriendo, servicios, etc.)',
+    valor     DECIMAL(12,2) NOT NULL,
+    periodo   ENUM('quincenal','semanal','mensual') NOT NULL DEFAULT 'quincenal',
+    is_active TINYINT(1)   NOT NULL DEFAULT 1,
+    created_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP   DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    INDEX idx_rb_gastos_fijos_tenant (tenant_id, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT 'Gastos fijos recurrentes del gastrobar (para resumen quincenal)';
+
+-- ============================================================
+-- FIN DEL SCRIPT v3.8 Multi-Tenant
 -- ============================================================
 -- CREDENCIALES POR DEFECTO:
 --   Superadmin:   superadmin@stockpro.com  / admin123

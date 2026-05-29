@@ -1,0 +1,70 @@
+# 🎓 Lecciones Aprendidas
+
+> Lo que el proyecto nos enseñó. Actualizar cuando algo sale mal o muy bien.
+
+## Arquitectura
+
+### ✅ Lo que funcionó bien
+- **Separar service de controller** desde el día 1 → facilita testing y refactoring
+- **MySQL directo con mysql2** → más control que ORM, queries optimizables
+- **Zustand** → simplicidad perfecta para este tamaño, sin Redux overhead
+- **Socket.io** para tiempo real → implementación limpia para pedidos en vivo
+
+### ⚠️ Lo que hubiera cambiado
+- Definir interfaces TypeScript de DB desde el inicio (se fue agregando después)
+- Estandarizar respuestas API desde el día 1 (algunos endpoints tienen formato diferente)
+
+## Multi-Tenancy
+
+- **Lección clave:** El `tenant_id` debe estar en TODO desde el inicio. Agregarlo después es costoso.
+- Los módulos activables deben validarse en BACKEND, no solo ocultar en frontend
+
+## Auth
+
+- **JWT en httpOnly cookie** es más seguro que localStorage — no negociable
+- Tener token también en memoria (auth-store) es necesario para el header Authorization como fallback
+- Google OAuth necesita manejar el caso "usuario ya existe con email diferente"
+
+## Frontend
+
+- **Los componentes grandes (POS, Dashboard)** deben dividirse en subcomponentes cuando superan ~300 líneas
+- El sidebar dinámico por rol+módulos es poderoso pero necesita buena documentación
+- Cloudinary upload directo desde frontend (sin pasar por backend) = mejor performance
+
+## Base de Datos
+
+- Soft delete (`is_active`) es esencial para datos financieros y de ventas
+- Los UUIDs como PK son más seguros pero más lentos en joins — para este tamaño es aceptable
+- Siempre crear índices en `tenant_id` y `created_at` en tablas de alto volumen
+
+## Desarrollo
+
+- Documentar el módulo ANTES de construirlo ahorra tiempo
+- Los bugs más costosos fueron en módulos sin documentación de reglas de negocio
+- Trabajar con Claude es 3x más rápido cuando tienes el contexto correcto listo
+
+## Eficiencia DAIMUZ — Datos Medidos
+
+### Sesión 2026-05-27 (primera sesión con DAIMUZ v3 al 100/100)
+
+| Métrica | Sin DAIMUZ | Con DAIMUZ v3 |
+|---|---|---|
+| Tiempo total estimado | ~45 min | ~18 min |
+| Files explorados para orientarse | 8-12 | 3 |
+| Backtracking / re-lecturas | Frecuente | 0 |
+| Bugs en runtime por falta de contexto | 2-3 | 0 |
+| Bugs detectados en pre-lectura | Raro | 1 (duplicado api.ts) |
+
+### Por qué funcionó
+- El `context/current-sprint.md` + el summary de sesión anterior tenían exactamente qué archivos tocar
+- Los `compressed.md` de cada módulo dijeron el patrón sin leer código
+- `endpoints-index.md` confirmó qué backend ya existía sin explorar routes
+- `governance/universal-constraints.md` evitó errores de patrón (tenant_id, service-only logic)
+
+### Regla derivada
+> **Antes de implementar, leer:** compressed.md del módulo → endpoints-index → files-index → el archivo específico.
+> Eso reemplaza 20-30 minutos de exploración ciega.
+
+---
+
+← [[completed-features]] | [[DAIMUZ]] | → [[important-fixes]]

@@ -563,13 +563,18 @@ export function PointOfSale() {
     return () => window.removeEventListener('keydown', handleGlobalKey)
   }, [isCheckoutOpen, isFiadoOpen, showScanner, showRemoteScanner])
 
+  const selectedSedeName = selectedSede ? sedes.find(s => s.id === selectedSede)?.name : null
+  const currentCustomerName = selectedCustomer?.name || customer.name || 'Consumidor Final'
+
   return (
-    <div className="space-y-4">
-    <SyncStatusBar />
-    <div className="grid gap-6 lg:gap-8 lg:grid-cols-3 xl:gap-10">
+    <div className="space-y-4 lg:flex lg:h-[calc(100dvh-10rem)] lg:min-h-[540px] lg:flex-col lg:overflow-hidden">
+    <div className="shrink-0">
+      <SyncStatusBar />
+    </div>
+    <div className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_clamp(380px,28vw,420px)] lg:gap-5 xl:gap-6">
       {/* Product Selection */}
-      <div className="lg:col-span-2 space-y-4 lg:space-y-6">{/* Search */}
-        <div className="flex gap-2">
+      <div className="min-w-0 space-y-4 lg:flex lg:min-h-0 lg:flex-col lg:space-y-4">{/* Search */}
+        <div className="flex shrink-0 gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -606,9 +611,9 @@ export function PointOfSale() {
 
         {/* Sede Filter */}
         {sedes.length > 0 && (
-          <Card className="border-border bg-card">
-            <CardContent className="p-3 sm:p-4 lg:p-5">
-              <div className="flex items-center gap-2 flex-wrap">
+          <Card className="shrink-0 border-border bg-card">
+            <CardContent className="p-3 sm:p-4 lg:p-3">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
                 <span className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
                   <Building className="h-4 w-4" />
                   Sede:
@@ -617,7 +622,7 @@ export function PointOfSale() {
                   variant={selectedSede === null ? "default" : "outline"}
                   size="sm"
                   onClick={() => setSelectedSede(null)}
-                  className="rounded-full h-8"
+                  className="h-8 shrink-0 rounded-full"
                 >
                   Todas
                 </Button>
@@ -629,7 +634,7 @@ export function PointOfSale() {
                       variant={selectedSede === sede.id ? "default" : "outline"}
                       size="sm"
                       onClick={() => setSelectedSede(sede.id)}
-                      className="rounded-full h-8"
+                      className="h-8 shrink-0 rounded-full"
                     >
                       {sede.name}
                       <Badge variant="secondary" className="ml-1.5 h-5 px-1 flex items-center justify-center text-xs">
@@ -644,14 +649,14 @@ export function PointOfSale() {
         )}
 
         {/* Categories Filter */}
-        <Card className="border-border bg-card">
-          <CardContent className="p-3 sm:p-4 lg:p-5">
-            <div className="flex flex-wrap gap-1.5 sm:gap-2 lg:gap-3">
+        <Card className="shrink-0 border-border bg-card">
+            <CardContent className="p-3 sm:p-4 lg:p-3">
+            <div className="flex gap-1.5 overflow-x-auto pb-1 sm:gap-2 lg:gap-3">
               <Button
                 variant={selectedCategory === null ? "default" : "outline"}
                 size="sm"
                 onClick={() => setSelectedCategory(null)}
-                className="rounded-full h-9 lg:h-10"
+                className="h-9 shrink-0 rounded-full lg:h-10"
               >
                 <Package className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5" />
                 Todas
@@ -665,7 +670,7 @@ export function PointOfSale() {
                     variant={selectedCategory === cat.id ? "default" : "outline"}
                     size="sm"
                     onClick={() => setSelectedCategory(cat.id)}
-                    className="rounded-full h-9 lg:h-10"
+                    className="h-9 shrink-0 rounded-full lg:h-10"
                   >
                     {cat.name}
                     <Badge variant="secondary" className="ml-1.5 h-5 w-5 flex items-center justify-center p-0 text-xs">
@@ -680,8 +685,8 @@ export function PointOfSale() {
 
         {/* Products Grid */}
         {availableProducts.length > 0 && (
-          <Card className="border-border bg-card">
-            <CardHeader className="pb-3">
+          <Card className="min-h-0 border-border bg-card lg:flex lg:flex-1 lg:flex-col lg:overflow-hidden">
+            <CardHeader className="shrink-0 pb-3">
               <CardTitle className="text-base lg:text-lg flex items-center justify-between">
                 <span>
                   {selectedCategory ? getCategoryName(selectedCategory) : 'Todos los Productos'}
@@ -691,8 +696,8 @@ export function PointOfSale() {
                 </Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-3 sm:p-6 lg:p-6">
-              <div className="grid gap-2 sm:gap-3 lg:gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{availableProducts.map((product) => {
+            <CardContent className="min-h-0 p-3 sm:p-6 lg:flex-1 lg:overflow-y-auto lg:p-4 xl:p-5">
+              <div className="grid gap-2 sm:gap-3 lg:gap-3 xl:gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{availableProducts.map((product) => {
                   const inCart = cart.find(item => item.product.id === product.id)
                   const stockPercentage = (product.stock / (product.stock + 10)) * 100
                   const noInsumos = product.isComposite && product.stock <= 0
@@ -801,12 +806,12 @@ export function PointOfSale() {
       </div>
       
       {/* Cart - Hidden on mobile, shown on desktop */}
-      <div className="hidden lg:block lg:col-span-1">
-        <Card className="lg:sticky lg:top-24 border-border bg-card">
-          <CardHeader className="pb-2 sm:pb-3">
+      <div className="hidden lg:block lg:col-span-1 min-w-0">
+        <Card className="flex h-full flex-col overflow-hidden border-border bg-card shadow-xl shadow-black/10 ring-1 ring-border/60">
+          <CardHeader className="shrink-0 border-b border-border bg-card px-4 py-2.5">
             <CardTitle className="flex items-center gap-2 text-sm sm:text-base lg:text-lg">
               <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6" />
-              <span>Carrito de Compras</span>
+              <span className="min-w-0 truncate">Venta Actual</span>
               {cart.length > 0 && (
                 <Badge variant="secondary" className="ml-auto text-xs lg:text-sm">
                   {cart.reduce((sum, item) => sum + item.quantity, 0)}
@@ -814,9 +819,9 @@ export function PointOfSale() {
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6 pt-0 sm:pt-0">
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
             {/* Cart Items */}
-            <div className="space-y-2 sm:space-y-3">
+            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2.5">
               {cart.length === 0 ? (
                 <div className="py-6 sm:py-8 text-center">
                   <ShoppingCart className="h-10 w-10 sm:h-12 sm:w-12 lg:h-14 lg:w-14 mx-auto text-muted-foreground mb-2 sm:mb-3" />
@@ -831,24 +836,24 @@ export function PointOfSale() {
                 cart.map((item) => (
                   <div
                     key={item.product.id}
-                    className="rounded-lg border border-border bg-secondary/30 p-2 sm:p-3 lg:p-4"
+                    className="rounded-md border border-border bg-background p-1.5 shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-1 sm:gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm lg:text-base font-medium text-foreground truncate">
+                        <p className="text-sm font-semibold leading-tight text-foreground truncate">
                           {item.product.name}
                         </p>
-                        <p className="text-[10px] sm:text-xs lg:text-sm text-muted-foreground">
-                          {formatCOP(item.product.salePrice)} c/u
+                        <p className="text-[11px] text-muted-foreground">
+                          {item.quantity} x {formatCOP(item.customAmount || item.product.salePrice)}
                         </p>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-5 w-5 sm:h-6 sm:w-6 lg:h-7 lg:w-7 text-muted-foreground hover:text-destructive"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
                         onClick={() => removeFromCart(item.product.id)}
                       >
-                        <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                     {item.product.isComposite && (() => {
@@ -892,30 +897,30 @@ export function PointOfSale() {
                         </div>
                       )
                     })()}
-                    <div className="flex items-center justify-between mt-2 sm:mt-3">
-                      <div className="flex items-center gap-1.5 sm:gap-2">
+                    <div className="flex items-center justify-between gap-2 mt-1.5">
+                      <div className="flex shrink-0 items-center gap-1">
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 bg-transparent"
+                          className="h-7 w-7 bg-transparent"
                           onClick={() => handleQuantityChange(item.product.id, -1)}
                         >
-                          <Minus className="h-2.5 w-2.5 sm:h-3 sm:w-3 lg:h-3.5 lg:w-3.5" />
+                          <Minus className="h-3 w-3" />
                         </Button>
-                        <span className="w-6 sm:w-8 lg:w-10 text-center text-xs sm:text-sm lg:text-base font-medium">
+                        <span className="w-8 text-center text-sm font-semibold">
                           {item.quantity}
                         </span>
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 bg-transparent"
+                          className="h-7 w-7 bg-transparent"
                           onClick={() => handleQuantityChange(item.product.id, 1)}
                           disabled={item.quantity >= item.product.stock}
                         >
-                          <Plus className="h-2.5 w-2.5 sm:h-3 sm:w-3 lg:h-3.5 lg:w-3.5" />
+                          <Plus className="h-3 w-3" />
                         </Button>
                       </div>
-                      <span className="text-xs sm:text-sm lg:text-base font-semibold text-foreground">
+                      <span className="min-w-0 text-right text-sm font-bold text-foreground">
                         {item.customAmount
                           ? formatCOP(item.customAmount * item.quantity)
                           : formatCOP((item.product.salePrice * item.quantity) - item.discount)
@@ -928,10 +933,10 @@ export function PointOfSale() {
             </div>
 
             {cart.length > 0 && (
-              <>
+              <div className="shrink-0 space-y-2 border-t border-border bg-card p-3 shadow-[0_-10px_20px_rgba(0,0,0,0.06)]">
                 {/* Discount */}
-                <div className="space-y-2">
-                  <Label className="text-xs lg:text-sm text-muted-foreground">Descuento Global</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Descuento Global</Label>
                   <Input
                     type="number"
                     min="0"
@@ -939,12 +944,12 @@ export function PointOfSale() {
                     value={globalDiscount || ''}
                     onChange={(e) => setGlobalDiscount(parseFloat(e.target.value) || 0)}
                     onWheel={(e) => e.currentTarget.blur()}
-                    className="bg-secondary border-none h-10 lg:h-11"
+                    className="h-9 border-none bg-secondary"
                   />
                 </div>
 
                 {/* IVA Toggle */}
-                <div className={`flex items-center justify-between rounded-lg border p-2.5 transition-colors ${applyIva ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/20' : 'border-border bg-secondary/30'}`}>
+                <div className={`flex items-center justify-between rounded-md border p-2 transition-colors ${applyIva ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/20' : 'border-border bg-secondary/30'}`}>
                   <div className="flex items-center gap-2">
                     <Receipt className={`h-4 w-4 ${applyIva ? 'text-amber-600' : 'text-muted-foreground'}`} />
                     <div>
@@ -964,50 +969,67 @@ export function PointOfSale() {
                 </div>
 
                 {/* Totals */}
-                <div className="space-y-1.5 sm:space-y-2 lg:space-y-3 border-t border-border pt-3 sm:pt-4">
-                  <div className="flex justify-between text-xs sm:text-sm lg:text-base">
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span className="text-foreground">{formatCOP(subtotal)}</span>
+                    <span className="pl-2 text-right text-foreground">{formatCOP(subtotal)}</span>
                   </div>
-                  <div className="flex justify-between text-xs sm:text-sm lg:text-base">
+                  <div className="flex justify-between text-sm">
                     {applyIva ? (
                       <span className="text-amber-600 font-medium">IVA (19%)</span>
                     ) : (
                       <span className="text-muted-foreground">IVA</span>
                     )}
                     {applyIva ? (
-                      <span className="text-amber-600 font-medium">{formatCOP(tax)}</span>
+                      <span className="pl-2 text-right text-amber-600 font-medium">{formatCOP(tax)}</span>
                     ) : (
                       <span className="text-green-600 text-xs">Sin IVA</span>
                     )}
                   </div>
                   {globalDiscount > 0 && (
-                    <div className="flex justify-between text-xs sm:text-sm lg:text-base">
+                    <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Descuento</span>
-                      <span className="text-destructive">-{formatCOP(globalDiscount)}</span>
+                      <span className="pl-2 text-right text-destructive">-{formatCOP(globalDiscount)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-base sm:text-lg lg:text-xl font-bold border-t border-border pt-2">
+                  <div className="flex justify-between border-t border-border pt-1.5 text-lg font-bold">
                     <span className="text-foreground">Total</span>
-                    <span className="text-primary">{formatCOP(finalTotal)}</span>
+                    <span className="pl-2 text-right text-primary">{formatCOP(finalTotal)}</span>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1 rounded-md border border-border bg-secondary/30 p-2 text-[11px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Cliente</span>
+                    <span className="truncate text-right font-medium text-foreground">{currentCustomerName}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Modo</span>
+                    <span className="font-medium text-foreground">Mostrador</span>
+                  </div>
+                  {selectedSedeName && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">Sede</span>
+                      <span className="truncate text-right font-medium text-foreground">{selectedSedeName}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Actions */}
                 <div className="space-y-2">
                   <Button
-                    className="w-full h-14 lg:h-16 text-lg lg:text-xl font-bold bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-green-600/30 transition-all gap-2"
+                    className="h-12 w-full gap-2 bg-green-600 text-base font-bold text-white shadow-lg transition-all hover:bg-green-700 hover:shadow-green-600/30"
                     onClick={handleCheckout}
                   >
                     <Zap className="h-5 w-5" />
                     COBRAR {formatCOP(finalTotal)}
-                    <span className="text-xs font-normal opacity-75 ml-1">[F4]</span>
+                    <span className="ml-1 text-xs font-normal opacity-75">[F4]</span>
                   </Button>
                   <div className="flex gap-1.5">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex-1 bg-transparent text-xs lg:text-sm h-9"
+                      className="h-8 flex-1 bg-transparent text-xs"
                       onClick={clearCart}
                     >
                       Limpiar
@@ -1015,7 +1037,7 @@ export function PointOfSale() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex-1 bg-transparent text-xs lg:text-sm h-9"
+                      className="h-8 flex-1 bg-transparent text-xs"
                       onClick={() => {
                         if (cart.length === 0) return
                         setIsFiadoOpen(true)
@@ -1025,7 +1047,7 @@ export function PointOfSale() {
                     </Button>
                   </div>
                 </div>
-              </>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -1046,20 +1068,20 @@ export function PointOfSale() {
 
       {/* Mobile Cart Dialog */}
       <Dialog open={isMobileCartOpen} onOpenChange={setIsMobileCartOpen}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="p-4 pb-2 border-b">
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="max-w-md h-[min(90dvh,720px)] max-h-[90dvh] overflow-hidden flex flex-col gap-0 p-0">
+          <DialogHeader className="shrink-0 p-4 pb-2 pr-12 border-b">
+            <DialogTitle className="flex items-center gap-2 min-w-0">
               <ShoppingCart className="h-5 w-5" />
-              Carrito de Compras
+              <span className="min-w-0 truncate">Venta Actual</span>
               {cart.length > 0 && (
-                <Badge variant="secondary" className="ml-2">
+                <Badge variant="secondary" className="ml-auto shrink-0">
                   {cart.reduce((sum, item) => sum + item.quantity, 0)} items
                 </Badge>
               )}
             </DialogTitle>
           </DialogHeader>
           
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
             {cart.length === 0 ? (
               <div className="py-12 text-center">
                 <ShoppingCart className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
@@ -1070,15 +1092,15 @@ export function PointOfSale() {
               cart.map((item) => (
                 <div 
                   key={item.product.id}
-                  className="rounded-lg border border-border bg-secondary/30 p-3"
+                  className="rounded-md border border-border bg-background p-2 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
+                      <p className="text-sm font-semibold text-foreground truncate">
                         {item.product.name}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatCOP(item.product.salePrice)} c/u
+                      <p className="text-[11px] text-muted-foreground">
+                        {item.quantity} x {formatCOP(item.customAmount || item.product.salePrice)}
                       </p>
                     </div>
                     <Button
@@ -1090,31 +1112,34 @@ export function PointOfSale() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="flex items-center justify-between mt-3">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between gap-2 mt-1.5">
+                    <div className="flex shrink-0 items-center gap-1">
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-8 w-8 bg-transparent"
+                        className="h-7 w-7 bg-transparent"
                         onClick={() => handleQuantityChange(item.product.id, -1)}
                       >
                         <Minus className="h-3 w-3" />
                       </Button>
-                      <span className="w-8 text-center text-sm font-medium">
+                      <span className="w-8 text-center text-sm font-semibold">
                         {item.quantity}
                       </span>
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-8 w-8 bg-transparent"
+                        className="h-7 w-7 bg-transparent"
                         onClick={() => handleQuantityChange(item.product.id, 1)}
                         disabled={item.quantity >= item.product.stock}
                       >
                         <Plus className="h-3 w-3" />
                       </Button>
                     </div>
-                    <span className="font-semibold text-foreground">
-                      {formatCOP((item.product.salePrice * item.quantity) - item.discount)}
+                    <span className="min-w-0 text-right text-sm font-bold text-foreground">
+                      {item.customAmount
+                        ? formatCOP(item.customAmount * item.quantity)
+                        : formatCOP((item.product.salePrice * item.quantity) - item.discount)
+                      }
                     </span>
                   </div>
                 </div>
@@ -1123,7 +1148,7 @@ export function PointOfSale() {
           </div>
 
           {cart.length > 0 && (
-            <div className="border-t p-4 space-y-3 bg-card">
+            <div className="shrink-0 border-t p-4 space-y-3 bg-card">
               {/* IVA Toggle Mobile */}
               <div className={`flex items-center justify-between rounded-lg border p-2.5 transition-colors ${applyIva ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/20' : 'border-border bg-secondary/30'}`}>
                 <div className="flex items-center gap-2">
@@ -1148,7 +1173,7 @@ export function PointOfSale() {
               <div className="space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span className="text-foreground">{formatCOP(subtotal)}</span>
+                  <span className="pl-2 text-right text-foreground">{formatCOP(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   {applyIva ? (
@@ -1157,15 +1182,32 @@ export function PointOfSale() {
                     <span className="text-muted-foreground">IVA</span>
                   )}
                   {applyIva ? (
-                    <span className="text-amber-600 font-medium">{formatCOP(tax)}</span>
+                    <span className="pl-2 text-right text-amber-600 font-medium">{formatCOP(tax)}</span>
                   ) : (
                     <span className="text-green-600 text-xs">Sin IVA</span>
                   )}
                 </div>
                 <div className="flex justify-between text-lg font-bold border-t pt-2">
                   <span className="text-foreground">Total</span>
-                  <span className="text-primary">{formatCOP(finalTotal)}</span>
+                  <span className="pl-2 text-right text-primary">{formatCOP(finalTotal)}</span>
                 </div>
+              </div>
+
+              <div className="grid gap-1 rounded-md border border-border bg-secondary/30 p-2 text-[11px]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Cliente</span>
+                  <span className="truncate text-right font-medium text-foreground">{currentCustomerName}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Modo</span>
+                  <span className="font-medium text-foreground">Mostrador</span>
+                </div>
+                {selectedSedeName && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Sede</span>
+                    <span className="truncate text-right font-medium text-foreground">{selectedSedeName}</span>
+                  </div>
+                )}
               </div>
               
               {/* Actions */}

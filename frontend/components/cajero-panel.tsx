@@ -10,7 +10,7 @@ import {
   CheckCircle2, DollarSign, AlertCircle, X, ChevronRight,
   CreditCard, Banknote, Smartphone, ArrowLeftRight, Layers,
   Users, UtensilsCrossed, FileText, TrendingUp, History,
-  ClipboardList, Printer,
+  ClipboardList, Printer, Plus, Minus, SplitSquareVertical,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -799,6 +799,14 @@ function PaymentModal({
   const hasSplit = (breakdown?.guests?.length ?? 0) > 0
   const activeItems = order.items?.filter((i: any) => i.status !== 'cancelado' && i.status !== 'entregado') ?? []
 
+  // ── División igualitaria ──
+  const [splitActive, setSplitActive] = useState(false)
+  const [splitPeople, setSplitPeople] = useState(2)
+  // Redondear hacia arriba para no quedar debiendo centavos
+  const perPersonAmount = splitActive && splitPeople > 1
+    ? Math.ceil((order.total ?? 0) / splitPeople)
+    : 0
+
   return (
     <>
       {/* Backdrop */}
@@ -925,6 +933,96 @@ function PaymentModal({
                 </p>
               </button>
             ))}
+          </div>
+
+          {/* ── DIVIDIR EN PARTES IGUALES ─────────────────── */}
+          <div className="px-4 py-4 border-b border-border space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <SplitSquareVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Dividir en partes iguales</p>
+              </div>
+              <button
+                onClick={() => {
+                  setSplitActive(v => !v)
+                  if (splitActive) {
+                    // Al desactivar, restaurar monto al target actual
+                    setAmountPaid(String(targetAmount))
+                  }
+                }}
+                className={cn(
+                  'rounded-lg px-3 py-1 text-xs font-semibold border transition-colors',
+                  splitActive
+                    ? 'border-primary/50 bg-primary/15 text-primary'
+                    : 'border-border bg-accent/40 text-muted-foreground hover:text-foreground hover:bg-accent',
+                )}
+              >
+                {splitActive ? 'Desactivar' : 'Activar'}
+              </button>
+            </div>
+
+            {splitActive && (
+              <div className="space-y-3">
+                {/* Contador de personas */}
+                <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
+                  <span className="text-sm text-muted-foreground font-medium">¿Cuántas personas?</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setSplitPeople(p => Math.max(2, p - 1))}
+                      className="h-8 w-8 rounded-lg border border-border bg-accent/60 hover:bg-accent flex items-center justify-center transition-colors"
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-2xl font-black w-8 text-center tabular-nums">{splitPeople}</span>
+                    <button
+                      onClick={() => setSplitPeople(p => p + 1)}
+                      className="h-8 w-8 rounded-lg border border-border bg-accent/60 hover:bg-accent flex items-center justify-center transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Resultado por persona */}
+                <div className="rounded-2xl bg-gradient-to-b from-violet-900/40 to-violet-950/60 border border-violet-500/30 p-4 text-center">
+                  <p className="text-[11px] text-violet-400/70 uppercase tracking-widest">Cada persona paga</p>
+                  <p className="text-4xl font-black text-violet-300 tabular-nums mt-1">{fmt(perPersonAmount)}</p>
+                  <p className="text-[11px] text-muted-foreground mt-2">
+                    {splitPeople} personas × {fmt(perPersonAmount)} ≈ {fmt(order.total)} total mesa
+                  </p>
+                </div>
+
+                {/* Acceso rápido: cobrar 1 persona */}
+                <button
+                  onClick={() => setAmountPaid(String(perPersonAmount))}
+                  className="w-full rounded-xl border border-violet-500/40 bg-violet-500/10 text-violet-300 text-sm font-bold py-3 hover:bg-violet-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                >
+                  <Users className="h-4 w-4" />
+                  Cobrar 1 persona — {fmt(perPersonAmount)}
+                </button>
+
+                {/* Grid rápido de personas (2-8) */}
+                <div className="grid grid-cols-4 gap-2">
+                  {[2, 3, 4, 5, 6, 7, 8, 10].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => {
+                        setSplitPeople(n)
+                        setAmountPaid(String(Math.ceil((order.total ?? 0) / n)))
+                      }}
+                      className={cn(
+                        'rounded-lg border py-2 text-xs font-bold transition-all',
+                        splitPeople === n
+                          ? 'border-violet-500/50 bg-violet-500/15 text-violet-300'
+                          : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
+                      )}
+                    >
+                      {n} pers.
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── MÉTODO DE PAGO ────────────────────────────── */}

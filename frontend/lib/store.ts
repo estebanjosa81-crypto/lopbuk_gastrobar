@@ -74,8 +74,10 @@ interface AppState {
   // Categories
   categories: CategoryItem[]
   isLoadingCategories: boolean
-  fetchCategories: () => Promise<void>
-  addCategory: (data: { id: string; name: string; description?: string }) => Promise<{ success: boolean; error?: string }>
+  fetchCategories: (includeHidden?: boolean) => Promise<void>
+  addCategory: (data: { id: string; name: string; description?: string; color?: string }) => Promise<{ success: boolean; error?: string }>
+  updateCategory: (id: string, data: { name?: string; description?: string; color?: string; sortOrder?: number }) => Promise<{ success: boolean; error?: string }>
+  toggleCategoryVisibility: (id: string) => Promise<{ success: boolean; error?: string }>
   deleteCategory: (id: string) => Promise<{ success: boolean; error?: string }>
 
   // Camera preference
@@ -265,7 +267,13 @@ export const useStore = create<AppState>()(
         set({ isLoadingSales: true })
         const result = await api.getSales({ limit: 100 })
         if (result.success && result.data) {
-          const sales = Array.isArray(result.data) ? result.data : []
+          const sales = Array.isArray(result.data)
+            ? result.data
+            : Array.isArray((result as any).sales)
+              ? (result as any).sales
+              : Array.isArray((result as any).data?.sales)
+                ? (result as any).data.sales
+                : []
           set({ sales, isLoadingSales: false })
         } else {
           set({ isLoadingSales: false })
@@ -358,9 +366,9 @@ export const useStore = create<AppState>()(
       setSelectedCustomer: (customer) => set({ selectedCustomer: customer }),
 
       // Categories Actions
-      fetchCategories: async () => {
+      fetchCategories: async (includeHidden = false) => {
         set({ isLoadingCategories: true })
-        const result = await api.getCategories()
+        const result = await api.getCategories(includeHidden)
         if (result.success && result.data) {
           const categories = Array.isArray(result.data) ? result.data : []
           set({ categories, isLoadingCategories: false })
@@ -378,6 +386,30 @@ export const useStore = create<AppState>()(
           return { success: true }
         }
         return { success: false, error: result.error || 'Error al crear categoría' }
+      },
+
+      updateCategory: async (id, data) => {
+        const result = await api.updateCategory(id, data)
+        if (result.success && result.data) {
+          set(state => ({
+            categories: state.categories.map(c => c.id === id ? { ...c, ...result.data } : c)
+          }))
+          return { success: true }
+        }
+        return { success: false, error: result.error || 'Error al actualizar categoría' }
+      },
+
+      toggleCategoryVisibility: async (id) => {
+        const result = await api.toggleCategoryVisibility(id)
+        if (result.success && result.data) {
+          set(state => ({
+            categories: state.categories.map(c =>
+              c.id === id ? { ...c, isActive: result.data.isActive } : c
+            )
+          }))
+          return { success: true }
+        }
+        return { success: false, error: result.error || 'Error al cambiar visibilidad' }
       },
 
       deleteCategory: async (id) => {

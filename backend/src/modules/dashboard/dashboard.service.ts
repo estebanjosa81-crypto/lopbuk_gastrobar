@@ -50,6 +50,11 @@ interface WeeklySalesRow extends RowDataPacket {
   fiado_count: number;
 }
 
+const COLOMBIA_TZ_OFFSET = '-05:00';
+const COLOMBIA_TODAY_SQL = `DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '${COLOMBIA_TZ_OFFSET}'))`;
+const COLOMBIA_DATE_SQL = (field: string) => `DATE(CONVERT_TZ(${field}, '+00:00', '${COLOMBIA_TZ_OFFSET}'))`;
+const COLOMBIA_DATE_FORMAT_SQL = (field: string) => `DATE_FORMAT(CONVERT_TZ(${field}, '+00:00', '${COLOMBIA_TZ_OFFSET}'), '%Y-%m-%d')`;
+
 export class DashboardService {
   async getMetrics(tenantId: string): Promise<DashboardMetrics> {
     // Obtener metricas basicas
@@ -59,12 +64,12 @@ export class DashboardService {
         (SELECT COALESCE(SUM(stock * sale_price), 0) FROM products WHERE tenant_id = ?) AS total_inventory_value,
         (SELECT COUNT(*) FROM products WHERE tenant_id = ? AND stock <= reorder_point AND stock > 0) AS low_stock_products,
         (SELECT COUNT(*) FROM products WHERE tenant_id = ? AND stock = 0) AS out_of_stock_products,
-        (SELECT COALESCE(SUM(total), 0) FROM sales WHERE tenant_id = ? AND status = 'completada' AND payment_method != 'fiado' AND DATE(created_at) = CURDATE())
-          + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp INNER JOIN sales s2 ON cp.sale_id = s2.id WHERE s2.tenant_id = ? AND DATE(cp.created_at) = CURDATE()) AS daily_sales,
-        (SELECT COALESCE(SUM(total), 0) FROM sales WHERE tenant_id = ? AND status = 'completada' AND payment_method != 'fiado' AND created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY))
-          + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp INNER JOIN sales s2 ON cp.sale_id = s2.id WHERE s2.tenant_id = ? AND cp.created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)) AS weekly_sales,
-        (SELECT COALESCE(SUM(total), 0) FROM sales WHERE tenant_id = ? AND status = 'completada' AND payment_method != 'fiado' AND MONTH(created_at) = MONTH(CURDATE()) AND YEAR(created_at) = YEAR(CURDATE()))
-          + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp INNER JOIN sales s2 ON cp.sale_id = s2.id WHERE s2.tenant_id = ? AND MONTH(cp.created_at) = MONTH(CURDATE()) AND YEAR(cp.created_at) = YEAR(CURDATE())) AS monthly_sales
+        (SELECT COALESCE(SUM(total), 0) FROM sales WHERE tenant_id = ? AND status = 'completada' AND payment_method != 'fiado' AND ${COLOMBIA_DATE_SQL('created_at')} = ${COLOMBIA_TODAY_SQL})
+          + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp INNER JOIN sales s2 ON cp.sale_id = s2.id WHERE s2.tenant_id = ? AND ${COLOMBIA_DATE_SQL('cp.created_at')} = ${COLOMBIA_TODAY_SQL}) AS daily_sales,
+        (SELECT COALESCE(SUM(total), 0) FROM sales WHERE tenant_id = ? AND status = 'completada' AND payment_method != 'fiado' AND ${COLOMBIA_DATE_SQL('created_at')} >= DATE_SUB(${COLOMBIA_TODAY_SQL}, INTERVAL 7 DAY))
+          + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp INNER JOIN sales s2 ON cp.sale_id = s2.id WHERE s2.tenant_id = ? AND ${COLOMBIA_DATE_SQL('cp.created_at')} >= DATE_SUB(${COLOMBIA_TODAY_SQL}, INTERVAL 7 DAY)) AS weekly_sales,
+        (SELECT COALESCE(SUM(total), 0) FROM sales WHERE tenant_id = ? AND status = 'completada' AND payment_method != 'fiado' AND MONTH(${COLOMBIA_DATE_SQL('created_at')}) = MONTH(${COLOMBIA_TODAY_SQL}) AND YEAR(${COLOMBIA_DATE_SQL('created_at')}) = YEAR(${COLOMBIA_TODAY_SQL}))
+          + (SELECT COALESCE(SUM(cp.amount), 0) FROM credit_payments cp INNER JOIN sales s2 ON cp.sale_id = s2.id WHERE s2.tenant_id = ? AND MONTH(${COLOMBIA_DATE_SQL('cp.created_at')}) = MONTH(${COLOMBIA_TODAY_SQL}) AND YEAR(${COLOMBIA_DATE_SQL('cp.created_at')}) = YEAR(${COLOMBIA_TODAY_SQL})) AS monthly_sales
     `, [tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId, tenantId]);
 
     const metrics = metricsRows[0];
@@ -153,10 +158,10 @@ export class DashboardService {
 
   async getSalesTrend(tenantId: string, days = 7): Promise<Array<{ date: string; total: number; count: number; fiadoTotal: number; fiadoCount: number }>> {
     const dateFilter = days > 0
-      ? 'AND created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)'
+      ? `AND ${COLOMBIA_DATE_SQL('created_at')} >= DATE_SUB(${COLOMBIA_TODAY_SQL}, INTERVAL ? DAY)`
       : '';
     const creditDateFilter = days > 0
-      ? 'AND cp.created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)'
+      ? `AND ${COLOMBIA_DATE_SQL('cp.created_at')} >= DATE_SUB(${COLOMBIA_TODAY_SQL}, INTERVAL ? DAY)`
       : '';
 
     const params: (string | number)[] = days > 0
@@ -171,17 +176,17 @@ export class DashboardService {
         SUM(CASE WHEN is_fiado = 1 THEN total ELSE 0 END) AS fiado_total,
         SUM(CASE WHEN is_fiado = 1 THEN cnt ELSE 0 END) AS fiado_count
       FROM (
-        SELECT DATE(created_at) AS date, total, 1 AS cnt, 0 AS is_fiado
+        SELECT ${COLOMBIA_DATE_FORMAT_SQL('created_at')} AS date, total, 1 AS cnt, 0 AS is_fiado
         FROM sales
         WHERE tenant_id = ? AND status = 'completada' AND payment_method != 'fiado'
           ${dateFilter}
         UNION ALL
-        SELECT DATE(cp.created_at) AS date, cp.amount AS total, 0 AS cnt, 0 AS is_fiado
+        SELECT ${COLOMBIA_DATE_FORMAT_SQL('cp.created_at')} AS date, cp.amount AS total, 0 AS cnt, 0 AS is_fiado
         FROM credit_payments cp
         INNER JOIN sales s2 ON cp.sale_id = s2.id
         WHERE s2.tenant_id = ? ${creditDateFilter}
         UNION ALL
-        SELECT DATE(created_at) AS date, total, 1 AS cnt, 1 AS is_fiado
+        SELECT ${COLOMBIA_DATE_FORMAT_SQL('created_at')} AS date, total, 1 AS cnt, 1 AS is_fiado
         FROM sales
         WHERE tenant_id = ? AND status = 'completada' AND payment_method = 'fiado'
           ${dateFilter}

@@ -6,11 +6,15 @@ import { validateRequest } from '../../utils/validators';
 import pool from '../../config/database';
 import { UserRole } from '../../common/types';
 import reservationsRouter from './reservations.routes';
+import finanzasRouter from './restbar.finanzas.routes';
 
 const router: ReturnType<typeof Router> = Router();
 
-// ── Sub-router de reservas (maneja su propio auth internamente) ───────────────
+// ── Sub-router de reservas ───────────────────────────────────────────────────
 router.use('/reservations', reservationsRouter);
+
+// ── Sub-router de finanzas (control de gastos/ingresos del gastrobar) ─────────
+router.use('/finanzas', finanzasRouter);
 
 // ── PUBLIC: menú sin autenticación ───────────────────────────────────────────
 router.get('/public-menu/:slug', async (req: Request, res: Response) => {

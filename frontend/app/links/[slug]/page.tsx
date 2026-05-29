@@ -630,7 +630,7 @@ export default function LinksPage() {
               <a
                 href={`/reservar/${slug}`}
                 className={`flex items-center justify-center gap-2 w-full py-4 px-6 rounded-2xl text-sm font-semibold tracking-wide uppercase transition-all active:scale-[0.98] ${
-                  isTheme2 ? 'bg-amber-400 text-zinc-900 hover:bg-amber-300' : 'bg-gray-900 text-white border border-gray-800 hover:bg-gray-800'
+                  isTheme2 ? 'bg-black text-white hover:bg-zinc-900' : 'bg-gray-900 text-white border border-gray-800 hover:bg-gray-800'
                 }`}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">

@@ -452,7 +452,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     const newHidden = !cat.hiddenInStore
     setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, hiddenInStore: newHidden } : c))
     try {
-      await api.toggleCategoryVisibility(cat.id, newHidden)
+      await api.toggleStorefrontCategoryVisibility(cat.id, newHidden)
       showMsg('success', newHidden ? 'Categoría oculta del Hero 2' : 'Categoría visible en el Hero 2')
     } catch {
       setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, hiddenInStore: cat.hiddenInStore } : c))

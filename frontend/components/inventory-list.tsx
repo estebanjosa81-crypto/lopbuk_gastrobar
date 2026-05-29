@@ -55,6 +55,10 @@ import {
   Settings2,
   FileDown,
   ImageIcon,
+  Eye,
+  EyeOff,
+  Palette,
+  GripVertical,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BarcodeScanner } from '@/components/barcode-scanner'
@@ -62,7 +66,7 @@ import { RemoteScanner } from '@/components/remote-scanner'
 import { BulkUploadDialog } from '@/components/bulk-upload-dialog'
 
 export function InventoryList() {
-  const { products, isLoadingProducts, fetchProducts, addProduct, updateProduct, deleteProduct, categories, fetchCategories, addCategory, inventoryStockFilter, inventorySearchQuery, clearInventoryFilters, sedes, fetchSedes, addSede, updateSede, deleteSede } = useStore()
+  const { products, isLoadingProducts, fetchProducts, addProduct, updateProduct, deleteProduct, categories, fetchCategories, addCategory, updateCategory, toggleCategoryVisibility, deleteCategory, inventoryStockFilter, inventorySearchQuery, clearInventoryFilters, sedes, fetchSedes, addSede, updateSede, deleteSede } = useStore()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('all')
@@ -103,7 +107,10 @@ export function InventoryList() {
       setIsExporting(false)
     }
   }
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' })
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '#6366f1' })
+  const [showHiddenCategories, setShowHiddenCategories] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<any>(null)
+  const [editingCategoryForm, setEditingCategoryForm] = useState({ name: '', description: '', color: '#6366f1' })
   const [sedeForm, setSedeForm] = useState({ name: '', address: '' })
   const [editingSede, setEditingSede] = useState<Sede | null>(null)
   const [highlightedProduct, setHighlightedProduct] = useState<string | null>(null)
@@ -113,6 +120,13 @@ export function InventoryList() {
     fetchCategories()
     fetchSedes()
   }, [fetchProducts, fetchCategories, fetchSedes])
+
+  // When category dialog opens/closes or showHiddenCategories changes, reload categories
+  useEffect(() => {
+    if (isCategoryDialogOpen) {
+      fetchCategories(showHiddenCategories)
+    }
+  }, [isCategoryDialogOpen, showHiddenCategories, fetchCategories])
 
   // Apply filters from notification navigation
   useEffect(() => {
@@ -281,7 +295,7 @@ export function InventoryList() {
           </Button>
           <Button variant="outline" onClick={() => setIsCategoryDialogOpen(true)} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
             <Tags className="h-4 w-4 lg:h-5 lg:w-5" />
-            Crear Categoria
+            Categorías
           </Button>
           <Button variant="outline" onClick={() => setIsBulkUploadOpen(true)} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
             <Upload className="h-4 w-4 lg:h-5 lg:w-5" />
@@ -605,54 +619,248 @@ export function InventoryList() {
         </Dialog>
       )}
 
-      {/* Create Category Dialog */}
-      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-        <DialogContent className="max-w-md">
+      {/* Category Management Dialog */}
+      <Dialog open={isCategoryDialogOpen} onOpenChange={(open) => {
+        setIsCategoryDialogOpen(open)
+        if (!open) { setEditingCategory(null); setShowHiddenCategories(false) }
+      }}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Crear Categoria</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Tags className="h-4 w-4 text-primary" />
+              Gestionar Categor\u00edas
+            </DialogTitle>
             <DialogDescription>
-              Agregue una nueva categoria para organizar sus productos
+              Crea, edita, oculta y elimina categor\u00edas de tus productos
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={async (e) => {
-            e.preventDefault()
-            const id = categoryForm.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-            const result = await addCategory({ id, name: categoryForm.name, description: categoryForm.description || undefined })
-            if (result.success) {
-              setCategoryForm({ name: '', description: '' })
-              setIsCategoryDialogOpen(false)
-            }
-          }}>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="categoryName">Nombre de la categoria</Label>
+
+          {/* Existing categories list */}
+          <div className="flex-1 overflow-y-auto space-y-2 py-2 min-h-0">
+            {/* Header row */}
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {categories.length} categor\u00eda{categories.length !== 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowHiddenCategories(v => !v)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showHiddenCategories ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {showHiddenCategories ? 'Ocultar inactivas' : 'Mostrar inactivas'}
+              </button>
+            </div>
+
+            {categories.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">Sin categor\u00edas a\u00fan</p>
+            )}
+
+            {categories.map(cat => (
+              <div
+                key={cat.id}
+                className={`rounded-lg border border-border p-3 transition-all ${cat.isActive === false ? 'opacity-50 bg-secondary/20' : 'bg-secondary/30'}`}
+              >
+                {editingCategory?.id === cat.id ? (
+                  /* \u2500\u2500 Inline edit form \u2500\u2500 */
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        value={editingCategoryForm.name}
+                        onChange={e => setEditingCategoryForm(f => ({ ...f, name: e.target.value }))}
+                        placeholder="Nombre"
+                        className="h-8 text-sm flex-1"
+                        autoFocus
+                      />
+                      <div className="flex items-center gap-1">
+                        <label className="flex items-center gap-1 cursor-pointer text-xs text-muted-foreground">
+                          <Palette className="h-3 w-3" />
+                          <input
+                            type="color"
+                            value={editingCategoryForm.color}
+                            onChange={e => setEditingCategoryForm(f => ({ ...f, color: e.target.value }))}
+                            className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    <Input
+                      value={editingCategoryForm.description}
+                      onChange={e => setEditingCategoryForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Descripci\u00f3n (opcional)"
+                      className="h-8 text-sm"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setEditingCategory(null)}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={async () => {
+                          if (!editingCategoryForm.name.trim()) return
+                          const result = await updateCategory(cat.id, {
+                            name: editingCategoryForm.name,
+                            description: editingCategoryForm.description || undefined,
+                            color: editingCategoryForm.color,
+                          })
+                          if (result.success) {
+                            toast.success('Categor\u00eda actualizada')
+                            setEditingCategory(null)
+                          } else {
+                            toast.error(result.error || 'Error al actualizar')
+                          }
+                        }}
+                      >
+                        Guardar
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* \u2500\u2500 Display row \u2500\u2500 */
+                  <div className="flex items-center gap-3">
+                    {/* Color dot */}
+                    <div
+                      className="h-3 w-3 rounded-full shrink-0"
+                      style={{ backgroundColor: cat.color || '#6366f1' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${cat.isActive === false ? 'line-through text-muted-foreground' : ''}`}>
+                        {cat.name}
+                      </p>
+                      {cat.description && (
+                        <p className="text-xs text-muted-foreground truncate">{cat.description}</p>
+                      )}
+                    </div>
+                    {cat.isActive === false && (
+                      <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded shrink-0">oculta</span>
+                    )}
+                    {/* Actions */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        title="Editar"
+                        className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => {
+                          setEditingCategory(cat)
+                          setEditingCategoryForm({
+                            name: cat.name,
+                            description: cat.description || '',
+                            color: cat.color || '#6366f1',
+                          })
+                        }}
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title={cat.isActive === false ? 'Mostrar' : 'Ocultar'}
+                        className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={async () => {
+                          const result = await toggleCategoryVisibility(cat.id)
+                          if (result.success) {
+                            toast.success(cat.isActive === false ? 'Categor\u00eda visible' : 'Categor\u00eda oculta')
+                            fetchCategories(showHiddenCategories)
+                          } else {
+                            toast.error(result.error || 'Error al cambiar visibilidad')
+                          }
+                        }}
+                      >
+                        {cat.isActive === false ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        title="Eliminar"
+                        className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                        onClick={async () => {
+                          if (!confirm(`\u00bfEliminar categor\u00eda "${cat.name}"? No se puede deshacer.`)) return
+                          const result = await deleteCategory(cat.id)
+                          if (result.success) {
+                            toast.success('Categor\u00eda eliminada')
+                            fetchCategories(showHiddenCategories)
+                          } else {
+                            toast.error(result.error || 'Error al eliminar')
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Separator */}
+          <div className="border-t border-border pt-3 mt-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Nueva categor\u00eda</p>
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              const id = categoryForm.name
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '')
+              const result = await addCategory({
+                id,
+                name: categoryForm.name,
+                description: categoryForm.description || undefined,
+                color: categoryForm.color,
+              })
+              if (result.success) {
+                toast.success('Categor\u00eda creada')
+                setCategoryForm({ name: '', description: '', color: '#6366f1' })
+                fetchCategories(showHiddenCategories)
+              } else {
+                toast.error(result.error || 'Error al crear categor\u00eda')
+              }
+            }}>
+              <div className="flex gap-2 mb-2">
                 <Input
-                  id="categoryName"
                   value={categoryForm.name}
                   onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                  placeholder="Ej: Ropa Casual"
+                  placeholder="Nombre de la categor\u00eda"
                   required
+                  className="h-9 text-sm flex-1"
                 />
+                <label className="flex items-center gap-1 cursor-pointer shrink-0" title="Color">
+                  <div
+                    className="h-9 w-9 rounded border border-border flex items-center justify-center"
+                    style={{ backgroundColor: categoryForm.color + '33' }}
+                  >
+                    <Palette className="h-4 w-4" style={{ color: categoryForm.color }} />
+                  </div>
+                  <input
+                    type="color"
+                    value={categoryForm.color}
+                    onChange={e => setCategoryForm({ ...categoryForm, color: e.target.value })}
+                    className="sr-only"
+                  />
+                </label>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="categoryDesc">Descripcion (opcional)</Label>
+              <div className="flex gap-2">
                 <Input
-                  id="categoryDesc"
                   value={categoryForm.description}
                   onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
-                  placeholder="Breve descripcion de la categoria"
+                  placeholder="Descripci\u00f3n (opcional)"
+                  className="h-9 text-sm flex-1"
                 />
+                <Button type="submit" size="sm" className="h-9 px-4 shrink-0">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Crear
+                </Button>
               </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit">
-                Crear Categoria
-              </Button>
-            </DialogFooter>
-          </form>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
 

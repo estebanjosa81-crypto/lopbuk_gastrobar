@@ -657,21 +657,92 @@ class ApiService {
   }
 
   // Categories endpoints
-  async getCategories() {
-    return this.request<any[]>('/categories')
+  async getCategories(includeHidden = false) {
+    const q = includeHidden ? '?includeHidden=true' : ''
+    return this.request<any[]>(`/categories${q}`)
   }
 
-  async createCategory(data: { id: string; name: string; description?: string }) {
+  async createCategory(data: { id: string; name: string; description?: string; color?: string }) {
     return this.request<any>('/categories', {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
-  async deleteCategory(id: string) {
+  async updateCategory(id: string, data: { name?: string; description?: string; color?: string; sortOrder?: number }) {
     return this.request<any>(`/categories/${id}`, {
-      method: 'DELETE',
+      method: 'PUT',
+      body: JSON.stringify(data),
     })
+  }
+
+  async toggleCategoryVisibility(id: string) {
+    return this.request<any>(`/categories/${id}/visibility`, { method: 'PATCH' })
+  }
+
+  async deleteCategory(id: string) {
+    return this.request<any>(`/categories/${id}`, { method: 'DELETE' })
+  }
+
+  // ── Restbar Finanzas ────────────────────────────────────────────────────────
+  async getRbGastos(params: { from?: string; to?: string; quincena?: number; month?: string } = {}) {
+    const q = new URLSearchParams()
+    if (params.from)      q.set('from', params.from)
+    if (params.to)        q.set('to', params.to)
+    if (params.quincena)  q.set('quincena', String(params.quincena))
+    if (params.month)     q.set('month', params.month)
+    return this.request<any>(`/restbar/finanzas/gastos?${q}`)
+  }
+
+  async createRbGasto(data: { concepto: string; categoria?: string; cantidad?: number; valor_unitario: number; notas?: string }) {
+    return this.request<any>('/restbar/finanzas/gastos', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async updateRbGasto(id: string, data: any) {
+    return this.request<any>(`/restbar/finanzas/gastos/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+
+  async deleteRbGasto(id: string) {
+    return this.request<any>(`/restbar/finanzas/gastos/${id}`, { method: 'DELETE' })
+  }
+
+  async getRbIngresos(month?: string) {
+    const q = month ? `?month=${month}` : ''
+    return this.request<any[]>(`/restbar/finanzas/ingresos${q}`)
+  }
+
+  async createRbIngreso(data: { fecha: string; num_pedidos?: number; valor_ventas?: number; ganancia?: number; notas?: string }) {
+    return this.request<any>('/restbar/finanzas/ingresos', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async deleteRbIngreso(id: string) {
+    return this.request<any>(`/restbar/finanzas/ingresos/${id}`, { method: 'DELETE' })
+  }
+
+  async getRbGastosFijos() {
+    return this.request<any[]>('/restbar/finanzas/gastos-fijos')
+  }
+
+  async createRbGastoFijo(data: { nombre: string; valor: number; periodo?: string }) {
+    return this.request<any>('/restbar/finanzas/gastos-fijos', { method: 'POST', body: JSON.stringify(data) })
+  }
+
+  async updateRbGastoFijo(id: string, data: any) {
+    return this.request<any>(`/restbar/finanzas/gastos-fijos/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+
+  async deleteRbGastoFijo(id: string) {
+    return this.request<any>(`/restbar/finanzas/gastos-fijos/${id}`, { method: 'DELETE' })
+  }
+
+  async getRbTimeline(month?: string) {
+    const q = month ? `?month=${month}` : ''
+    return this.request<any[]>(`/restbar/finanzas/timeline${q}`)
+  }
+
+  async getRbResumen(month?: string) {
+    const q = month ? `?month=${month}` : ''
+    return this.request<any>(`/restbar/finanzas/resumen${q}`)
   }
 
   // Cash Sessions endpoints
@@ -932,7 +1003,7 @@ class ApiService {
     })
   }
 
-  async toggleCategoryVisibility(categoryId: string, hidden: boolean) {
+  async toggleStorefrontCategoryVisibility(categoryId: string, hidden: boolean) {
     return this.request<any>(`/storefront/categories/${categoryId}/visibility`, {
       method: 'PUT',
       body: JSON.stringify({ hidden }),
@@ -959,6 +1030,7 @@ class ApiService {
     socialTiktok?: string; socialWhatsapp?: string;
     department?: string; municipality?: string; productCardStyle?: string;
     allowContraentrega?: boolean; showInfoModule?: boolean; infoModuleDescription?: string;
+    metaPixelId?: string;
     contactPageEnabled?: boolean; contactPageTitle?: string; contactPageDescription?: string;
     contactPageImage?: string; contactPageProducts?: string[]; contactPageLinks?: { label: string; url: string }[];
   }) {

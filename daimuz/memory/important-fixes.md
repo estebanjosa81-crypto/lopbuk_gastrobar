@@ -48,6 +48,15 @@
 
 ---
 
+### [2026-06-05] — Módulo gym no aparecía en el modal de activación
+**Síntoma:** El gimnasio no salía en "Módulos — [tenant]" del superadmin ni se podía activar por comercio.
+**Causa:** Se registró en `sidebar.tsx` y `page.tsx` pero NO en `lib/modules.ts` (`ALL_MODULES`), que es la fuente del modal de activación y del gating del sidebar (`activeModules.includes(item.id)`).
+**Fix:** Agregar `{ id:'gym', name:'Gimnasio', group:'ops' }` a `ALL_MODULES` + presets gimnasio/fitness/crossfit en `BUSINESS_PRESETS`.
+**Archivos:** `frontend/lib/modules.ts`
+**Regla:** Un módulo nuevo del comerciante requiere 3 lugares: `lib/modules.ts` (registro/toggle), `sidebar.tsx` (menú) y `app/page.tsx` (render por `case`).
+
+---
+
 ### [2026-06-05] — Plan de comidas 500: columna user_id ambigua
 **Síntoma:** `GET /api/rutina/plan-comidas` 500 → `ER_NON_UNIQ_ERROR: Column 'user_id' in where clause is ambiguous`.
 **Causa:** `listPlanComidas` hace `JOIN rutina_recetas r`; ambas tablas tienen `user_id`, y el WHERE usaba `user_id`/`plan_date` sin calificar.

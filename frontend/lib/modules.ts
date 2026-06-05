@@ -26,6 +26,7 @@ export const ALL_MODULES: ModuleDef[] = [
   { id: 'fleet',         name: 'Mi Flota',          group: 'ops',       groupLabel: 'Operaciones',    defaultOn: false },
   { id: 'realestate',    name: 'Inmobiliaria',      group: 'ops',       groupLabel: 'Operaciones',    defaultOn: false },
   { id: 'workorders',    name: 'Órdenes de Trabajo', group: 'ops',      groupLabel: 'Operaciones',    defaultOn: false },
+  { id: 'gym',           name: 'Gimnasio',          group: 'ops',       groupLabel: 'Operaciones',    defaultOn: false },
   // Tienda Online
   { id: 'tienda',        name: 'Mi Tienda',         group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
   { id: 'pedidos',       name: 'Pedidos Online',    group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
@@ -68,6 +69,9 @@ export const BUSINESS_PRESETS: Record<string, { label: string; modules: string[]
   servicios:    { label: 'Servicios Generales', modules: [...BASE, 'services','workorders'] },
   inmobiliaria: { label: 'Inmobiliaria',        modules: ['dashboard','customers','vendedores','realestate','finances','analytics','settings','dev-requests'] },
   transportes:  { label: 'Transportes / Flota', modules: [...BASE, 'fleet','workorders'] },
+  gimnasio:     { label: 'Gimnasio / Fitness',  modules: [...BASE, 'gym'] },
+  fitness:      { label: 'Centro Fitness',      modules: [...BASE, 'gym'] },
+  crossfit:     { label: 'CrossFit / Box',      modules: [...BASE, 'gym'] },
   default:      { label: 'Genérico',            modules: DEFAULT_MODULES },
 }
 

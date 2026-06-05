@@ -48,6 +48,15 @@
 
 ---
 
+### [2026-06-05] — Plan de comidas 500: columna user_id ambigua
+**Síntoma:** `GET /api/rutina/plan-comidas` 500 → `ER_NON_UNIQ_ERROR: Column 'user_id' in where clause is ambiguous`.
+**Causa:** `listPlanComidas` hace `JOIN rutina_recetas r`; ambas tablas tienen `user_id`, y el WHERE usaba `user_id`/`plan_date` sin calificar.
+**Fix:** Calificar con alias: `pc.user_id`, `pc.plan_date` en el WHERE dinámico.
+**Archivos:** `backend/src/modules/rutina/rutina.service.ts`
+**Regla:** En cualquier SELECT con JOIN, SIEMPRE calificar columnas (`alias.columna`) en WHERE/ORDER, no solo en el SELECT.
+
+---
+
 ### [2026-06-05] — Categorías: colisión de PRIMARY KEY entre tenants
 **Síntoma:** `POST /api/categories` 500 → `ER_DUP_ENTRY 'opa' for key 'categories.PRIMARY'`. Dos comerciantes distintos creando una categoría con el mismo nombre chocaban.
 **Causa:** `categories.id` (VARCHAR(50)) se genera como slug del nombre y era PRIMARY KEY global. Distintos tenants con el mismo nombre → mismo id → choque, ignorando el aislamiento multi-tenant.

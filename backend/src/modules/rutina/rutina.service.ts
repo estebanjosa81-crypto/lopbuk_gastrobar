@@ -307,9 +307,9 @@ export async function deleteActividad(userId: string, id: string) {
 // ─────────────────────────────────────────────────────────────
 export async function listPlanComidas(userId: string, from?: string, to?: string) {
   const params: any[] = [userId];
-  let where = 'user_id = ?';
-  if (from) { where += ' AND plan_date >= ?'; params.push(from); }
-  if (to)   { where += ' AND plan_date <= ?'; params.push(to); }
+  let where = 'pc.user_id = ?';
+  if (from) { where += ' AND pc.plan_date >= ?'; params.push(from); }
+  if (to)   { where += ' AND pc.plan_date <= ?'; params.push(to); }
   const [rows] = await db.execute<Row[]>(
     `SELECT pc.id, pc.plan_date AS planDate, pc.meal_type AS mealType,
             pc.receta_id AS recetaId, COALESCE(pc.title, r.name) AS title,

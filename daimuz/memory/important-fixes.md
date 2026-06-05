@@ -48,4 +48,31 @@
 
 ---
 
+### [2026-06-05] — Categorías: colisión de PRIMARY KEY entre tenants
+**Síntoma:** `POST /api/categories` 500 → `ER_DUP_ENTRY 'opa' for key 'categories.PRIMARY'`. Dos comerciantes distintos creando una categoría con el mismo nombre chocaban.
+**Causa:** `categories.id` (VARCHAR(50)) se genera como slug del nombre y era PRIMARY KEY global. Distintos tenants con el mismo nombre → mismo id → choque, ignorando el aislamiento multi-tenant.
+**Fix:** PK compuesta `(tenant_id, id)`. Seguro: sin FKs hacia `categories(id)`, ids únicos globalmente al migrar, y el service ya validaba unicidad por `id + tenant_id`. Solo migración de BD, sin rebuild.
+**Archivos:** `backend/migrations/fix_categories_composite_pk.sql` (nuevo), `backend/inventarioEsteban_v3_multitenant.sql` (esquema base)
+**Regla:** En multi-tenant, cualquier id derivado de datos del usuario (slug, nombre) debe ser único POR tenant. La PK debe incluir `tenant_id`, no confiar solo en un UNIQUE secundario.
+
+---
+
+### [2026-06-04] — Google OAuth no carga en producción
+**Síntoma:** "Google OAuth components must be used within GoogleOAuthProvider" en el login en prod
+**Causa:** `NEXT_PUBLIC_GOOGLE_CLIENT_ID` iba vacío en los `build args` del frontend. En Next.js las vars `NEXT_PUBLIC_*` se compilan en el build, no se leen en runtime; con valor vacío el provider no se monta.
+**Fix:** Pasar el client ID real como build arg en el compose (y `ARG`+`ENV` en el Dockerfile antes de `npm run build`). Rebuild de la imagen, no solo redeploy.
+**Archivos:** `docker-compose` (Komodo), `frontend/Dockerfile`
+**Regla:** Toda var `NEXT_PUBLIC_*` debe ir como build arg y reconstruir la imagen. Ponerla en `environment:` (runtime) no sirve.
+
+---
+
+### [2026-06-04] — Chatbot 500: modelo Gemini retirado
+**Síntoma:** `POST /api/chatbot/message` 500. Log: `gemini-2.0-flash is no longer available` (404).
+**Causa:** Nombre de modelo hardcodeado en `agent.service.ts`; Google retiró `gemini-2.0-flash`.
+**Fix:** Usar alias `gemini-flash-latest` (no fija versión), configurable con env `GEMINI_MODEL`.
+**Archivos:** `backend/src/modules/agent/agent.service.ts`
+**Regla:** No fijar versión exacta de modelos de IA; usar alias `-latest` o env var. Ojo: el código desplegado por Komodo viene del repo GitHub, hay que `commit`+`push` para que el fix llegue al build (resuelto: push + rebuild → chatbot OK).
+
+---
+
 ← [[lessons-learned]] | [[DAIMUZ]] | → [[bugs-history]]

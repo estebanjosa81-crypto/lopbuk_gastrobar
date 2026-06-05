@@ -68,6 +68,15 @@
 | `media-library` | Subida imágenes a Cloudinary | `media-library.routes.ts`, `ui/cloudinary-upload.tsx` |
 | `dev-requests` | Solicitudes de nuevas funcionalidades enviadas por tenants | `dev-requests.service.ts`, `developer-requests.tsx` |
 
+## Consumidor (cross-comercio, role cliente)
+
+| Módulo | Función resumida | Archivos clave |
+|---|---|---|
+| `rutina` | Estilo de vida del usuario final: perfil/objetivos, despensa, recetas (qué puedo cocinar), plan de comidas con macros, lista de compras cross-comercio | `rutina.service.ts`, `rutina.routes.ts`, `consumer-routine.tsx` |
+| `gym` (solo DB) | Gimnasio tenant-scoped: membresías con cobro, planes/ejercicios, progreso, asistencia | `migrations/add_lifestyle_rutina_and_gym_modules.sql` |
+
+> Identidad: `users` (role=cliente) = platform_user global. Perfil por comercio en `customer_tenant_profiles`.
+
 ## Rutas Públicas — `app/` (sin auth)
 
 | Ruta | Qué muestra | Componente principal |

@@ -4,6 +4,60 @@
 
 ---
 
+## [2026-06-05] — Categorías PK compuesta + base de datos módulo Consumidor/Gimnasio
+
+### Fixes
+- **Categorías 500 entre tenants**: PK era global → migración a PK compuesta `(tenant_id, id)`. Archivos: `backend/migrations/fix_categories_composite_pk.sql` (MySQL) + versión Postgres en `backend/migrations/postgres/001_*.sql`. Esquema base actualizado.
+- Aclaración de infra: **producción corre en MySQL** (no Postgres). pgAdmin estaba conectado al motor equivocado (`categories does not exist`).
+
+### Nueva base de datos (solo migración, sin código aún)
+- **Módulo Consumidor (Rutina/Estilo de vida)** — datos del usuario final cross-comercio (pertenecen a `users.id`, no a un tenant):
+  - `rutina_perfil`, `rutina_despensa`, `rutina_recetas`, `rutina_receta_ingredientes`, `rutina_rutinas`, `rutina_actividades`, `rutina_plan_comidas`, `rutina_lista_compras`
+- **Módulo Gimnasio** — tenant-scoped (`business_type=gimnasio`), control de miembros y progreso:
+  - `gym_membresias`, `gym_planes_entrenamiento`, `gym_ejercicios`, `gym_progreso`
+- Archivo: `backend/migrations/add_lifestyle_rutina_and_gym_modules.sql`
+- Visión: vista del cliente logueado con su rutina diaria, qué comer, recetas con lo que tiene en despensa, lista de lo que falta comprar, y compra cruzada a comercios registrados (proteínas, frutas, gimnasio, ropa, etc.).
+
+### Decisiones tomadas
+- Consumidor = **cross-comercio (usuario de plataforma)**. `users` con `role='cliente'` ES el platform_user (no se crea tabla aparte). `users.tenant_id` ya es NULL-able.
+- Capa de identidad: nueva tabla `customer_tenant_profiles` (PK `platform_user_id + tenant_id`) con dirección por comercio (neighborhood/municipality/department), bloqueo (`is_blocked`/`block_reason`), consentimiento Habeas Data (`accepts_marketing`), y métricas denormalizadas (first/last_order_at, total_orders, total_spent, average_ticket, total_returns). `customers` se mantiene para mostrador. Archivo: `backend/migrations/add_platform_identity.sql`.
+
+### Construido (end-to-end módulo CONSUMIDOR/rutina)
+- **Migración** `add_lifestyle_rutina_and_gym_modules.sql` ampliada: macros (protein/carbs/fat) en recetas y plan de comidas; perfil con bmr/tdee/bmi/target_weight/water_target; recetas con cook/total minutes, difficulty, meal_type; gym_membresias con price/payment_cycle/auto_renew/next_payment; + tablas nuevas `gym_asistencia` y `rutina_actividades_log`.
+- **Backend** módulo `rutina` (nuevo): `rutina.service.ts` (perfil, despensa, recetas+ingredientes, rutinas+actividades, plan comidas, lista compras, "qué puedo cocinar", generar lista desde receta, resumen), `rutina.routes.ts` (authorize cliente, REST), `index.ts`, montado en `src/index.ts` como `/api/rutina`.
+- **Frontend**: `lib/api.ts` con métodos rutina; `components/consumer-routine.tsx` (overlay full-screen con pestañas Hoy/Despensa/Recetas/Plan/Compras). En `landing-page.tsx` se agregó SOLO un botón nuevo "Rutina" al nav inferior (visible si logueado) + render del overlay. **Las 5 secciones existentes (Mi cuenta, Ofertas, buscar, Carrito, Tienda) quedaron intactas.**
+
+### Pendiente
+- Correr en MySQL de prod: `fix_categories_composite_pk.sql`, `add_platform_identity.sql`, `add_lifestyle_rutina_and_gym_modules.sql`.
+- `commit` + `push` para que Komodo reconstruya con el código nuevo.
+- Módulo GIMNASIO (backend/frontend) aún no construido (solo tablas).
+- Nota infra: el mount de bash a veces ve copias desfasadas por OneDrive; los tools Read/Edit ven la versión real.
+
+---
+
+## [2026-06-04] — Despliegue en producción (Komodo) + fixes del chatbot IA
+
+### Despliegue
+- App desplegada en producción con **Komodo** (`deploy.alexsters.works`), stack `daimuz` (2 servicios: `daimuz_backend`, `daimuz_app`). Dominio: `https://daimuz.alexsters.works`.
+- Komodo construye desde el repo de GitHub `github.com/estebanIoI/lopbuk_gastrobar.git` (branch `main`), **no** desde la carpeta local. Los cambios deben hacerse `commit` + `push` para que el build los tome.
+- Config Komodo: **Pre Build Images** = ENABLED (corre `docker compose build`), **Destroy Before Deploy** = ENABLED.
+
+### Fixes
+- **Google OAuth en prod**: `NEXT_PUBLIC_GOOGLE_CLIENT_ID` iba vacío en los build args del frontend → el provider no se montaba. Las vars `NEXT_PUBLIC_*` se hornean en build, no en runtime. Se pasó el client ID real como build arg.
+- **Chatbot — modelo Gemini retirado**: `gemini-2.0-flash` ya no existe (404). En `agent.service.ts` el modelo estaba hardcodeado. Cambiado a alias `gemini-flash-latest` (configurable vía env `GEMINI_MODEL`).
+- **Chatbot — soporte Groq**: `callAI()` ahora enruta por prefijo de key: `AIza`→Gemini, `gsk_`→Groq (endpoint OpenAI-compatible, modelo vía env `GROQ_MODEL`, default `llama-3.3-70b-versatile`), otra→OpenAI. Nota: el function-calling (pedidos/reservas) solo está implementado para Gemini.
+
+### Archivos modificados
+- `backend/src/modules/agent/agent.service.ts` — modelo Gemini por alias/env + función `callGroq` + routing en `callAI`
+
+### Resultado
+- ✅ Chatbot IA corriendo en producción tras `push` al repo + rebuild en Komodo.
+
+### Pendiente menor
+- Unificar el `GOOGLE_CLIENT_ID` del backend con el `NEXT_PUBLIC_GOOGLE_CLIENT_ID` del frontend (estaban con valores distintos).
+
+---
+
 ## [2026-05-28] — SQL sincronizado v3.8 + neuronas nuevas
 
 ### SQL

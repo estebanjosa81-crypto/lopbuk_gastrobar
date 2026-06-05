@@ -2475,6 +2475,45 @@ class ApiService {
   async getWeeklyTrend() {
     return this.request<any>('/gastrobar-ops/weekly-trend')
   }
+
+  // ── Módulo CONSUMIDOR (rutina / estilo de vida) ──
+  async getRutinaResumen() { return this.request<any>('/rutina/resumen') }
+
+  async getRutinaPerfil() { return this.request<any>('/rutina/perfil') }
+  async saveRutinaPerfil(data: any) { return this.request<any>('/rutina/perfil', { method: 'PUT', body: JSON.stringify(data) }) }
+
+  async getDespensa() { return this.request<any[]>('/rutina/despensa') }
+  async addDespensa(data: any) { return this.request<any>('/rutina/despensa', { method: 'POST', body: JSON.stringify(data) }) }
+  async updateDespensa(id: string, data: any) { return this.request<any>(`/rutina/despensa/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async deleteDespensa(id: string) { return this.request<any>(`/rutina/despensa/${id}`, { method: 'DELETE' }) }
+
+  async getRutinaRecetas() { return this.request<any[]>('/rutina/recetas') }
+  async getRecetasQuePuedoHacer() { return this.request<any[]>('/rutina/recetas/puedo-hacer') }
+  async getRutinaReceta(id: string) { return this.request<any>(`/rutina/recetas/${id}`) }
+  async createRutinaReceta(data: any) { return this.request<any>('/rutina/recetas', { method: 'POST', body: JSON.stringify(data) }) }
+  async deleteRutinaReceta(id: string) { return this.request<any>(`/rutina/recetas/${id}`, { method: 'DELETE' }) }
+  async recetaALista(id: string) { return this.request<any>(`/rutina/recetas/${id}/a-lista-compras`, { method: 'POST' }) }
+
+  async getRutinas() { return this.request<any[]>('/rutina/rutinas') }
+  async createRutina(data: any) { return this.request<any>('/rutina/rutinas', { method: 'POST', body: JSON.stringify(data) }) }
+  async deleteRutina(id: string) { return this.request<any>(`/rutina/rutinas/${id}`, { method: 'DELETE' }) }
+  async addActividad(rutinaId: string, data: any) { return this.request<any>(`/rutina/rutinas/${rutinaId}/actividades`, { method: 'POST', body: JSON.stringify(data) }) }
+  async deleteActividad(id: string) { return this.request<any>(`/rutina/actividades/${id}`, { method: 'DELETE' }) }
+
+  async getPlanComidas(from?: string, to?: string) {
+    const q = new URLSearchParams()
+    if (from) q.set('from', from); if (to) q.set('to', to)
+    const s = q.toString()
+    return this.request<any[]>(`/rutina/plan-comidas${s ? `?${s}` : ''}`)
+  }
+  async addPlanComida(data: any) { return this.request<any>('/rutina/plan-comidas', { method: 'POST', body: JSON.stringify(data) }) }
+  async togglePlanComida(id: string) { return this.request<any>(`/rutina/plan-comidas/${id}/toggle`, { method: 'PATCH' }) }
+  async deletePlanComida(id: string) { return this.request<any>(`/rutina/plan-comidas/${id}`, { method: 'DELETE' }) }
+
+  async getListaCompras() { return this.request<any[]>('/rutina/lista-compras') }
+  async addListaCompra(data: any) { return this.request<any>('/rutina/lista-compras', { method: 'POST', body: JSON.stringify(data) }) }
+  async toggleListaCompra(id: string) { return this.request<any>(`/rutina/lista-compras/${id}/toggle`, { method: 'PATCH' }) }
+  async deleteListaCompra(id: string) { return this.request<any>(`/rutina/lista-compras/${id}`, { method: 'DELETE' }) }
 }
 
 export const api = new ApiService()

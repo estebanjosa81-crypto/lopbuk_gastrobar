@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS store_info (
 -- TABLA: categories (Categorias de productos por tenant)
 -- ============================================
 CREATE TABLE IF NOT EXISTS categories (
-    id VARCHAR(50) PRIMARY KEY,
+    id VARCHAR(50) NOT NULL,
     tenant_id VARCHAR(36) NOT NULL,
     name VARCHAR(100) NOT NULL,
     description VARCHAR(255) NULL,
@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS categories (
     is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Visible en POS/inventario (1=activa, 0=oculta)',
     color VARCHAR(7) NULL COMMENT 'Color hex de la categoría: "#6366f1"',
     sort_order INT NOT NULL DEFAULT 0 COMMENT 'Orden de visualización ascendente',
+    PRIMARY KEY (tenant_id, id),
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
     UNIQUE INDEX idx_category_tenant_name (tenant_id, name),
     INDEX idx_category_tenant (tenant_id)

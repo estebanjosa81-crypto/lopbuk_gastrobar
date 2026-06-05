@@ -67,6 +67,7 @@ import { MiniMap } from '@/components/MiniMap'
 import { ServiceBookingModal } from '@/components/service-booking-modal'
 import { ChatWidget } from '@/components/ChatWidget'
 import { ContactModal } from '@/components/contact-modal'
+import ConsumerRoutine from '@/components/consumer-routine'
 import { ensureAbsoluteUrl } from '@/utils/url'
 import { departamentosMunicipios } from '@/constants'
 import { useAuthStore } from '@/lib/auth-store'
@@ -343,6 +344,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   // ====== CART STATE ======
   const [carrito, setCarrito] = useState<ProductoCarrito[]>([])
   const [showCart, setShowCart] = useState(false)
+  const [showRutina, setShowRutina] = useState(false)
   const [showCheckout, setShowCheckout] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showDrop, setShowDrop] = useState(false)
@@ -8833,8 +8835,20 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             <Store className="w-6 h-6" />
             <span className="text-[10px] leading-tight">Tienda</span>
           </button>
+
+          {isAuthenticated && (
+            <button
+              onClick={() => setShowRutina(true)}
+              className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors text-white/40 hover:text-amber-400"
+            >
+              <Sparkles className="w-6 h-6" />
+              <span className="text-[10px] leading-tight">Rutina</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {showRutina && <ConsumerRoutine onClose={() => setShowRutina(false)} />}
 
       {/* ====== DELIVERY LOGIN ALERT MODAL ====== */}
       {showDeliveryLoginAlert && (

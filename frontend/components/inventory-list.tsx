@@ -409,9 +409,26 @@ export function InventoryList() {
                     >
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 lg:h-12 lg:w-12 items-center justify-center rounded-lg bg-secondary text-lg">
-                            {typeInfo.icon}
-                          </div>
+                          {(() => {
+                            const mainImg = product.imageUrl || (Array.isArray(product.images) ? product.images[0] : '') || ''
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenImageDialog(product)}
+                                title="Gestionar imágenes"
+                                className="group relative flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary text-lg transition-shadow hover:ring-2 hover:ring-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                              >
+                                {mainImg ? (
+                                  <img src={mainImg} alt={product.name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <span>{typeInfo.icon}</span>
+                                )}
+                                <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                                  <ImageIcon className="h-4 w-4 text-white" />
+                                </span>
+                              </button>
+                            )
+                          })()}
                           <div>
                             <p className="font-medium text-sm lg:text-base text-foreground">{product.name}</p>
                             {product.articulo && (
@@ -480,15 +497,6 @@ export function InventoryList() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleOpenImageDialog(product)}
-                            className="h-8 w-8 lg:h-9 lg:w-9 text-muted-foreground hover:text-foreground"
-                            title="Gestionar imágenes"
-                          >
-                            <ImageIcon className="h-4 w-4" />
-                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

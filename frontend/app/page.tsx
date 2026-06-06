@@ -48,6 +48,14 @@ export default function Home() {
   const { activeSection, setActiveSection } = useStore()
   const { isAuthenticated, checkAuth, user, isCheckingAuth } = useAuthStore()
   const [showLogin, setShowLogin] = useState(false)
+  // Detecta si la URL pide la vista pública de la tienda (?store=slug),
+  // p.ej. el iframe de preview del Editor Visual. En ese caso renderizamos
+  // siempre la tienda pública aunque el admin esté autenticado.
+  const [isStorePreview, setIsStorePreview] = useState<boolean | undefined>(undefined)
+
+  useEffect(() => {
+    setIsStorePreview(new URLSearchParams(window.location.search).has('store'))
+  }, [])
 
   useEffect(() => {
     checkAuth()
@@ -96,13 +104,21 @@ export default function Home() {
     }
   }, [isAuthenticated, user?.role, activeSection, setActiveSection])
 
-  // Block render until token is verified — prevents blocked users from seeing the UI
-  if (isCheckingAuth) {
+  // Espera a saber si es preview de tienda (evita parpadeo del dashboard en el iframe)
+  // y bloquea el render hasta verificar el token.
+  if (isStorePreview === undefined || isCheckingAuth) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     )
+  }
+
+  // Vista pública de la tienda (?store=slug): se renderiza siempre, incluso si el
+  // admin está autenticado. Esto hace que el preview del Editor Visual muestre la
+  // página real de la tienda y no el dashboard.
+  if (isStorePreview) {
+    return <LandingPage onGoToLogin={() => setShowLogin(true)} />
   }
 
   // Repartidor gets their own full-screen panel (no sidebar)

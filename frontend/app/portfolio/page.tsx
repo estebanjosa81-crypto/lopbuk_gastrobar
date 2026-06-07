@@ -1441,33 +1441,45 @@ export default function PortfolioPage() {
         onToggle={toggleTheme}
       />
 
-      {/* ── BOTÓN FLOTANTE MOBILE (aparece al hacer scroll, slide-up) ────── */}
+      {/* ── BOTÓN FLOTANTE MOBILE (pill centrado, aparece al hacer scroll) ─ */}
       {data?.contactWhatsapp && (
-        <a
-          href={`https://wa.me/${data.contactWhatsapp.replace(/\D/g, '')}`}
-          target="_blank" rel="noopener noreferrer"
-          aria-label="Solicitar demo por WhatsApp"
-          className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-center gap-3 px-6 py-4 mx-auto active:scale-95"
+        <div
+          className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center"
           style={{
-            background: `linear-gradient(160deg, ${accent}ee 0%, ${accent}ff 100%)`,
-            borderTop: `2px solid rgba(255,255,255,0.25)`,
-            color: '#ffffff',
-            fontSize: '16px',
-            fontWeight: 700,
-            boxShadow: `0 -6px 32px ${accent}60, inset 0 1px 0 rgba(255,255,255,0.15)`,
-            letterSpacing: '0.3px',
-            transform: showFloatingCta ? 'translateY(0)' : 'translateY(100%)',
-            transition: 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 20px)',
+            paddingTop: '16px',
+            background: isDark
+              ? 'linear-gradient(to top, rgba(10,10,15,0.97) 60%, transparent)'
+              : 'linear-gradient(to top, rgba(248,250,252,0.98) 60%, transparent)',
+            transform: showFloatingCta ? 'translateY(0)' : 'translateY(110%)',
+            transition: 'transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1)',
             pointerEvents: showFloatingCta ? 'auto' : 'none',
           }}
         >
-          <WhatsAppIcon size="w-6 h-6" /> Solicitar demo
-        </a>
+          <a
+            href={`https://wa.me/${data.contactWhatsapp.replace(/\D/g, '')}`}
+            target="_blank" rel="noopener noreferrer"
+            aria-label="Solicitar demo por WhatsApp"
+            className="flex items-center gap-2.5 px-7 py-3.5 rounded-full active:scale-95 hover:brightness-110"
+            style={{
+              background: accent,
+              color: '#ffffff',
+              fontSize: '15px',
+              fontWeight: 700,
+              letterSpacing: '0.2px',
+              boxShadow: `0 6px 30px ${accent}65, 0 2px 8px rgba(0,0,0,0.25)`,
+              transition: 'filter 0.2s, transform 0.15s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <WhatsAppIcon size="w-5 h-5" /> Solicitar demo
+          </a>
+        </div>
       )}
 
-      {/* ── HERO ──────────────────────────────────────────────────────────── */}
+      {/* ── HERO ────────────────────────────────────────────────────────────── */}
       <section id="inicio" className="relative min-h-screen flex items-center justify-center px-6 overflow-hidden">
-        {/* Fondo decorativo */}
+
         <div
           className="absolute inset-0 pointer-events-none"
           style={{ background: `radial-gradient(ellipse 80% 60% at 50% 0%, ${accent}22 0%, transparent 70%)` }}

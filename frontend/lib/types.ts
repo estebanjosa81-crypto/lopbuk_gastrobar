@@ -1,5 +1,60 @@
 export type Category = string
 
+// ─── Variantes & Proveedores ──────────────────────────────────────────────────
+
+export interface VariantPriceTier {
+  id: string
+  variantId: string
+  minQty: number
+  price: number
+  tenantMarginPct: number
+  isActive: boolean
+}
+
+export interface ProductVariant {
+  id: string
+  productId: string
+  sku: string
+  barcode?: string
+  color?: string
+  size?: string
+  material?: string
+  stock: number
+  reservedStock: number
+  minStock: number
+  costPrice?: number
+  priceOverride?: number
+  supplierId?: string
+  images?: string[]
+  sortOrder: number
+  isActive: boolean
+  priceTiers?: VariantPriceTier[]
+  productName?: string
+  basePrice?: number
+  label?: string        // "Negro / M"
+  // storefront extras
+  minPrice?: number
+}
+
+export interface ResolvedPrice {
+  price: number
+  tenantMarginPct: number
+  source: 'tier' | 'override' | 'base'
+}
+
+export interface Supplier {
+  id: string
+  tenantId: string
+  name: string
+  contactInfo?: string
+  phone?: string
+  email?: string
+  paymentTerms?: string
+  isActive: boolean
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export type Size = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'XXXL'
 
 export type ProductType = 'general' | 'alimentos' | 'bebidas' | 'ropa' | 'electronica' | 'farmacia' | 'ferreteria' | 'libreria' | 'juguetes' | 'cosmetica' | 'perfumes' | 'deportes' | 'hogar' | 'mascotas' | 'otros'

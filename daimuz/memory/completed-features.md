@@ -1,5 +1,15 @@
 # ✅ Features Completados
 
+## Variantes + Precios por Volumen (2026-06-09)
+- `product_variants` — color/size/material/SKU/stock con stock atómico (race-safe)
+- `variant_price_tiers` — precios escalonados por min_qty sin gaps, resolución `WHERE min_qty <= qty ORDER BY min_qty DESC LIMIT 1`
+- `suppliers` + `supplier_products` — N:N para multi-proveedor
+- `inventory_movements` — audit log inmutable como fuente de verdad
+- Price freezing en sale_items (cost_price, margin_pct, margin_amount congelados al vender)
+- Backward compatible: productos sin variantes no cambian
+- Import CSV masivo transaccional (por fila, no aborta todo si 1 falla)
+- Frontend: VariantManager, picker en POS con resolución de tier live, botón Layers en inventario
+
 ## Sistema Core
 - Multi-tenancy por columna (`tenant_id`)
 - Sistema de roles y permisos (10 roles)

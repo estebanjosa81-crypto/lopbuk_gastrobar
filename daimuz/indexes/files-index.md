@@ -47,27 +47,7 @@ backend/src/
     ├── products/
     │   ├── products.routes.ts
     │   ├── products.controller.ts
-    │   └── products.service.ts          ← CRUD + bulk + barcode lookup
-    ├── categories/
-    │   ├── categories.routes.ts         ← GET/POST/PUT/PATCH visibility/DELETE
-    │   ├── categories.controller.ts
-    │   └── categories.service.ts        ← CRUD + toggleVisibility (is_active, color, sort_order)
-    ├── inventory/
-    │   ├── inventory.routes.ts
-    │   ├── inventory.controller.ts
-    │   └── inventory.service.ts         ← addMovement, getStock, alerts
-    ├── sales/
-    │   ├── sales.routes.ts
-    │   ├── sales.controller.ts
-    │   └── sales.service.ts             ← createSale (descuenta stock automático)
-    ├── cash-sessions/
-    │   ├── cash-sessions.routes.ts
-    │   ├── cash-sessions.controller.ts
-    │   └── cash-sessions.service.ts     ← open, close, active, arqueo
-    ├── purchases/
-    │   ├── purchases.routes.ts
-    │   ├── purchases.controller.ts
-    │   └── purchases.service.ts         ← facturas de compra + ingreso de stock
+    │   └── products.service.ts          ← CRUD producto base + bulk + barcode
     ├── customers/
     │   ├── customers.routes.ts
     │   ├── customers.controller.ts
@@ -106,8 +86,17 @@ backend/src/
     │   └── merma.service.ts             ← registrar merma + PAR levels
     ├── orders/
     │   └── orders.routes.ts             ← pedidos mesa/delivery + socket.emit a cocina
+    ├── variants/
+    │   ├── variants.routes.ts           ← CRUD variantes + price tiers + import
+    │   ├── variants.controller.ts
+    │   ├── variants.service.ts          ← CRUD variantes, descuento atómico de stock
+    │   ├── price-tier.service.ts        ← resolvePrice(variantId, qty, tenantId)
+    │   └── import.service.ts            ← CSV con Handle → product + variant bulk insert
+    ├── suppliers/
+    │   ├── suppliers.routes.ts          ← CRUD proveedores + asociar productos
+    │   ├── suppliers.controller.ts
+    │   └── suppliers.service.ts
     ├── scanner/
-    │   └── scanner.socket.ts            ← Socket.io: escáner barras en tiempo real
     ├── delivery/
     │   └── delivery.routes.ts           ← asignar conductor, actualizar estado pedido
     ├── fleet/
@@ -231,6 +220,8 @@ components/
 ── INVENTARIO / PRODUCTOS ───────────────────────────────────────────────
 ├── inventory-list.tsx                  ← Inventario + Kardex + CRUD categorías
 ├── purchase-invoices.tsx               ← Facturas de compra a proveedores
+├── variant-selector.tsx                ← Selector de variante en POS (color/talla)
+├── volume-pricing.tsx                  ← Badge y tabla de precios escalonados
 ├── bulk-upload-dialog.tsx              ← Importación masiva de productos CSV
 ├── bulk-image-upload-dialog.tsx        ← Subida masiva de imágenes de productos
 ├── bulk-upload-customers-dialog.tsx    ← Importación masiva de clientes CSV
@@ -272,6 +263,8 @@ components/
 ├── data-policy-modal.tsx               ← Modal de política de datos
 
 ── CHECKOUT (subcarpeta) ────────────────────────────────────────────────
+├── storefront/variant-picker.tsx       ← Chips de color/talla en tienda online
+├── storefront/volume-pricing.tsx       ← Tabla de precios escalonados en product page
 ├── checkout/CheckoutView.tsx           ← Flujo completo de checkout de la tienda
 ├── checkout/LocationPicker.tsx         ← Selector de dirección en mapa
 ├── checkout/ModalExito.tsx             ← Modal confirmación pedido exitoso

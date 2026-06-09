@@ -70,6 +70,11 @@ export function PointOfSale() {
   const [showScanner, setShowScanner] = useState(false)
   const [showRemoteScanner, setShowRemoteScanner] = useState(false)
   const [showScanOptions, setShowScanOptions] = useState(false)
+  // Variantes
+  const [variantPickProduct, setVariantPickProduct] = useState<any | null>(null)
+  const [variantPickVariants, setVariantPickVariants] = useState<any[]>([])
+  const [variantPickLoading, setVariantPickLoading] = useState(false)
+  const [variantPickQty, setVariantPickQty] = useState(1)
 
   useEffect(() => {
     fetchProducts()
@@ -196,19 +201,66 @@ export function PointOfSale() {
     return matchesSearch && matchesCategory && matchesSede && p.stock > 0
   })
   
-  const handleAddToCart = (productId: string) => {
+  const handleAddToCart = async (productId: string) => {
     const product = products.find(p => p.id === productId)
-    if (product) {
-      if (product.isComposite && product.stock <= 0) {
-        toast.error('Sin insumos disponibles para fabricar este producto')
+    if (!product) return
+
+    if (product.isComposite && product.stock <= 0) {
+      toast.error('Sin insumos disponibles para fabricar este producto')
+      return
+    }
+
+    // Verificar si tiene variantes
+    try {
+      setVariantPickLoading(true)
+      const variants = await api.getVariantsByProduct(productId)
+      const activeVariants = Array.isArray(variants)
+        ? variants.filter((v: any) => v.isActive && v.stock > 0)
+        : []
+
+      if (activeVariants.length > 0) {
+        setVariantPickProduct(product)
+        setVariantPickVariants(activeVariants)
+        setVariantPickQty(1)
+        setVariantPickLoading(false)
         return
       }
-      const cartItem = cart.find(item => item.product.id === productId)
-      if (cartItem && cartItem.quantity >= product.stock) return
-      addToCart(product)
-      setFlashProductId(productId)
-      setTimeout(() => setFlashProductId(null), 500)
+    } catch { /* sin variantes — flujo normal */ }
+    finally { setVariantPickLoading(false) }
+
+    const cartItem = cart.find(item => item.product.id === productId)
+    if (cartItem && cartItem.quantity >= product.stock) return
+    addToCart(product)
+    setFlashProductId(productId)
+    setTimeout(() => setFlashProductId(null), 500)
+  }
+
+  const handleAddVariantToCart = async (variant: any) => {
+    if (!variantPickProduct) return
+    // Resolver precio del tier según cantidad
+    let price = variant.priceOverride ?? variantPickProduct.salePrice
+    try {
+      const resolved = await api.resolveVariantPrice(variant.id, variantPickQty)
+      price = resolved?.data?.price ?? resolved?.price ?? price
+    } catch { /* usa precio base */ }
+
+    // Agregar al carrito como producto con metadata de variante
+    const syntheticProduct = {
+      ...variantPickProduct,
+      id: variantPickProduct.id,
+      variantId: variant.id,
+      salePrice: price,
+      stock: variant.stock,
+      sku: variant.sku,
+      name: `${variantPickProduct.name} — ${variant.label || variant.sku}`,
+      color: variant.color,
+      size: variant.size,
     }
+    addToCart(syntheticProduct)
+    setFlashProductId(variantPickProduct.id)
+    setTimeout(() => setFlashProductId(null), 500)
+    setVariantPickProduct(null)
+    setVariantPickVariants([])
   }
   
   const handleBarcodeScan = async (barcode: string) => {
@@ -1953,68 +2005,97 @@ export function PointOfSale() {
         </DialogContent>
       </Dialog>
 
-      {/* Scan Mode Selection Dialog */}
+            {/* Scan Mode Selection Dialog */}
       <Dialog open={showScanOptions} onOpenChange={setShowScanOptions}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <ScanLine className="h-5 w-5" />
-              Escanear Código
+              <ScanLine className="w-5 h-5" />
+              Seleccionar modo de escáner
             </DialogTitle>
-            <DialogDescription>
-              Selecciona cómo deseas escanear
-            </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 py-4">
+          <div className="flex flex-col gap-3 py-2">
             <Button
               variant="outline"
-              className="h-auto p-4 flex flex-col items-center gap-2"
-              onClick={() => {
-                setShowScanOptions(false)
-                setShowScanner(true)
-              }}
+              className="h-16 flex-col gap-1 text-base"
+              onClick={() => { setShowScanOptions(false); setShowScanner(true) }}
             >
-              <Camera className="h-8 w-8" />
-              <span className="font-medium">Cámara Local</span>
-              <span className="text-xs text-muted-foreground">
-                Usar la cámara de este dispositivo (DroidCam)
-              </span>
+              <Camera className="w-6 h-6" />
+              Cámara del dispositivo
             </Button>
             <Button
               variant="outline"
-              className="h-auto p-4 flex flex-col items-center gap-2"
-              onClick={() => {
-                setShowScanOptions(false)
-                setShowRemoteScanner(true)
-              }}
+              className="h-16 flex-col gap-1 text-base"
+              onClick={() => { setShowScanOptions(false); setShowRemoteScanner(true) }}
             >
-              <Smartphone className="h-8 w-8" />
-              <span className="font-medium">Cámara Remota</span>
-              <span className="text-xs text-muted-foreground">
-                Usar un teléfono como escáner remoto
-              </span>
+              <Smartphone className="w-6 h-6" />
+              Escáner remoto (otro celular)
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Barcode Scanner */}
-      {showScanner && (
-        <BarcodeScanner
-          onScan={handleBarcodeScan}
-          onClose={() => setShowScanner(false)}
-          continuous={true}
-        />
-      )}
-
-      {/* Remote Scanner */}
-      {showRemoteScanner && (
-        <RemoteScanner
-          onScan={handleBarcodeScan}
-          onClose={() => setShowRemoteScanner(false)}
-        />
-      )}
+      {/* Variant Picker Dialog */}
+      <Dialog open={!!variantPickProduct} onOpenChange={v => { if (!v) { setVariantPickProduct(null); setVariantPickVariants([]) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="w-5 h-5" />
+              Seleccionar variante — {variantPickProduct?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {variantPickLoading ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Cargando variantes…</p>
+            ) : variantPickVariants.map((v: any) => {
+              const label = [v.color, v.size].filter(Boolean).join(' / ') || v.sku
+              const tiers = v.priceTiers || []
+              const applicableTier = [...tiers]
+                .sort((a: any, b: any) => b.minQty - a.minQty)
+                .find((t: any) => t.minQty <= variantPickQty)
+              const price = applicableTier?.price ?? v.priceOverride ?? variantPickProduct?.salePrice ?? 0
+              return (
+                <button
+                  key={v.id}
+                  className="w-full flex items-center justify-between p-3 border rounded-lg hover:bg-muted/60 transition-colors text-left"
+                  onClick={() => handleAddVariantToCart(v)}
+                >
+                  <div>
+                    <p className="font-medium text-sm">{label}</p>
+                    <p className="text-xs text-muted-foreground">SKU: {v.sku} · Stock: {v.stock}</p>
+                    {tiers.length > 1 && (
+                      <p className="text-xs text-primary mt-0.5">
+                        {tiers.length} tiers de precio disponibles
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-sm">{formatCOP(price)}</p>
+                    {applicableTier && <p className="text-xs text-muted-foreground">Tier: {applicableTier.minQty}+ uds.</p>}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex items-center gap-3 pt-2 border-t">
+            <label className="text-sm font-medium">Cantidad:</label>
+            <input
+              type="number"
+              min={1}
+              value={variantPickQty}
+              onChange={e => setVariantPickQty(Math.max(1, Number(e.target.value)))}
+              className="w-20 border rounded px-2 py-1 text-sm"
+            />
+            <p className="text-xs text-muted-foreground">Afecta el tier de precio aplicado.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setVariantPickProduct(null); setVariantPickVariants([]) }}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
-    </div>
+  </div>
   )
 }

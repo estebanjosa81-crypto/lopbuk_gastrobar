@@ -23,10 +23,12 @@
 > Si cambias un módulo, ¿qué otros se ven afectados?
 
 | Sinapsis | Cadena |
-|---|---|
+|---|---|---|
 | [[synapses/ops-chain]] | POS → Ventas → Inventario → Caja |
 | [[synapses/gastrobar-chain]] | Recetas → Inventario → Merma → Food Cost |
+| [[synapses/supplier-chain]] | Proveedor → Variantes → Precios → Ventas → Liquidación |
 | [[synapses/delivery-chain]] | Storefront → Pedidos → Delivery → WhatsApp |
+| [[synapses/supplier-chain]] | Proveedor → Variantes → Tiers → Venta → Liquidación |
 | [[synapses/saas-chain]] | Tenant → Auth → Módulos → Suscripciones |
 
 ---
@@ -40,6 +42,8 @@
 | [[brain/coding-standards]] | Cómo se escribe el código |
 | [[brain/ai-behavior]] | Cómo hablarle a Claude |
 | [[brain/naming-conventions]] | Nombres de todo en el sistema |
+| [[brain/variants-and-suppliers]] | ⭐ Variantes + price tiers + proveedores — arquitectura definitiva (4 sprints) |
+| [[brain/variants-implementation-plan]] | ⭐ Plan de implementación de variantes (legacy — ver variants-and-suppliers) |
 | [[brain/patterns/module-pattern]] | Patrón estándar de módulo backend |
 | [[brain/daimuz-replication]] | ⭐ Cómo replicar DAIMUZ en otro proyecto |
 
@@ -97,6 +101,7 @@
 | [[flows/order-flow]] | Pedido → cocina → entrega |
 | [[flows/inventory-flow]] | Movimientos de stock y kardex |
 | [[flows/delivery-flow]] | Asignación → tracking → entrega |
+| [[flows/supplier-flow]] | Proveedor → importación → venta → liquidación |
 
 ---
 
@@ -105,14 +110,17 @@
 > Cada módulo tiene `[modulo].md` completo + `compressed.md` para triage rápido.
 
 | Módulo | Función | Compressed |
-|---|---|---|
+|---|---|---|---|
 | [[modules/auth/auth]] | Autenticación, JWT, roles | [[modules/auth/compressed]] |
 | [[modules/tenants/tenants]] | Multi-tenant, módulos activables | [[modules/tenants/compressed]] |
 | [[modules/dashboard/dashboard]] | KPIs y métricas en tiempo real | [[modules/dashboard/compressed]] |
+| [[modules/products/products]] | Productos base + categorías | [[modules/products/compressed]] |
+| [[modules/variants/variants]] | Variantes color/talla + price tiers + stock atómico | [[modules/variants/compressed]] |
 | [[modules/pos/pos]] | Punto de venta | [[modules/pos/compressed]] |
 | [[modules/cash-sessions/cash-sessions]] | Apertura/cierre de caja | [[modules/cash-sessions/compressed]] |
 | [[modules/sales/sales]] | Registro de ventas | [[modules/sales/compressed]] |
 | [[modules/inventory/inventory]] | Stock y kardex | [[modules/inventory/compressed]] |
+| [[modules/suppliers/suppliers]] | Catálogo proveedores + supplier_products | [[modules/suppliers/compressed]] |
 | [[modules/purchases/purchases]] | Compras a proveedores | [[modules/purchases/compressed]] |
 | [[modules/orders/orders]] | Pedidos y estados | [[modules/orders/compressed]] |
 | [[modules/customers/customers]] | CRM de clientes | [[modules/customers/compressed]] |
@@ -162,6 +170,7 @@
 | [[decisions/auth-approach]] | JWT + httpOnly cookie — sin XSS |
 | [[decisions/state-management]] | Zustand — sin boilerplate |
 | [[decisions/db-design]] | MySQL directo, UUID, soft delete |
+| [[brain/variants-and-suppliers]] | Variantes + price tiers + proveedores — arquitectura definitiva |
 
 ---
 
@@ -258,7 +267,10 @@ memory/lessons-learned.md (si aplica), memory/completed-features.md (si aplica).
 → [[architecture/overview]] → [[architecture/frontend]] → [[architecture/backend]] → [[architecture/database]]
 
 ### "Quiero entender el flujo de ventas"
-→ [[flows/sale-flow]] → [[synapses/ops-chain]] → [[modules/pos/pos]] → [[modules/sales/sales]]
+→ [[flows/sale-flow]] → [[synapses/ops-chain]] → [[modules/pos/pos]] → [[modules/sales/sales]] → [[modules/variants/variants]]
+
+### "Quiero entender variantes y proveedores"
+→ [[brain/variants-and-suppliers]] → [[modules/variants/variants]] → [[modules/suppliers/suppliers]] → [[flows/supplier-flow]]
 
 ### "Quiero entender la autenticación"
 → [[flows/auth-flow]] → [[modules/auth/compressed]] → [[modules/auth/auth]] → [[decisions/auth-approach]]
@@ -304,4 +316,4 @@ memory/lessons-learned.md (si aplica), memory/completed-features.md (si aplica).
 
 ---
 
-*⬡ DAIMUZ v3.8 — 35 módulos backend · 88 componentes frontend · 11 rutas app/ · 4 indexes completos · 41 compressed.md · 4 sinapsis · ontología · governance · memoria episódica*
+*⬡ DAIMUZ v3.9 — 37 módulos backend · 88 componentes frontend · 11 rutas app/ · 4 indexes completos · 43 compressed.md · 5 sinapsis · ontología · governance · memoria episódica · brain/variants-and-suppliers*

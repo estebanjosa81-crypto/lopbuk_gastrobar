@@ -104,10 +104,11 @@ export interface DailyReportData {
 
 export interface CreateSaleItem {
   productId: string;
+  variantId?: string;   // Si viene → usar stock/precio de variante
   quantity: number;
   discount?: number;
   customAmount?: number;
-  unitPrice?: number; // Precio personalizado desde facturación (override del precio de venta)
+  unitPrice?: number;   // Precio personalizado desde facturación (override del precio de venta)
 }
 
 export interface CreateSaleData {
@@ -350,15 +351,105 @@ export class SalesService {
       const itemsToInsert: Array<{
         id: string;
         productId: string;
+        variantId?: string;
         productName: string;
         productSku: string;
+        variantLabel?: string;
         quantity: number;
         unitPrice: number;
         discount: number;
         subtotal: number;
+        frozenCost?: number;
+        frozenMarginPct?: number;
+        frozenMarginAmount?: number;
       }> = [];
 
       for (const item of data.items) {
+        // ── Si viene variant_id → flujo variante ─────────────────────────────
+        if (item.variantId) {
+          // Obtener variante + producto base
+          const [varRows] = await connection.execute<RowDataPacket[]>(
+            `SELECT pv.*, p.name AS product_name, COALESCE(p.base_price, p.sale_price) AS base_price
+             FROM product_variants pv
+             LEFT JOIN products p ON p.id = pv.product_id
+             WHERE pv.id = ? AND pv.tenant_id = ? AND pv.is_active = 1 FOR UPDATE`,
+            [item.variantId, tenantId]
+          );
+          if (varRows.length === 0) throw new AppError(`Variante ${item.variantId} no encontrada`, 404);
+          const variant = varRows[0] as any;
+
+          // Resolver precio via tiers (o usar unitPrice si viene override)
+          let unitPrice: number;
+          let frozenMarginPct = 0;
+          if (item.unitPrice) {
+            unitPrice = item.unitPrice;
+          } else {
+            const [tiers] = await connection.execute<RowDataPacket[]>(
+              `SELECT price, tenant_margin_pct FROM variant_price_tiers
+               WHERE variant_id = ? AND tenant_id = ? AND min_qty <= ? AND is_active = 1
+               ORDER BY min_qty DESC LIMIT 1`,
+              [item.variantId, tenantId, item.quantity]
+            );
+            if (tiers.length > 0) {
+              unitPrice = Number((tiers[0] as any).price);
+              frozenMarginPct = Number((tiers[0] as any).tenant_margin_pct);
+            } else {
+              unitPrice = variant.price_override != null
+                ? Number(variant.price_override)
+                : Number(variant.base_price ?? 0);
+            }
+          }
+
+          const frozenCost = variant.cost_price != null ? Number(variant.cost_price) : undefined;
+          const itemTotal     = unitPrice * item.quantity;
+          const itemDiscount  = itemTotal * ((item.discount || 0) / 100);
+          const itemSubtotal  = itemTotal - itemDiscount;
+          const frozenMarginAmount = frozenCost != null
+            ? (unitPrice - frozenCost) * item.quantity
+            : undefined;
+
+          subtotal      += itemSubtotal;
+          totalDiscount += itemDiscount;
+
+          const variantLabel = [variant.color, variant.size].filter(Boolean).join(' / ') || undefined;
+
+          itemsToInsert.push({
+            id: uuidv4(),
+            productId: variant.product_id,
+            variantId: item.variantId,
+            productName: variant.product_name || 'Producto',
+            productSku: variant.sku,
+            variantLabel,
+            quantity: item.quantity,
+            unitPrice,
+            discount: item.discount || 0,
+            subtotal: itemSubtotal,
+            frozenCost,
+            frozenMarginPct,
+            frozenMarginAmount,
+          });
+
+          // Descontar stock de variante — UPDATE atómico
+          const [stockResult] = await connection.execute<ResultSetHeader>(
+            'UPDATE product_variants SET stock = stock - ? WHERE id = ? AND tenant_id = ? AND stock >= ?',
+            [item.quantity, item.variantId, tenantId, item.quantity]
+          );
+          if (stockResult.affectedRows === 0) {
+            throw new AppError(`Stock insuficiente para variante ${variantLabel || item.variantId}`, 400);
+          }
+
+          // Registrar movimiento
+          await connection.execute(
+            `INSERT INTO inventory_movements
+               (id, tenant_id, variant_id, product_id, type, quantity, reason, reference_type)
+             VALUES (?, ?, ?, ?, 'salida', ?, 'Venta', 'sale')`,
+            [uuidv4(), tenantId, item.variantId, variant.product_id, item.quantity]
+          );
+
+          continue; // saltar el flujo de producto plano
+        }
+        // ── Fin flujo variante ───────────────────────────────────────────────
+
         const [productRows] = await connection.execute<ProductStockRow[]>(
           'SELECT id, stock, name FROM products WHERE id = ? FOR UPDATE',
           [item.productId]
@@ -642,9 +733,20 @@ export class SalesService {
       // Insertar items
       for (const item of itemsToInsert) {
         await connection.execute(
-          `INSERT INTO sale_items (id, tenant_id, sale_id, product_id, product_name, product_sku, quantity, unit_price, discount, subtotal)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [item.id, tenantId, saleId, item.productId, item.productName, item.productSku, item.quantity, item.unitPrice, item.discount, item.subtotal]
+          `INSERT INTO sale_items
+             (id, tenant_id, sale_id, product_id, variant_id, product_name, product_sku,
+              quantity, unit_price, discount, subtotal,
+              cost_price, margin_pct, margin_amount)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            item.id, tenantId, saleId,
+            item.productId, item.variantId ?? null,
+            item.productName, item.productSku,
+            item.quantity, item.unitPrice, item.discount, item.subtotal,
+            item.frozenCost ?? null,
+            item.frozenMarginPct ?? null,
+            item.frozenMarginAmount ?? null,
+          ]
         );
       }
 
@@ -849,120 +951,16 @@ export class SalesService {
         COUNT(*) as total,
         COALESCE(SUM(CASE WHEN status = 'completada' THEN total ELSE 0 END), 0) as completedTotal,
         COALESCE(SUM(CASE WHEN status = 'anulada' THEN total ELSE 0 END), 0) as cancelledTotal
-       FROM sales WHERE tenant_id = ?`,
+       FROM sales WHERE tenant_
+       FROM sales WHERE tenant_id = ?
+       AND status != 'anulada'`,
       [tenantId]
     );
+    const row = (rows as RowDataPacket[])[0];
     return {
-      total: Number(rows[0].total),
-      completedTotal: Number(rows[0].completedTotal),
-      cancelledTotal: Number(rows[0].cancelledTotal),
-    };
-  }
-
-  async getDailyReport(tenantId: string, date: string): Promise<DailyReportData> {
-    const [salesRows] = await db.execute<SaleRow[]>(
-      `SELECT * FROM sales WHERE tenant_id = ? AND DATE(CONVERT_TZ(created_at, '+00:00', '-05:00')) = ? AND status = 'completada' ORDER BY created_at ASC`,
-      [tenantId, date]
-    );
-
-    const allItems: SaleItemRow[] = [];
-    if (salesRows.length > 0) {
-      const saleIds = salesRows.map(s => s.id);
-      const placeholders = saleIds.map(() => '?').join(',');
-      const [itemRows] = await db.execute<SaleItemRow[]>(
-        `SELECT * FROM sale_items WHERE sale_id IN (${placeholders})`,
-        saleIds
-      );
-      allItems.push(...itemRows);
-    }
-
-    const itemsBySale = new Map<string, SaleItemRow[]>();
-    for (const item of allItems) {
-      if (!itemsBySale.has(item.sale_id)) itemsBySale.set(item.sale_id, []);
-      itemsBySale.get(item.sale_id)!.push(item);
-    }
-
-    const sedeIds = [...new Set(salesRows.map(s => s.sede_id).filter(Boolean))] as string[];
-    const sedeNameMap = new Map<string, string>();
-    if (sedeIds.length > 0) {
-      const placeholdersSedes = sedeIds.map(() => '?').join(',');
-      const [sedeRows] = await db.execute<RowDataPacket[]>(
-        `SELECT id, name FROM sedes WHERE tenant_id = ? AND id IN (${placeholdersSedes})`,
-        [tenantId, ...sedeIds]
-      );
-      for (const row of sedeRows) sedeNameMap.set(row.id, row.name);
-    }
-
-    const sedeGroups = new Map<string, SaleRow[]>();
-    for (const sale of salesRows) {
-      const key = sale.sede_id || '__none__';
-      if (!sedeGroups.has(key)) sedeGroups.set(key, []);
-      sedeGroups.get(key)!.push(sale);
-    }
-
-    const sedeReports: SedeReportData[] = [];
-    for (const [sedeKey, sales] of sedeGroups.entries()) {
-      const byPaymentMethod: Record<string, { count: number; total: number; mixedEfectivo?: number; mixedSecondMethod?: string; mixedSecond?: number }> = {};
-      const productMap = new Map<string, ProductReportItem>();
-      let subtotal = 0, tax = 0, discount = 0, total = 0;
-
-      for (const sale of sales) {
-        subtotal += Number(sale.subtotal);
-        tax += Number(sale.tax);
-        discount += Number(sale.discount);
-        total += Number(sale.total);
-
-        const pm = sale.payment_method;
-        if (!byPaymentMethod[pm]) byPaymentMethod[pm] = { count: 0, total: 0 };
-        byPaymentMethod[pm].count++;
-        byPaymentMethod[pm].total += Number(sale.total);
-
-        if (pm === 'mixto' && sale.mixed_efectivo_amount != null) {
-          byPaymentMethod[pm].mixedEfectivo = (byPaymentMethod[pm].mixedEfectivo || 0) + Number(sale.mixed_efectivo_amount);
-          byPaymentMethod[pm].mixedSecond = (byPaymentMethod[pm].mixedSecond || 0) + Number(sale.mixed_second_amount || 0);
-          if (!byPaymentMethod[pm].mixedSecondMethod && sale.mixed_second_method) {
-            byPaymentMethod[pm].mixedSecondMethod = sale.mixed_second_method;
-          }
-        }
-
-        const items = itemsBySale.get(sale.id) || [];
-        for (const item of items) {
-          if (!productMap.has(item.product_id)) {
-            productMap.set(item.product_id, {
-              productId: item.product_id,
-              productName: item.product_name,
-              productSku: item.product_sku,
-              quantity: 0,
-              subtotal: 0,
-            });
-          }
-          const p = productMap.get(item.product_id)!;
-          p.quantity += item.quantity;
-          p.subtotal += Number(item.subtotal);
-        }
-      }
-
-      sedeReports.push({
-        sedeId: sedeKey === '__none__' ? null : sedeKey,
-        sedeName: sedeKey === '__none__' ? null : (sedeNameMap.get(sedeKey) || sedeKey),
-        salesCount: sales.length,
-        subtotal,
-        tax,
-        discount,
-        total,
-        byPaymentMethod,
-        products: [...productMap.values()],
-      });
-    }
-
-    return {
-      date,
-      sedes: sedeReports,
-      totalSales: salesRows.length,
-      grandSubtotal: sedeReports.reduce((s, r) => s + r.subtotal, 0),
-      grandTax: sedeReports.reduce((s, r) => s + r.tax, 0),
-      grandDiscount: sedeReports.reduce((s, r) => s + r.discount, 0),
-      grandTotal: sedeReports.reduce((s, r) => s + r.total, 0),
+      total: Number(row.total),
+      completedTotal: Number(row.completedTotal),
+      cancelledTotal: Number(row.cancelledTotal),
     };
   }
 }

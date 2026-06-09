@@ -7,11 +7,19 @@
 ```
 CLIENTE (storefront público en /links/[slug])
     │
+    ├──► Navega productos con variantes (chips color/talla)
+    │     └──► Solo variantes con stock > 0 visibles
+    │     └──► Al cambiar cantidad → resolvePrice() calcula precio del tier
+    │     └──► Badge "Mejor precio desde N uds." si hay tiers
+    │
     ▼
 POST /api/storefront/:slug/order
     │
+    ├──► Valida: slug existe, variantes activas, stock disponible
+    ├──► [ATÓMICO] UPDATE product_variants SET stock = stock - qty
+    │     WHERE id=? AND stock >= qty  (si affectedRows=0 → error)
+    ├──► inventory_movements INSERT (reference_type='storefront_order')
     ├──► storefront_orders INSERT (estado: 'pendiente')
-    │         └──► valida: slug existe, productos activos, stock disponible
     │
     └──► socket.emit('new-storefront-order', order) → panel del negocio
               │

@@ -1,0 +1,221 @@
+{
+  "main": {
+    "id": "780fd23abc841c21",
+    "type": "split",
+    "children": [
+      {
+        "id": "7a5e6f9fe1fc46c4",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "3fddc6594cd290eb",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "README.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "README"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "ff7795fcfd7499c6",
+    "type": "split",
+    "children": [
+      {
+        "id": "be066c165bbb650a",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7db4f582bcf38241",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Explorador de archivos"
+            }
+          },
+          {
+            "id": "1bf688dc5e178028",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Buscar"
+            }
+          },
+          {
+            "id": "02a31d413bb2104e",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Marcadores"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "1a49d3cddd9801da",
+    "type": "split",
+    "children": [
+      {
+        "id": "5e7bd01b00ffcfbb",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "7e4704c61183107a",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "README.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Enlaces entrantes de README"
+            }
+          },
+          {
+            "id": "5c249d4a1ea37126",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "README.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Enlaces salientes de README"
+            }
+          },
+          {
+            "id": "5174737d9f598588",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Etiquetas"
+            }
+          },
+          {
+            "id": "ae9ffd782cb88e4b",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "Todas las propiedades"
+            }
+          },
+          {
+            "id": "f9eec491f1c56925",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "README.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Esquema de README"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Abrir selector rápido": false,
+      "graph:Abrir vista gráfica": false,
+      "canvas:Crear nuevo lienzo": false,
+      "daily-notes:Abrir la nota de hoy": false,
+      "templates:Insertar plantilla": false,
+      "command-palette:Abrir paleta de comandos": false,
+      "bases:Crear nueva base": false
+    }
+  },
+  "active": "3fddc6594cd290eb",
+  "lastOpenFiles": [
+    "backend/migrations/v39_variants.sql",
+    "daimuz/brain/variants-implementation-plan.md",
+    "daimuz/brain/variants-architecture.md",
+    "daimuz/brain/supplier-variant-model.md",
+    "daimuz/flows/variant-flow.md",
+    "daimuz/decisions/variant-architecture.md",
+    "daimuz/synapses/supplier-chain.md",
+    "backend/src/migrations/004_variants_and_suppliers.sql",
+    "backend/src/migrations",
+    "daimuz/synapses/variants-chain.md",
+    "daimuz/flows/supplier-flow.md",
+    "daimuz/modules/suppliers/compressed.md",
+    "daimuz/modules/variants/compressed.md",
+    "daimuz/modules/suppliers/suppliers.md",
+    "daimuz/modules/suppliers",
+    "daimuz/modules/variants/variants.md",
+    "daimuz/modules/variants",
+    "daimuz/modules/product-variants/compressed.md",
+    "daimuz/modules/product-variants/product-variants.md",
+    "daimuz/modules/supplier-catalog/compressed.md",
+    "daimuz/modules/supplier-catalog/supplier-catalog.md",
+    "daimuz/modules/supplier-catalog",
+    "daimuz/modules/product-variants",
+    "daimuz/modules/products-variants/compressed.md",
+    "daimuz/modules/products-variants/products-variants.md",
+    "daimuz/modules/products/compressed.md",
+    "daimuz/modules/products/products.md",
+    "daimuz/modules/products",
+    "daimuz/modules/products-variants",
+    "daimuz/brain/variants-and-suppliers.md",
+    "CLAUDE.md",
+    "README.md"
+  ]
+}

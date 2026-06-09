@@ -23,9 +23,11 @@
 | `cash-sessions` | Apertura/cierre de caja con arqueo | `cash-sessions.service.ts`, `cash-register.tsx` |
 | `sales` | Registro inmutable de ventas + cancelaciones auditadas | `sales.service.ts` |
 | `inventory` | Kardex de stock, movimientos, alertas mínimo | `inventory.service.ts`, `inventory-list.tsx` |
-| `products` | CRUD productos: precio, stock, SKU, peso, imagen | `products.service.ts` |
+| `products` | CRUD productos base (sin variantes), categorías, bulk import | `products.service.ts` |
+| `variants` | Variantes color/talla, price tiers, stock atómico, resolvePrice, import CSV | `variants.service.ts`, `price-tier.service.ts`, `import.service.ts` |
 | `categories` | Categorías: CRUD + color + sort_order + toggle visibilidad | `categories.service.ts` |
-| `purchases` | Órdenes de compra a proveedores, ingreso de stock | `purchases.service.ts` |
+| `purchases` | Órdenes de compra a proveedores, ingreso de stock. `suppliers` CRUD incluido | `purchases.service.ts` |
+| `suppliers` | Catálogo proveedores, productos por proveedor (N:N), stock por variante | `suppliers.service.ts`, `provider-products.tsx` |
 | `customers` | CRM básico, historial de compras, créditos | `customers.service.ts` |
 | `credits` | Fiados: cupo, pagos parciales, historial | `credits.service.ts` |
 | `finances` | Flujo de caja, ingresos/egresos, P&L | `finances.service.ts` |
@@ -67,7 +69,6 @@
 | `portfolio` | Portafolio público de la marca (singleton) | `portfolio.routes.ts`, `app/portfolio/page.tsx` |
 | `media-library` | Subida imágenes a Cloudinary | `media-library.routes.ts`, `ui/cloudinary-upload.tsx` |
 | `dev-requests` | Solicitudes de nuevas funcionalidades enviadas por tenants | `dev-requests.service.ts`, `developer-requests.tsx` |
-
 ## Consumidor (cross-comercio, role cliente)
 
 | Módulo | Función resumida | Archivos clave |
@@ -109,7 +110,9 @@
 ## Navegar por síntoma
 
 - **"Error de autorización"** → `[[modules/auth/auth]]`
-- **"No descuenta stock"** → `[[modules/inventory/inventory]]`
+- **"No descuenta stock"** → `[[modules/inventory/inventory]]` o `[[modules/variants/variants]]` (variantes)
+- **"No aparecen colores/tallas"** → `[[modules/variants/variants]]` (variantes no creadas)
+- **"Precio no cambia por cantidad"** → `[[modules/variants/variants]]` (price-tiers no configurados)
 - **"No puedo vender"** → `[[modules/cash-sessions/cash-sessions]]` (caja no abierta)
 - **"Pedido no llega a cocina"** → `[[modules/orders/orders]]` + Socket.io
 - **"Food cost incorrecto"** → `[[modules/recipes/recipes]]`

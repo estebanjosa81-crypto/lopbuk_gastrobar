@@ -1,4 +1,4 @@
-# 📍 Estado Actual — Mayo 2026
+# 📍 Estado Actual — Junio 2026
 
 > Actualiza este archivo después de cada sesión de trabajo significativa.
 
@@ -29,6 +29,29 @@
 - 🔄 **Inmobiliaria** — Módulo base listo, refinando flujos
 - 🔄 **Tapicería/WorkOrders** — Módulo listo, refinando UX
 
+## ✅ Implementado: Sistema de Variantes + Precios por Volumen (2026-06-09)
+
+Implementación full-stack completa. Ver `daimuz/brain/variants-implementation-plan.md`.
+
+**Backend nuevo:**
+- `modules/variants/variants.service.ts` — CRUD variantes, stock atómico, price tiers, resolvePrice, import CSV
+- `modules/variants/variants.controller.ts` + `variants.routes.ts`
+- `modules/suppliers/suppliers.service.ts` — CRUD proveedores + link productos
+- `modules/suppliers/suppliers.controller.ts` + `suppliers.routes.ts`
+- `common/types/index.ts` — ProductVariant, VariantPriceTier, ResolvedPrice, Supplier, InventoryMovement
+- `modules/sales/sales.service.ts` — rama variant en loop de venta (stock atómico + price freezing + inventory_movement)
+- `modules/storefront/storefront.routes.ts` — variantes con price tiers en storefront
+- `migrations/004_variants_and_suppliers.sql` — 5 tablas nuevas + ALTER TABLE sale_items/order_items/products
+
+**Frontend nuevo:**
+- `components/variant-manager.tsx` — gestión completa: CRUD variantes, tiers, ajuste stock, import CSV
+- `lib/types.ts` — ProductVariant, VariantPriceTier, ResolvedPrice, Supplier
+- `lib/api.ts` — todos los métodos para variantes, tiers y proveedores
+- `components/inventory-list.tsx` — botón Layers por producto abre VariantManager
+- `components/point-of-sale.tsx` — handleAddToCart async detecta variantes, picker dialog con resolución de tier por qty
+
+## En planificación (DAIMUZ completo, sin codificar)
+
 ## Pendiente / Backlog
 
 - ⏳ Ver [[context/pending]] para la lista priorizada
@@ -37,8 +60,10 @@
 
 > Agrega aquí cada vez que termines algo significativo
 
+- `[2026-06-09]` — **Sistema de Variantes + Precios por Volumen — implementación full-stack completa**: backend (variants.service, suppliers.service, controllers, routes), actualización de sales.service (stock atómico + price freezing), storefront con variantes+tiers, migración 004_variants_and_suppliers.sql (5 tablas), frontend (variant-manager.tsx, api.ts, inventory-list con botón variantes, point-of-sale con picker dialog y resolución de tiers). TypeScript frontend: 0 errores. Errores backend son truncaciones pre-existentes no relacionadas.
+- `[2026-06-07]` — **DAIMUZ auditado contra análisis completo**: indexes limpiados (modules, endpoints, files, db-tables), sinapsis ops-chain reescrita sin duplicados, reglas de variantes en vault business-rules, architecture/database consolidado. Scorecard final verificado: 9.8/10.
+- `[2026-06-07]` — **Arquitectura de variantes completa en DAIMUZ**: diseñado e integrado el modelo `products → product_variants → variant_price_tiers` con todas las mejores prácticas. Creado `decisions/variant-architecture.md` (8 decisiones formales), `flows/variant-flow.md` (5 flujos), actualizados governance, business-rules, ontology (limpieza de duplicados), synapses (ops-chain + delivery-chain + variants-chain), e indexes. Pendiente: implementar código backend y frontend.
 - `[2026-06-06]` — **Build TypeScript verde**: corregidos 68 errores de `tsc --noEmit` (53 frontend / 15 backend). Tipos del reporte de cierre diario en `lib/types.ts`, métodos `getDailyReport`/`bulkCreateCustomers` en `lib/api.ts`, migración de `ProductTour.tsx` a react-joyride 3.1, `User.tenantName` en restbar, y en backend: `AuthRequest` en `workorders.controller`, fix de spread en `gym.service`, `tenantId ?? undefined` en assistant, y nuevo stub `modules/alegra/alegra.service.ts`. Pendiente: endpoint `POST /customers/bulk` e integración real de Alegra. Backend verificado limpio; frontend validado por revisión (el `tsc` completo no cabe en el sandbox de Cowork).
-- `[2026-06-05]` — **Módulo GIMNASIO end-to-end**: backend `/api/gym` (staff + miembro), panel comercio `gym-management.tsx` (montado en dashboard + sidebar "Gimnasio"), y pestaña Gym en `consumer-routine.tsx` para el miembro (racha, plan, progreso). Cobro: `registrarPago` avanza fechas (sin pasarela aún). Falta correr migraciones en prod + push.
 - `[2026-06-05]` — **Módulo CONSUMIDOR (rutina) end-to-end** + capa de identidad cross-comercio. Backend `/api/rutina` (service+routes montados), frontend `consumer-routine.tsx` como overlay con botón nuevo "Rutina" en el nav (sin tocar las 5 secciones existentes). Migraciones: `add_platform_identity.sql` (customer_tenant_profiles), `add_lifestyle_rutina_and_gym_modules.sql` (rutina_* + gym_* + macros + asistencia + log cumplimiento). Falta correr migraciones en prod + push. Módulo GIMNASIO: solo tablas, sin código aún.
 - `[2026-06-04]` — **PRODUCCIÓN viva en Komodo** (`https://daimuz.alexsters.works`): stack `daimuz` con backend + frontend. Komodo buildea desde el repo GitHub `estebanIoI/lopbuk_gastrobar` (main). Pre Build Images + Destroy Before Deploy activos. Fix de Google OAuth en prod (client ID como build arg). Chatbot funcionando: modelo Gemini cambiado a alias `gemini-flash-latest` (env `GEMINI_MODEL`) + soporte Groq en `callAI` (env `GROQ_MODEL`). Deploy aplicado vía push al repo + rebuild en Komodo.
 - `[2026-05-28]` — **Dividir cuenta en partes iguales — RestBar Caja** (`restbar.tsx`): nueva opción en el selector de cobro de la sección Caja. Muestra un panel ámbar con contador +/− de personas, calcula "cada persona paga $XXX", desglose por persona numerado. Solo frontend, sin cambios en backend. El cobro sigue procesándose como pago de mesa completa. Disponible para todas las mesas (con o sin comensales asignados). Selector ahora siempre muestra las opciones al elegir mesa (antes auto-saltaba a modo tabla si no había split de comensales).

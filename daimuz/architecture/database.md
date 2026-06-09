@@ -25,9 +25,12 @@ Core:
   login_attempts            → intentos de login (brute force protection)
 
 Inventario:
-  products                  → catálogo (SKU, precio, stock, costo)
+  products                  → catálogo (plantilla: name, base_price, category)
+  product_variants          → variantes con stock, SKU, cost_price, supplier_id, price_override
+  variant_price_tiers       → precios escalonados por variante (min_qty, price, margin_pct)
+  inventory_movements       → kardex por variante (fuente de verdad del stock)
+  stock_movements           → kardex legacy (productos sin variantes, se migrará a inventory_movements)
   categories                → categorías (is_active, color, sort_order)
-  stock_movements           → kardex completo
   waste_records             → mermas con justificación  ← NO "merma_records"
   par_levels                → niveles PAR por producto
   product_recipes           → recetas BOM (product_id → ingredient_id)  ← NO "recipe_items"
@@ -97,11 +100,13 @@ IA/Chatbot:
   chatbot_messages          → historial de mensajes
   agent_actions             → auditoría de herramientas IA
 
+  supplier_products         → multi-proveedor: catálogo (supplier_id + product_id unique)
+
 Sistema:
   work_orders               → órdenes de trabajo (tapicería)
   work_order_materials      → materiales por orden
   work_order_payments       → cobros parciales por orden
-  re_properties / re_leads / re_contracts → módulo inmobiliaria
+  re_properties / re_leads / re_contracts → módulo inmobiliario
   inventory_holds           → reserva de stock durante checkout
   audit_log                 → auditoría de acciones
   media_library             → ⚠️ NO existe como tabla — Cloudinary es externo

@@ -2566,6 +2566,37 @@ class ApiService {
   async getGymTodayAttendance() { return this.request<any[]>('/gym/asistencia/hoy') }
   async gymCheckIn(userId: string) { return this.request<any>(`/gym/members/${userId}/checkin`, { method: 'POST' }) }
   async gymCheckOut(asistenciaId: string) { return this.request<any>(`/gym/asistencia/${asistenciaId}/checkout`, { method: 'PATCH' }) }
+
+  // ── Variantes ──────────────────────────────────────────────────────────────
+  async getVariantsByProduct(productId: string) { return this.request<any[]>(`/products/${productId}/variants`) }
+  async getVariant(id: string) { return this.request<any>(`/variants/${id}`) }
+  async createVariant(productId: string, data: any) { return this.request<any>(`/products/${productId}/variants`, { method: 'POST', body: JSON.stringify(data) }) }
+  async updateVariant(id: string, data: any) { return this.request<any>(`/variants/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async deleteVariant(id: string) { return this.request<any>(`/variants/${id}`, { method: 'DELETE' }) }
+  async adjustVariantStock(id: string, data: { quantity: number; type: string; reason: string }) {
+    return this.request<any>(`/variants/${id}/stock`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  async getVariantMovements(id: string) { return this.request<any[]>(`/variants/${id}/movements`) }
+  async getVariantTiers(variantId: string) { return this.request<any[]>(`/variants/${variantId}/price-tiers`) }
+  async createVariantTier(variantId: string, data: { minQty: number; price: number; tenantMarginPct?: number }) {
+    return this.request<any>(`/variants/${variantId}/price-tiers`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateVariantTier(tierId: string, data: any) { return this.request<any>(`/price-tiers/${tierId}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async deleteVariantTier(tierId: string) { return this.request<any>(`/price-tiers/${tierId}`, { method: 'DELETE' }) }
+  async resolveVariantPrice(variantId: string, qty: number) {
+    return this.request<any>(`/variants/${variantId}/resolve-price`, { method: 'POST', body: JSON.stringify({ qty }) })
+  }
+  async importVariantsCsv(csvText: string) {
+    return this.request<any>('/variants/import', { method: 'POST', body: JSON.stringify({ csv: csvText }) })
+  }
+  getVariantImportTemplateUrl() { return `${API_URL}/variants/import/template` }
+
+  // ── Proveedores ────────────────────────────────────────────────────────────
+  async getSuppliers() { return this.request<any[]>('/suppliers') }
+  async getSupplier(id: string) { return this.request<any>(`/suppliers/${id}`) }
+  async createSupplier(data: any) { return this.request<any>('/suppliers', { method: 'POST', body: JSON.stringify(data) }) }
+  async updateSupplier(id: string, data: any) { return this.request<any>(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
+  async deleteSupplier(id: string) { return this.request<any>(`/suppliers/${id}`, { method: 'DELETE' }) }
 }
 
 export const api = new ApiService()

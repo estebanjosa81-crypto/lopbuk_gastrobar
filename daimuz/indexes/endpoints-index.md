@@ -32,6 +32,20 @@ PRODUCTS
   DELETE /products/:id           soft delete
   POST  /products/bulk           importación masiva
 
+VARIANTS (Product Variants + Price Tiers + Import)
+  GET   /products/:productId/variants                  variantes de un producto
+  POST  /products/:productId/variants                  crea variante
+  PUT   /variants/:id                                  actualiza variante
+  DELETE /variants/:id                                 soft delete
+  PATCH /variants/:id/stock                            { quantity, reason } → UPDATE atómico
+  POST  /variants/resolve-price                        { variantId, qty } → { price, marginPct, source }
+  GET   /variants/:id/price-tiers                      lista tiers ordenados por min_qty
+  POST  /variants/:id/price-tiers                      crea tier { minQty, price, marginPct }
+  PUT   /price-tiers/:id                               actualiza tier
+  DELETE /variants/:id/price-tiers/:tid                elimina tier
+  POST  /variants/import                               importa CSV masivo con variantes
+  GET   /variants/import/template                      descarga plantilla CSV
+
 CATEGORIES
   GET   /categories                lista del tenant (acepta ?includeHidden=true)
   POST  /categories                { id, name, description?, color? }
@@ -44,6 +58,15 @@ INVENTORY
   POST  /inventory/movement      { productId, quantity, type, reason }
   GET   /inventory/stock         stock actual todos los productos
   GET   /inventory/alerts        bajo stock mínimo
+
+SUPPLIERS
+  GET   /suppliers                        lista del tenant
+  POST  /suppliers                        crea proveedor
+  PUT   /suppliers/:id                    actualiza
+  DELETE /suppliers/:id                   soft delete
+  GET   /suppliers/:id/products           productos del proveedor
+  POST  /suppliers/:id/products           asocia producto
+  DELETE /suppliers/:id/products/:pid     desasocia producto
 
 SALES
   GET   /sales                   historial con filtros

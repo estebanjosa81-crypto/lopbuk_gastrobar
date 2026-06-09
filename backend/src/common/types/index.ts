@@ -1,5 +1,98 @@
 // Tipos base
 export type Category = string;
+
+// ─── Variantes & Tiers ────────────────────────────────────────────────────────
+
+export type InventoryMovementType =
+  | 'entrada' | 'salida' | 'ajuste' | 'merma' | 'transferencia' | 'reserva' | 'liberacion';
+
+export interface ProductVariant {
+  id: string;
+  tenantId: string;
+  productId: string;
+  sku: string;
+  barcode?: string;
+  color?: string;
+  size?: string;
+  material?: string;
+  stock: number;
+  reservedStock: number;
+  minStock: number;
+  costPrice?: number;
+  priceOverride?: number;
+  supplierId?: string;
+  images?: string[];
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  // Eager-loaded
+  priceTiers?: VariantPriceTier[];
+  productName?: string;
+  basePrice?: number;
+  label?: string; // "Negro / M"
+}
+
+export interface VariantPriceTier {
+  id: string;
+  tenantId: string;
+  variantId: string;
+  minQty: number;
+  price: number;
+  tenantMarginPct: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ResolvedPrice {
+  price: number;
+  tenantMarginPct: number;
+  source: 'tier' | 'override' | 'base';
+}
+
+export interface Supplier {
+  id: string;
+  tenantId: string;
+  name: string;
+  contactInfo?: string;
+  phone?: string;
+  email?: string;
+  paymentTerms?: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SupplierProduct {
+  id: string;
+  tenantId: string;
+  supplierId: string;
+  productId: string;
+  supplierSku?: string;
+  supplierPrice?: number;
+  leadTimeDays?: number;
+  isPreferred: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface InventoryMovement {
+  id: string;
+  tenantId: string;
+  variantId?: string;
+  productId: string;
+  type: InventoryMovementType;
+  quantity: number;
+  reason: string;
+  referenceType?: string;
+  referenceId?: string;
+  createdBy?: string;
+  createdAt: Date;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 export type Size = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'XXXL';
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'fiado' | 'addi' | 'sistecredito' | 'mixto';
 export type StockStatus = 'suficiente' | 'bajo' | 'agotado';
@@ -235,101 +328,8 @@ export interface DashboardMetrics {
   monthlySales: number;
   lowStockProducts: number;
   outOfStockProducts: number;
-  topSellingProducts: Array<{
-    id: string;
-    name: string;
-    category: string;
-    totalSold: number;
-    totalRevenue: number;
-  }>;
-  salesByCategory: Array<{
-    category: string;
-    totalQuantity: number;
-    totalRevenue: number;
-  }>;
-  recentSales: Sale[];
-}
-
-// Interfaces de request/response
-export interface PaginationParams {
-  page?: number;
-  limit?: number;
-}
-
-export interface PaginatedResponse<T> {
-  data: T[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-}
-
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  message?: string;
-  error?: string;
-}
-
-// Cash Sessions
-export type CashSessionStatus = 'abierta' | 'cerrada';
-export type ClosingStatus = 'cuadrado' | 'sobrante' | 'faltante';
-export type CashMovementType = 'entrada' | 'salida';
-
-export interface CashSession {
-  id: string;
-  openedBy: string;
-  openedByName: string;
-  openingAmount: number;
-  openedAt: Date;
-  closedBy?: string;
-  closedByName?: string;
-  closedAt?: Date;
-  totalCashSales: number;
-  totalCardSales: number;
-  totalTransferSales: number;
-  totalFiadoSales: number;
-  totalCreditPaymentsEfectivo?: number;
-  totalCreditPaymentsTarjeta?: number;
-  totalCreditPaymentsTransferencia?: number;
-  totalSalesCount: number;
-  totalChangeGiven: number;
-  totalCashEntries: number;
-  totalCashWithdrawals: number;
-  expectedCash?: number;
-  actualCash?: number;
-  difference?: number;
-  status: CashSessionStatus;
-  closingStatus?: ClosingStatus;
-  observations?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface CashMovement {
-  id: string;
-  sessionId: string;
-  type: CashMovementType;
-  amount: number;
-  reason: string;
-  notes?: string;
-  createdBy: string;
-  createdByName: string;
-  createdAt: Date;
-}
-
-// JWT Payload
-export interface JWTPayload {
-  userId: string;
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  tenantId: string | null;
-  /** Permisos del cargo asignado. Cargados desde la BD en cada request (no en el JWT). */
-  permissions?: string[];
-  /** Plan del tenant. Cargado desde la BD en cada request (no en el JWT). */
-  tenantPlan?: 'basico' | 'profesional' | 'empresarial';
+  accountsReceivable?: number;
+  topSellingProducts: Array<{ productId: string; productName: string; totalSold: number; revenue: number }>;
+  salesByCategory: Array<{ category: string; sales: number; revenue: number }>;
+  recentSales: any[];
 }

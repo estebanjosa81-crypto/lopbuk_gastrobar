@@ -191,10 +191,50 @@ router.get(
         rows = r;
       }
 
+      // Adjuntar variantes con stock > 0 para productos que las tengan
+      const productIds = (rows as any[]).map((r: any) => r.id);
+      let variantsByProduct: Map<string, any[]> = new Map();
+      if (productIds.length > 0) {
+        try {
+          const placeholders = productIds.map(() => '?').join(',');
+          const [variantRows] = await pool.query(
+            `SELECT pv.id, pv.product_id, pv.sku, pv.color, pv.size, pv.material,
+                    pv.stock, pv.reserved_stock, pv.cost_price, pv.price_override,
+                    pv.images, pv.sort_order,
+                    (SELECT MIN(vpt.price) FROM variant_price_tiers vpt
+                     WHERE vpt.variant_id = pv.id AND vpt.is_active = 1) AS min_price,
+                    (SELECT JSON_ARRAYAGG(
+                       JSON_OBJECT('minQty', vpt.min_qty, 'price', vpt.price, 'marginPct', vpt.tenant_margin_pct)
+                     ) FROM variant_price_tiers vpt
+                     WHERE vpt.variant_id = pv.id AND vpt.is_active = 1
+                     ORDER BY vpt.min_qty ASC) AS price_tiers
+             FROM product_variants pv
+             WHERE pv.product_id IN (${placeholders})
+               AND pv.is_active = 1
+               AND (pv.stock - pv.reserved_stock) > 0
+             ORDER BY pv.sort_order ASC`,
+            productIds
+          ) as any;
+          for (const vr of variantRows) {
+            if (!variantsByProduct.has(vr.product_id)) variantsByProduct.set(vr.product_id, []);
+            variantsByProduct.get(vr.product_id)!.push({
+              ...vr,
+              images: vr.images ? (typeof vr.images === 'string' ? JSON.parse(vr.images) : vr.images) : null,
+              priceTiers: vr.price_tiers ? (typeof vr.price_tiers === 'string' ? JSON.parse(vr.price_tiers) : vr.price_tiers) : [],
+            });
+          }
+        } catch { /* tabla puede no existir aún */ }
+      }
+
+      const productsWithVariants = (rows as any[]).map((p: any) => {
+        const variants = variantsByProduct.get(p.id) || [];
+        return { ...parseImages(p), variants, hasVariants: variants.length > 0 };
+      });
+
       res.json({
         success: true,
         data: {
-          products: (rows as any[]).map(parseImages),
+          products: productsWithVariants,
           pagination: {
             total,
             page,
@@ -2637,57 +2677,13 @@ router.patch('/custom-sections/:id/toggle', authenticate, requirePlan('empresari
     const { isActive } = req.body;
     await pool.query(
       'UPDATE store_custom_sections SET is_active = ? WHERE id = ? AND tenant_id = ?',
-      [isActive ? 1 : 0, id, tenantId]
+      [isActive, id, tenantId]
     );
     res.json({ success: true });
   } catch (error) {
     console.error('Custom sections toggle error:', error);
-    res.status(500).json({ success: false, error: 'Error al cambiar estado' });
+    res.status(500).json({ success: false, error: 'Error al actualizar sección' });
   }
 });
 
-// DELETE /api/storefront/custom-sections/:id — Delete a section
-router.delete('/custom-sections/:id', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
-  try {
-    const tenantId = (req as any).user.tenantId;
-    const { id } = req.params;
-    await pool.query(
-      'DELETE FROM store_custom_sections WHERE id = ? AND tenant_id = ?',
-      [id, tenantId]
-    );
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Custom sections delete error:', error);
-    res.status(500).json({ success: false, error: 'Error al eliminar sección' });
-  }
-});
-
-// GET /api/storefront/custom-sections/public/:storeSlug/:sectionSlug — Public: fetch HTML for render
-router.get('/custom-sections/public/:storeSlug/:sectionSlug', async (req: Request, res: Response) => {
-  try {
-    const { storeSlug, sectionSlug } = req.params;
-    const [tenants] = await pool.query(
-      'SELECT id FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
-      ['activo', storeSlug]
-    ) as any;
-    if (!tenants || tenants.length === 0) {
-      res.status(404).json({ success: false, error: 'Tienda no encontrada' });
-      return;
-    }
-    const tenantId = tenants[0].id;
-    const [rows] = await pool.query(
-      'SELECT name, html_content as htmlContent FROM store_custom_sections WHERE tenant_id = ? AND slug = ? LIMIT 1',
-      [tenantId, sectionSlug]
-    ) as any;
-    if (!rows || rows.length === 0) {
-      res.status(404).json({ success: false, error: 'Sección no encontrada' });
-      return;
-    }
-    res.json({ success: true, data: rows[0] });
-  } catch (error) {
-    console.error('Custom section public error:', error);
-    res.status(500).json({ success: false, error: 'Error al cargar sección' });
-  }
-});
-
-export const storefrontRoutes = router;
+export default router;

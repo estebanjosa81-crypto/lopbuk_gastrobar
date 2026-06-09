@@ -49,6 +49,8 @@ import whatsappRoutes from './modules/whatsapp/whatsapp.routes';
 import { mermaRoutes } from './modules/merma';
 import { gastrobarRoutes } from './modules/gastrobar-ops';
 import { rutinaRoutes } from './modules/rutina';
+import variantsRoutes from './modules/variants/variants.routes';
+import suppliersRoutes from './modules/suppliers/suppliers.routes';
 import { gymRoutes } from './modules/gym';
 import assistantRoutes from './modules/assistant/assistant.routes';
 
@@ -166,6 +168,10 @@ app.use(`${apiPrefix}/gastrobar-ops`, gastrobarRoutes);
 app.use(`${apiPrefix}/rutina`, rutinaRoutes);
 app.use(`${apiPrefix}/gym`, gymRoutes);
 app.use(`${apiPrefix}/assistant`, assistantRoutes);
+
+// Variantes + Proveedores
+app.use(`${apiPrefix}`, variantsRoutes);
+app.use(`${apiPrefix}/suppliers`, suppliersRoutes);
 
 // Error handling
 app.use(notFoundHandler);
@@ -583,15 +589,14 @@ const startServer = async () => {
   - GET    /api/users
   - GET    /api/products
   - GET    /api/sales
-  - GET    /api/inventory/movements
-  - GET    /api/dashboard/metrics
-========================================
-      `);
+  - GET    /api/variants
+  - GET    /api/suppliers
+========================================`);
     });
   } catch (error) {
-    console.error('Error iniciando el servidor:', error);
+    console.error('Error al iniciar el servidor:', error);
     process.exit(1);
   }
-};
+}
 
 startServer();

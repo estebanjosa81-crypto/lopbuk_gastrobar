@@ -1,77 +1,78 @@
-# 📍 Sprint / Foco Actual
+# Sprint / Foco Actual
 
-> Actualiza este archivo al inicio de cada sesión de trabajo.
+> Actualiza este archivo al inicio de cada sesion de trabajo.
 
-## Sprint activo: Mayo–Junio 2026
+## Sprint activo: Junio 2026
 
 ### Objetivo del sprint
-Completar el ecosistema del agente IA multicanal (Fases 3 y 4).
+Implementar el modulo Variants: variantes de producto + precios escalonados + stock atomico + flujo proveedor (Sprints 1-4).
 
-### Estado de fases IA
+### Estado Variantes
 
-| Fase | Estado | Próximo paso |
+| Sprint | Estado | Proximo paso |
 |---|---|---|
-| Fase 1 — RAG + Function Calling | ✅ Completo | — |
-| Fase 2 — WhatsApp (Evolution API) | ✅ Completo | Conectar servidor Dokploy |
-| Fase 3 — Voz IA (Vapi) | ⬜ Pendiente | Crear `voice/vapi.routes.ts` |
-| Fase 4 — Panel Admin del Agente | ⬜ Pendiente | Crear `app/agente/page.tsx` |
-| Fase 5 — n8n automatizaciones | ⬜ Pendiente | Después de Fase 4 |
-| Fase 6 — Gemini Live + Qdrant | ⬜ Futuro | — |
+| DAIMUZ - Arquitectura disenada | Completo | En DAIMUZ |
+| Sprint 1 - Schema DB | Pendiente | Migracion SQL |
+| Sprint 2 - Backend | Pendiente | services + endpoints |
+| Sprint 3 - Frontend POS + Storefront | Pendiente | selectores + precio dinamico |
+| Sprint 4 - Panel Proveedor + Admin | Pendiente | vista proveedor + margenes |
 
-### Sesión [2026-06-06]
-- ✅ **Build TypeScript verde** — corregidos 68 errores (`tsc --noEmit`): 53 frontend (8 archivos) + 15 backend (4 archivos). Ver changelog `[2026-06-06]`.
-- ✅ Nuevo stub `backend/src/modules/alegra/alegra.service.ts` (desbloquea import dinámico en `orders.routes.ts`).
-- ⏳ Pendiente: implementar `POST /customers/bulk` (backend) e integración real de Alegra.
-- ⚠️ Limpiar 2 archivos vacíos generados al verificar: `frontend/.fe_check.log` y `backend/.be_check.log`.
+### Sesion [2026-06-07] - Arquitectura Variantes en DAIMUZ
+- **Modulo variants** -> `daimuz/modules/variants/variants.md` (completo + compressed.md)
+- **Flujo** -> `daimuz/flows/variant-flow.md` (ciclo import -> storefront -> venta -> auditoria)
+- **Sinapsis** -> `daimuz/synapses/variants-chain.md` (cadena impacto + matriz + flujo transaccional)
+- **Plan definitivo** -> `daimuz/brain/variants-implementation-plan.md` (analisis critico, scorecard, roadmap 4 sprints)
+- **Indexes**: modules-index (duplicados limpiados), db-tables-index (3 tablas nuevas + ALTERs), endpoints-index (endpoints variants + tiers + import + suppliers)
+- **Governance**: universal-constraints.md con reglas de stock atomico, price tiers (min_qty solo), congelacion en ventas, inventory_movements como fuente de verdad
+- **Ontologia**: entities.md con ProductVariant, VariantPriceTier, Supplier, SupplierProduct, InventoryMovement
+- **Pending**: consolidado en 1 entrada con 4 sprints + migracion legacy
+- **Scorecard**: diseno actual 9.4/10, plan 9.8/10 vs mejores practicas SaaS
+- Pendiente: ejecutar migracion SQL, codificar services, endpoints, frontend
 
-### Sesión [2026-05-28]
-- ✅ **SQL v3.8 sincronizado** — Migración agrega `categories.is_active/color/sort_order` + `rb_gastos/rb_ingresos_diarios/rb_gastos_fijos`
-- ✅ **DAIMUZ auditado** — files-index, modules-index, endpoints-index, db-tables-index completos al 100%; neurona `restbar-finanzas`; lib/ completada; integrations.md corregida; ontology roles corregidos; pending actualizado
+### Sesión [2026-06-09] — Integración análisis crítico externo + corrección de inconsistencias
 
-### Sesión [2026-05-27]
-- ✅ **Tracker Financiero Gastrobar** — tab "Finanzas" (admin-only): gastos variables, ingresos diarios, gastos fijos, resumen quincenal P&L
-- ✅ **Categorías CRUD completo** — PUT /:id + PATCH /:id/visibility, color picker, sort_order
-- ✅ **División igualitaria de cuenta** — `cajero-panel.tsx`: N personas, monto automático, grid 2–10
-- ✅ READMEs actualizados, `README copy.md` eliminado
-- ✅ `CLAUDE.md` creado — Claude usa `daimuz/` como memoria
-- ✅ **DAIMUZ v3** — governance, 22 compressed.md, synapses, ontology, indexes
+- **Análisis externo integrado**: propuesta original (8.0/10) → crítica refinada (9.6/10) → DAIMUZ ya estaba en 9.4/10 → confirmado y corregido a 9.8/10
+- ✅ **`variants-implementation-plan.md`**: `variant_price_tiers` ahora incluye `tenant_id` en DDL (antes solo en nota); unificado `attribute_1/2` → `color`/`size`/`material`; timestamps explícitos
+- ✅ **`db-tables-index.md`**: `product_variants` ahora incluye `reserved_stock`, `min_stock`, `images`, `sort_order`; `platform_margin_pct` → `tenant_margin_pct`; `supplier_products` con timestamps
+- ✅ **Estado confirmado**: race conditions, min_qty sin gaps, cost_price, inventory_movements, price freezing — TODO ya estaba en DAIMUZ antes de este análisis
+- Pendiente: ejecutar migraciones SQL, codificar services, endpoints, frontend (Sprints 1-4)
 
-### Sesión anterior (agente IA)
-- ✅ `agent.service.ts` — `isProductQuery()`: productos solo se sugieren cuando el mensaje lo pide explícitamente
-- ✅ `whatsapp.service.ts` — `setWebhook` corregido al formato plano de Evolution API v2
-- ✅ `.env` — documentación de variables Evolution API
+### Sesión [2026-06-07] — Plan variants consolidado en DAIMUZ (ronda 2)
+- ✅ **Módulo variants**: `daimuz/modules/variants/variants.md` + `compressed.md` creados
+- ✅ **Synapse**: `daimuz/synapses/variants-chain.md` con flujo variante → venta → stock atómico
+- ✅ **Ontología limpiada**: entidades duplicadas (ProductVariant x3, PriceTier x4) consolidadas en 10 entidades únicas
+- ✅ **db-tables-index**: esquemas completos de `product_variants`, `variant_price_tiers`, `suppliers`, `supplier_products`
+- ✅ **files-index**: variants + suppliers services + frontend components agregados
+- ✅ **endpoints-index**: variantes consolidado en una sola sección (eliminados 3 duplicados)
+- ✅ **Arquitectura**: min_qty sin gaps, UPDATE atómico `WHERE stock >= ?`, congelar precios en sale_items, cost_price para margen real
 
-### Infraestructura pendiente de configurar
-- [ ] Desplegar Evolution API en Dokploy (Compose → repo devalexcode/shell-evolution-api)
-- [ ] Completar `.env` backend: `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `API_BASE_URL`
-- [ ] Agregar `VAPI_API_KEY` cuando se active Fase 3
+### Sesiones anteriores (IA Agent)
 
-### Archivos activos
-- `backend/src/modules/agent/agent.service.ts`
-- `backend/src/modules/agent/agent.rag.ts`
-- `backend/src/modules/agent/agent.tools.ts`
-- `backend/src/modules/whatsapp/whatsapp.routes.ts`
-- `backend/src/modules/whatsapp/whatsapp.service.ts`
-- `backend/src/modules/chatbot/chatbot.routes.ts`
+| Fase | Estado |
+|---|---|
+| Fase 1 - RAG + Function Calling | Completo |
+| Fase 2 - WhatsApp (Evolution API) | Completo |
+| Fase 3 - Voz IA (Vapi) | Pendiente |
+| Fase 4 - Panel Admin del Agente | Pendiente |
 
 ---
 
-## Template para nueva sesión
+## Template para nueva sesion
 
 ```markdown
 ## [YYYY-MM-DD]
 
 ### Objetivo de hoy
-[qué quiero lograr]
+[que quiero lograr]
 
 ### Archivos que voy a tocar
 - [archivo 1]
 - [archivo 2]
 
 ### Resultado
-[qué logré al final]
+[que logre al final]
 ```
 
 ---
 
-← [[context/pending]] | [[DAIMUZ]] | → [[context/environment]]
+[[context/pending]] | [[DAIMUZ]] | -> [[context/environment]]

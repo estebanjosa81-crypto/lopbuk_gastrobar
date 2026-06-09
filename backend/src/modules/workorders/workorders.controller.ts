@@ -80,5 +80,3 @@ export const workOrdersController = {
     } catch (e) { next(e); }
   },
 };
-  },
-};

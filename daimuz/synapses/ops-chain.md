@@ -2,7 +2,7 @@
 
 > Si modificas cualquier nodo, estos son los efectos secundarios garantizados.
 
-## Flujo: POS → Venta → Inventario → Caja
+## Flujo: POS → Venta → Variante → Inventario → Caja
 
 ```
 cash-sessions (open)
@@ -10,52 +10,77 @@ cash-sessions (open)
     ▼
 pos (carrito + cobro)
     │
+    ├──► [¿Producto TIENE variantes?]
+    │      │
+    │      ├──► SÍ → variant-selector: elige color/talla
+    │      │         │
+    │      │         └──► price-tier.service.resolvePrice(variantId, qty)
+    │      │                └──► tier con min_qty <= qty → { price, marginPct, source }
+    │      │
+    │      └──► NO → usa product.price directamente
+    │
     ├──► sales.service.createSale()
     │         │
-    │         ├──► stock_movements INSERT (type: 'salida')
-    │         │         │
-    │         │         └──► products UPDATE stock = stock - qty
-    │         │                   │
-    │         │                   └──► si stock < stock_minimo → ALERTA
+    │         ├──► [CON variante]
+    │         │      │
+    │         │      ├──► UPDATE product_variants SET stock = stock - qty
+    │         │      │         WHERE id = ? AND stock >= qty  ← ATÓMICO
+    │         │      │         ├──► affected_rows = 0 → ERROR "Stock insuficiente"
+    │         │      │         └──► inventory_movements INSERT (type: 'salida', variant_id)
+    │         │      │
+    │         │      ├──► sale_items INSERT (datos CONGELADOS):
+    │         │      │      variant_id, frozen_sku, unit_price, frozen_cost,
+    │         │      │      frozen_margin_pct, frozen_margin_amount
+    │         │      │
+    │         │      └──► si stock < min_stock → ALERTA
     │         │
-    │         ├──► sale_items INSERT
+    │         ├──► [SIN variante] stock_movements INSERT + products UPDATE stock
     │         │
     │         └──► si método = 'efectivo' → cash_movements INSERT
     │                         │
-    │                         └──► cash_sessions calculado += monto
+    │                         └──► cash_sessions.calculated += monto
     │
     └──► cart.clearCart()  [frontend Zustand]
 ```
 
 ## Impacto por Cambio
 
+### Si cambias `variants.service.ts`
+- ⚠️ Afecta: `sales` (descuenta stock de variant), `inventory` (kardex variant_id), `pos` (selector), `storefront` (chips color)
+- ✅ Verificar: UPDATE atómico `WHERE stock >= ?`, soft delete, SKU único por tenant
+
+### Si cambias `price-tier.service.ts`
+- ⚠️ Afecta: `pos` (precio dinámico por qty), `storefront` (precio escalonado), `sales` (margin congelado)
+- ✅ Verificar: `ORDER BY min_qty DESC LIMIT 1`, sin gaps, fallback a base_price
+
 ### Si cambias `sales.service.ts`
-- ⚠️ Afecta: `inventory` (descuento stock), `cash-sessions` (suma al calculado), `customers` (historial compras), `finances` (flujo de caja)
-- ✅ Verificar: stock no queda negativo, cash_session_id válido, sale_items correctos
+- ⚠️ Afecta: `variants` (descuento stock), `inventory` (movements), `cash-sessions` (suma), `customers`, `finances`
+- ✅ Verificar: stock no negativo, datos congelados correctos, tenant_id
 
 ### Si cambias `inventory.service.ts`
-- ⚠️ Afecta: `pos` (bloquea ventas sin stock), `gastrobar-ops` (food cost), `recipes` (costo ingredientes), `purchases` (stock entra aquí)
-- ✅ Verificar: stock nunca < 0, movimiento tiene reason, tenant_id correcto
-
-### Si cambias `cash-sessions.service.ts`
-- ⚠️ Afecta: `sales` (necesitan session activa), `pos` (bloquea sin sesión), `dashboard` (estado de caja), `finances` (al cerrar alimenta flujo de caja)
-- ✅ Verificar: solo 1 activa por sede, históricos inmutables
+- ⚠️ Afecta: `variants` (kardex variant_id), `pos` (valida stock), `gastrobar-ops` (food cost), `purchases` (entradas)
+- ✅ Verificar: reason obligatorio, tenant_id, inventory_movements correcto
 
 ### Si cambias `products.service.ts`
-- ⚠️ Afecta: `inventory` (kardex referencia product_id), `recipes` (BOM usa product_id + cost), `pos` (busca productos), `storefront` (muestra productos públicos)
-- ✅ Verificar: soft delete con is_active, no borrar producto con movimientos
+- ⚠️ Afecta: `variants` (product_id FK), `recipes` (BOM), `pos` (búsqueda), `storefront`
+- ✅ Verificar: no borrar producto con variantes activas, base_price actualizado
 
-## Regla de Oro de Esta Cadena
+### Si cambias `cash-sessions.service.ts`
+- ⚠️ Afecta: `sales` (necesitan sesión activa), `pos` (bloquea sin sesión), `dashboard`, `finances`
+- ✅ Verificar: solo 1 activa por sede, históricos inmutables
+
+## Regla de Oro
 
 ```
 NO hay venta sin:
   1. cash_session activa para esa sede
-  2. stock >= quantity vendida
-  3. tenant_id correcto en todos los registros
+  2. [si tiene variante] variante seleccionada + stock suficiente (validación atómica)
+  3. datos CONGELADOS en sale_items (price, cost, margin, sku) — NUNCA leer de tiers
+  4. tenant_id correcto en todos los registros
 ```
 
 ---
 
-**Módulos de esta cadena:** [[modules/pos/pos]] · [[modules/sales/sales]] · [[modules/inventory/inventory]] · [[modules/cash-sessions/cash-sessions]] · [[modules/customers/customers]] · [[modules/dashboard/dashboard]]
+**Módulos:** [[modules/pos/pos]] · [[modules/sales/sales]] · [[modules/variants/variants]] · [[modules/inventory/inventory]] · [[modules/cash-sessions/cash-sessions]] · [[modules/customers/customers]] · [[modules/dashboard/dashboard]]
 
 ← [[DAIMUZ]] | → [[synapses/gastrobar-chain]]

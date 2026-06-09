@@ -1,1 +1,1 @@
-export { storefrontRoutes } from './storefront.routes';
+export { default as storefrontRoutes } from './storefront.routes';

@@ -181,6 +181,14 @@ function getLinkIcon(url: string, label: string): {
   return   { Icon: Globe,          color: 'text-white/60',   bg: 'bg-white/10' }
 }
 
+/** Extrae el slug de la tienda desde la URL: ruta limpia /t/<slug> o ?store=<slug>. */
+function getStoreSlugFromUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  const m = window.location.pathname.match(/^\/t\/([^/?#]+)/)
+  if (m) return decodeURIComponent(m[1])
+  return new URLSearchParams(window.location.search).get('store')
+}
+
 export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [showCatalog, setShowCatalog] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -219,18 +227,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [loadingProducts, setLoadingProducts] = useState(false)
-  const [stores, setStores] = useState<{ id: string; name: string; slug: string; businessType: string | null; logoUrl: string | null; address: string | null; productCount: number; coverUrl?: string | null; cardDescription?: string | null; city?: string | null; isVerified?: number | boolean; openState?: 'open' | 'closed'; sedeCount?: number }[]>([])
+  const [stores, setStores] = useState<{ id: string; name: string; slug: string; businessType: string | null; logoUrl: string | null; address: string | null; productCount: number; coverUrl?: string | null; cardDescription?: string | null; city?: string | null; isVerified?: number | boolean; openState?: 'open' | 'closed'; nextOpenLabel?: string | null; sedeCount?: number }[]>([])
   const [selectedStore, setSelectedStore] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('store') || 'all'
-    }
-    return 'all'
+    return getStoreSlugFromUrl() || 'all'
   })
   const [showStoresView, setShowStoresView] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
-      if (params.get('store') && params.get('preview') === 'home') return false
-      return !(params.get('store') || params.get('product'))
+      if (getStoreSlugFromUrl() && params.get('preview') === 'home') return false
+      return !(getStoreSlugFromUrl() || params.get('product'))
     }
     return true
   })
@@ -413,18 +418,42 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     // Location modal is shown only when a specific store has domicilio items (see FETCH PRODUCTS)
   }, [])
 
-  // Handle ?store=slug URL param (QR/share link)
+  // Abre la tienda indicada en la URL: ruta limpia /t/<slug> o ?store=<slug>
+  // (compatibilidad con QR/enlaces antiguos). El parámetro `preview` (interno
+  // del editor) se limpia para no ensuciar el enlace.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const storeSlug = params.get('store')
+    const storeSlug = getStoreSlugFromUrl()
     if (storeSlug) {
       const previewHome = params.get('preview') === 'home'
       setSelectedStore(storeSlug)
       setShowCatalog(!previewHome)
       setShowStoresView(false)
-      window.history.replaceState({}, '', window.location.pathname)
+      if (params.has('preview')) {
+        params.delete('preview')
+        const qs = params.toString()
+        window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`)
+      }
     }
   }, [])
+
+  // Sincroniza la tienda seleccionada con una ruta limpia /t/<slug> para poder
+  // compartir el enlace directo a cada tienda. Al volver a "todas" → "/".
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    // No tocar la URL en el preview del editor visual (iframe con ?store=...&preview)
+    if (new URLSearchParams(window.location.search).has('preview')) return
+
+    const onStorePath = /^\/t\//.test(window.location.pathname)
+    if (selectedStore && selectedStore !== 'all') {
+      const target = `/t/${encodeURIComponent(selectedStore)}`
+      if (window.location.pathname !== target) {
+        window.history.replaceState({}, '', target)
+      }
+    } else if (onStorePath) {
+      window.history.replaceState({}, '', '/')
+    }
+  }, [selectedStore])
 
   // Meta Pixel — inicializar cuando se cargue el storeConfig con pixelId
   useEffect(() => {
@@ -6466,6 +6495,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                   ].filter(Boolean).join(' · ')}
                                 </span>
                               </div>
+                              {store.openState === 'closed' && store.nextOpenLabel && (
+                                <p className="text-[11px] text-amber-400/90 mt-0.5 truncate">🕒 {store.nextOpenLabel}</p>
+                              )}
                             </div>
                           </button>
                         )

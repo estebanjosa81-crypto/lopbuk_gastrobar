@@ -908,6 +908,26 @@ class ApiService {
   // Storefront management endpoints (authenticated)
   // =============================================
 
+  // ── Tarjeta de presentación del comercio propio (portada, descripción, horario) ──
+  async getCardConfig() {
+    return this.request<{
+      coverUrl: string | null
+      cardDescription: string | null
+      businessHours: Record<string, { open: string; close: string }[]> | null
+    }>('/storefront/card-config')
+  }
+
+  async updateCardConfig(data: {
+    coverUrl?: string | null
+    cardDescription?: string | null
+    businessHours?: Record<string, { open: string; close: string }[]> | null
+  }) {
+    return this.request<{ message: string }>('/storefront/card-config', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
   async getMyPublishedProducts() {
     return this.request<any[]>('/storefront/my-published')
   }

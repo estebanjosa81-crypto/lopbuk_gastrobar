@@ -259,7 +259,6 @@ export function SuperadminHome() {
         coverUrl: card.coverUrl ?? null,
         cardDescription: card.cardDescription ?? null,
         isVerified: Boolean(card.isVerified),
-        openState: card.openState === 'closed' ? 'closed' : 'open',
         marketplaceVisible: Boolean(card.marketplaceVisible),
         marketplaceOrder: Number(card.marketplaceOrder) || 0,
       })
@@ -1478,7 +1477,7 @@ export function SuperadminHome() {
                     Tarjetas de Comercios en la Página Principal
                   </CardTitle>
                   <CardDescription>
-                    Configura cómo se presenta cada comercio en el marketplace: verificado, abierto/cerrado, portada, descripción, visibilidad y orden.
+                    Configura cómo se presenta cada comercio: verificado, portada, descripción, visibilidad y orden. El estado abierto/cerrado es automático según el horario que define el comerciante en Mi Tienda.
                   </CardDescription>
                 </div>
                 <Button variant="outline" size="sm" onClick={fetchMarketplaceCards} disabled={isLoadingCards}>
@@ -1575,15 +1574,15 @@ export function SuperadminHome() {
                               {card.isVerified ? 'Verificado' : 'Sin verificar'}
                             </button>
 
-                            {/* Abierto / Cerrado */}
-                            <button
-                              type="button"
-                              onClick={() => patchCardLocal(card.id, { openState: card.openState === 'closed' ? 'open' : 'closed' })}
-                              className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors ${card.openState === 'closed' ? 'bg-red-500/10 border-red-500/40 text-red-600' : 'bg-green-500/10 border-green-500/40 text-green-600'}`}
+                            {/* Abierto / Cerrado (automático por horario, solo lectura) */}
+                            <span
+                              title={card.hasSchedule ? 'Estado calculado automáticamente según el horario que configura el comerciante en Mi Tienda' : 'Sin horario configurado: se muestra abierto por defecto'}
+                              className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border ${card.openState === 'closed' ? 'bg-red-500/10 border-red-500/40 text-red-600' : 'bg-green-500/10 border-green-500/40 text-green-600'}`}
                             >
                               <span className={`w-1.5 h-1.5 rounded-full ${card.openState === 'closed' ? 'bg-red-500' : 'bg-green-500'}`} />
                               {card.openState === 'closed' ? 'Cerrado' : 'Abierto'}
-                            </button>
+                              <span className="opacity-60">· {card.hasSchedule ? 'horario' : 'sin horario'}</span>
+                            </span>
 
                             {/* Visible */}
                             <button

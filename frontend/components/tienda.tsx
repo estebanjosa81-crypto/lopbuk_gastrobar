@@ -59,6 +59,7 @@ import {
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { StoreCustomization } from '@/components/store-customization'
+import { StoreCardConfig } from '@/components/store-card-config'
 import { StoreBuilder } from '@/components/StoreBuilder'
 import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
 
@@ -87,7 +88,7 @@ interface StoreProduct {
   preorderBadgeText: string | null
 }
 
-type ActiveTab = 'catalog' | 'new-launches' | 'order-bump' | 'share' | 'contact' | 'age-gate' | 'html-sections'
+type ActiveTab = 'catalog' | 'new-launches' | 'order-bump' | 'share' | 'contact' | 'age-gate' | 'html-sections' | 'card'
 
 interface CustomSection {
   id: number
@@ -1174,7 +1175,25 @@ export function Tienda() {
             </Badge>
           )}
         </button>
+        <button
+          onClick={() => setActiveTab('card')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'card'
+              ? 'border-emerald-500 text-emerald-600'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Store className="h-4 w-4" />
+          Tarjeta
+        </button>
       </div>
+
+      {/* ========== TARJETA DEL COMERCIO TAB ========== */}
+      {activeTab === 'card' && (
+        <div className="py-2">
+          <StoreCardConfig />
+        </div>
+      )}
 
       {/* ========== CATALOG TAB ========== */}
       {activeTab === 'catalog' && (

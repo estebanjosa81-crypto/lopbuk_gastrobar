@@ -3,6 +3,7 @@ import { query, param, body } from 'express-validator';
 import { validateRequest } from '../../utils/validators';
 import pool from '../../config/database';
 import { authenticate, requirePlan } from '../../common/middleware';
+import { computeOpenState, computeNextOpen } from '../../utils/store-hours';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -339,7 +340,8 @@ router.get('/stores', async (req: Request, res: Response) => {
               si.card_cover_url as coverUrl,
               si.card_description as cardDescription,
               COALESCE(si.is_verified, 0) as isVerified,
-              COALESCE(si.open_state, 'open') as openState,
+              si.business_hours as businessHours,
+              COALESCE(si.open_state, 'open') as openStateFallback,
               (SELECT COUNT(*) FROM sedes s WHERE s.tenant_id = t.id) as sedeCount,
               (SELECT COUNT(*) FROM products p WHERE p.tenant_id = t.id AND p.stock > 0 AND p.published_in_store = 1) as productCount
        FROM tenants t
@@ -351,7 +353,15 @@ router.get('/stores', async (req: Request, res: Response) => {
       params
     ) as any;
 
-    res.json({ success: true, data: stores });
+    // Estado abierto/cerrado calculado automáticamente desde el horario
+    const data = (stores as any[]).map((s) => {
+      const openState = computeOpenState(s.businessHours, (s.openStateFallback === 'closed' ? 'closed' : 'open'));
+      const nextOpenLabel = openState === 'closed' ? computeNextOpen(s.businessHours) : null;
+      const { businessHours, openStateFallback, ...rest } = s;
+      return { ...rest, openState, nextOpenLabel };
+    });
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Storefront stores error:', error);
     res.status(500).json({ success: false, error: 'Error al obtener tiendas' });
@@ -1057,6 +1067,81 @@ router.get('/payment-config/:storeSlug', async (req: Request, res: Response) => 
     res.json({ success: true, data: { mercadopago: false, addi: false, sistecredito: false, contraentrega: true } });
   }
 });
+
+// GET /api/storefront/card-config — Authenticated: tarjeta de presentación del comercio propio
+router.get('/card-config', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const [rows] = await pool.query(
+      `SELECT card_cover_url AS coverUrl, card_description AS cardDescription, business_hours AS businessHours
+       FROM store_info WHERE tenant_id = ? LIMIT 1`,
+      [tenantId]
+    ) as any;
+    const row = (rows as any[])[0] || {};
+    let businessHours = row.businessHours ?? null;
+    if (typeof businessHours === 'string') {
+      try { businessHours = JSON.parse(businessHours); } catch { businessHours = null; }
+    }
+    res.json({
+      success: true,
+      data: {
+        coverUrl: row.coverUrl ?? null,
+        cardDescription: row.cardDescription ?? null,
+        businessHours: businessHours ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('Get card-config error:', error);
+    res.status(500).json({ success: false, error: 'Error al obtener la configuración de la tarjeta' });
+  }
+});
+
+// PUT /api/storefront/card-config — Authenticated: actualizar portada, descripción y horario
+router.put(
+  '/card-config',
+  authenticate,
+  [
+    body('coverUrl').optional({ nullable: true }).isString().isLength({ max: 500 }),
+    body('cardDescription').optional({ nullable: true }).isString().isLength({ max: 300 }),
+    body('businessHours').optional({ nullable: true }),
+    validateRequest,
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).user.tenantId;
+      const { coverUrl, cardDescription, businessHours } = req.body;
+
+      const fields: string[] = [];
+      const values: any[] = [];
+      if (coverUrl !== undefined)        { fields.push('card_cover_url = ?');  values.push(coverUrl || null); }
+      if (cardDescription !== undefined) { fields.push('card_description = ?'); values.push(cardDescription || null); }
+      if (businessHours !== undefined)   { fields.push('business_hours = ?');  values.push(businessHours ? JSON.stringify(businessHours) : null); }
+
+      if (fields.length === 0) {
+        res.json({ success: true, message: 'Sin cambios' });
+        return;
+      }
+
+      const [result] = await pool.query(
+        `UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`,
+        [...values, tenantId]
+      ) as any;
+
+      if (result.affectedRows === 0) {
+        // Comercio sin fila en store_info: crearla y reintentar
+        const [tRows] = await pool.query('SELECT name FROM tenants WHERE id = ? LIMIT 1', [tenantId]) as any;
+        const name = (tRows as any[])[0]?.name || 'Mi tienda';
+        await pool.query('INSERT INTO store_info (tenant_id, name) VALUES (?, ?)', [tenantId, name]);
+        await pool.query(`UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`, [...values, tenantId]);
+      }
+
+      res.json({ success: true, message: 'Tarjeta actualizada' });
+    } catch (error) {
+      console.error('Update card-config error:', error);
+      res.status(500).json({ success: false, error: 'Error al actualizar la tarjeta' });
+    }
+  }
+);
 
 // GET /api/storefront/customization — Authenticated: config para admin
 router.get('/customization', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {

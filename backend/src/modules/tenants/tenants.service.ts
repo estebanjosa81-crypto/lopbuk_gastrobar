@@ -4,6 +4,7 @@ import { db } from '../../config';
 import { AppError } from '../../common/middleware';
 import { PaginatedResponse } from '../../common/types';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { computeOpenState, parseBusinessHours, hasAnySchedule } from '../../utils/store-hours';
 
 interface TenantRow extends RowDataPacket {
   id: string;
@@ -512,8 +513,9 @@ export class TenantsService {
               si.card_cover_url  AS coverUrl,
               si.card_description AS cardDescription,
               si.municipality    AS city,
+              si.business_hours   AS businessHours,
               COALESCE(si.is_verified, 0)          AS isVerified,
-              COALESCE(si.open_state, 'open')      AS openState,
+              COALESCE(si.open_state, 'open')      AS openStateFallback,
               COALESCE(si.marketplace_visible, 1)  AS marketplaceVisible,
               COALESCE(si.marketplace_order, 0)    AS marketplaceOrder,
               (SELECT COUNT(*) FROM sedes s WHERE s.tenant_id = t.id) AS sedeCount,
@@ -523,11 +525,16 @@ export class TenantsService {
        WHERE t.status = 'activo'
        ORDER BY COALESCE(si.marketplace_order, 0) ASC, t.name ASC`
     );
-    return rows.map((r) => ({
-      ...r,
-      isVerified: Boolean(r.isVerified),
-      marketplaceVisible: Boolean(r.marketplaceVisible),
-    }));
+    return rows.map((r) => {
+      const { businessHours, openStateFallback, ...rest } = r as any;
+      return {
+        ...rest,
+        isVerified: Boolean(r.isVerified),
+        marketplaceVisible: Boolean(r.marketplaceVisible),
+        hasSchedule: hasAnySchedule(parseBusinessHours(businessHours)),
+        openState: computeOpenState(businessHours, openStateFallback === 'closed' ? 'closed' : 'open'),
+      };
+    });
   }
 
   async updateMarketplaceCard(

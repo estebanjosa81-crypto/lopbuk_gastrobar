@@ -353,6 +353,7 @@ const startServer = async () => {
       await addCol(`ALTER TABLE store_info ADD COLUMN open_state ENUM('open','closed') NOT NULL DEFAULT 'open' COMMENT 'Estado manual abierto/cerrado de la tarjeta'`);
       await addCol(`ALTER TABLE store_info ADD COLUMN marketplace_visible TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1 = visible en la página principal'`);
       await addCol(`ALTER TABLE store_info ADD COLUMN marketplace_order INT NOT NULL DEFAULT 0 COMMENT 'Orden de aparición en el marketplace (menor primero)'`);
+      await addCol(`ALTER TABLE store_info ADD COLUMN business_hours JSON NULL COMMENT 'Horario de atención por día con franjas: {"mon":[{"open":"08:00","close":"22:00"}],...}'`);
     }
 
     // ── restBar + Finances migrations ────────────────────────────────────────

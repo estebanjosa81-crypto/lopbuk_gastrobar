@@ -129,7 +129,14 @@ export function Theme2OrderFlow({
     const sedeParam = sede?.id ? `&sede=${sede.id}` : ''
     fetch(`${API_URL}/storefront/products?store=${slug}&limit=200${sedeParam}`)
       .then(r => r.json()).catch(() => null)
-      .then(res => { if (alive) setProducts(Array.isArray(res?.data) ? res.data : []) })
+      .then(res => {
+        // El backend devuelve { data: { products: [...], pagination } };
+        // soportamos también { data: [...] } por compatibilidad.
+        const list = Array.isArray(res?.data)
+          ? res.data
+          : (Array.isArray(res?.data?.products) ? res.data.products : [])
+        if (alive) setProducts(list)
+      })
       .finally(() => { if (alive) setLoadingProducts(false) })
     return () => { alive = false }
   }, [step, sede, slug])

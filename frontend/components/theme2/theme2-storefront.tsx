@@ -107,7 +107,10 @@ export function Theme2Storefront({ slug }: { slug: string }) {
           let favs: Product[] = (data.featuredProducts || []).slice(0, 6)
           if (favs.length === 0) {
             const prodRes = await fetch(`${API_URL}/storefront/products?limit=6&store=${slug}`).then(r => r.json()).catch(() => null)
-            favs = (prodRes?.data || []).slice(0, 6)
+            const prodList = Array.isArray(prodRes?.data)
+              ? prodRes.data
+              : (Array.isArray(prodRes?.data?.products) ? prodRes.data.products : [])
+            favs = prodList.slice(0, 6)
           }
           setFavorites(favs)
         }

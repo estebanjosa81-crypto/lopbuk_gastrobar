@@ -5,6 +5,9 @@ import { api } from '@/lib/api'
 
 export function DynamicFavicon() {
   useEffect(() => {
+    // Este endpoint es solo para el comercio autenticado (plan empresarial).
+    // En páginas públicas no hay sesión, así que evitamos el 401 innecesario.
+    if (!api.getToken()) return
     api.getStoreCustomization().then((res) => {
       const logoUrl = res?.data?.storeInfo?.logoUrl
       if (!logoUrl) return

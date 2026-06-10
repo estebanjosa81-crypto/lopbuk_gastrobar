@@ -64,14 +64,19 @@ function ProductCard({
     <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden min-w-0">
       {/* Info row */}
       <div className="flex items-center gap-2.5 p-2.5">
-        <div className="w-12 h-12 rounded-lg flex-shrink-0 bg-gray-100 overflow-hidden">
-          {product.imageUrl ? (
+        <div className="relative w-12 h-12 rounded-lg flex-shrink-0 bg-gray-100 overflow-hidden">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <ShoppingCart className="w-5 h-5 text-gray-300" />
+          </div>
+          {product.imageUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <ShoppingCart className="w-5 h-5 text-gray-300" />
-            </div>
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className="relative w-full h-full object-cover"
+              // Si la imagen externa está caída o rota, la ocultamos y queda el ícono.
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            />
           )}
         </div>
         <div className="flex-1 min-w-0">

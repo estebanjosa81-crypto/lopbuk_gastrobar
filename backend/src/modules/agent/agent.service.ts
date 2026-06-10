@@ -82,7 +82,7 @@ export async function callGemini(
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents,
-      generationConfig: { maxOutputTokens: 600, temperature: 0.7 },
+      generationConfig: { maxOutputTokens: 250, temperature: 0.7 },
     }),
   });
 
@@ -122,7 +122,7 @@ export async function callGeminiWithTools(
       contents,
       tools: [{ functionDeclarations: toolDeclarations }],
       tool_config: { function_calling_config: { mode: 'AUTO' } },
-      generationConfig: { maxOutputTokens: 600, temperature: 0.7 },
+      generationConfig: { maxOutputTokens: 250, temperature: 0.7 },
     }),
   });
 
@@ -167,7 +167,7 @@ export async function callGeminiWithTools(
           }],
         },
       ],
-      generationConfig: { maxOutputTokens: 600, temperature: 0.7 },
+      generationConfig: { maxOutputTokens: 250, temperature: 0.7 },
     }),
   });
 
@@ -191,7 +191,7 @@ export async function callOpenAI(
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      max_tokens: 600,
+      max_tokens: 250,
       temperature: 0.7,
     }),
   });
@@ -217,7 +217,7 @@ export async function callGroq(
     body: JSON.stringify({
       model: GROQ_MODEL,
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
-      max_tokens: 600,
+      max_tokens: 250,
       temperature: 0.7,
     }),
   });
@@ -322,15 +322,25 @@ export function buildEnrichedSystemPrompt(
 
   let prompt =
     `Eres ${config.bot_name || 'Asistente'}, el asistente virtual de ${ctx.storeName || 'este negocio'}.\n` +
-    `Tu tono debe ser ${tone}. Responde siempre en español.\n` +
-    `Tu objetivo es: (1) ayudar con información de productos, precios y disponibilidad, ` +
-    `(2) hacer reservas de mesa cuando aplique, ` +
-    `(3) tomar pedidos a domicilio o para llevar cuando el cliente lo desee.\n` +
-    `Cuando sea natural en la conversación, sugiere platos o productos del menú y ofrece la opción de pedirlos.\n` +
-    `NUNCA inventes información. Sé conciso. Máximo 3 párrafos.\n` +
-    `CRÍTICO: NUNCA digas que un producto o plato NO existe o no está disponible a menos que ` +
-    `aparezca explícitamente en la sección "PRODUCTOS QUE COINCIDEN CON LA CONSULTA" con stock 0. ` +
-    `Si el cliente pide algo que no aparece en tu contexto, di que verificarás y sugiere contactar al negocio, ` +
+    `Tu tono debe ser ${tone}. Responde siempre en español.\n\n` +
+    `## CÓMO HABLAS (MUY IMPORTANTE)\n` +
+    `Estás chateando como una persona real por WhatsApp, no escribiendo un correo ni un folleto.\n` +
+    `- Mensajes MUY cortos: 1 o 2 frases por respuesta. Casi nunca más de 40 palabras.\n` +
+    `- Una sola idea o una sola pregunta por mensaje. NO hagas varias preguntas juntas.\n` +
+    `- Nada de párrafos largos, listas largas ni "muros de texto". Si tienes que dar varias cosas, dale lo esencial y pregunta si quiere más.\n` +
+    `- Habla natural y cercano, como un vendedor amable: "¡Claro!", "Perfecto", "De una". Puedes usar 1 emoji ocasional, sin abusar.\n` +
+    `- No repitas tu presentación ("Soy el asistente virtual de...") en cada mensaje. Solo salúdalo una vez al inicio.\n` +
+    `- Si el cliente saluda o dice algo corto, responde corto. No le sueltes todo el catálogo de golpe.\n` +
+    `- Cuando muestres productos, di máximo 1 o 2 y pregunta cuál le interesa, en vez de listar todo.\n\n` +
+    `## OBJETIVO\n` +
+    `(1) Ayudar con productos, precios y disponibilidad, (2) hacer reservas cuando aplique, ` +
+    `(3) tomar pedidos a domicilio o para llevar.\n` +
+    `Avanza la conversación paso a paso: pregunta una cosa, espera respuesta, sigue.\n\n` +
+    `## REGLAS\n` +
+    `NUNCA inventes información.\n` +
+    `CRÍTICO: NUNCA digas que un producto NO existe o no está disponible a menos que ` +
+    `aparezca explícitamente en "PRODUCTOS QUE COINCIDEN CON LA CONSULTA" con stock 0. ` +
+    `Si el cliente pide algo que no ves en tu contexto, dile que lo verificas y que puede confirmar con el negocio, ` +
     `pero NO afirmes que no lo tienen.`;
 
   if (config.business_info) prompt += `\n\n## INFORMACIÓN DEL NEGOCIO:\n${config.business_info}`;

@@ -2489,6 +2489,15 @@ export function Tienda() {
                   </p>
                 )}
 
+                {!savingSection && (!sectionForm.name.trim() || !sectionForm.htmlContent.trim()) && (
+                  <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    Para guardar, completa: {[
+                      !sectionForm.name.trim() ? 'Nombre de la sección' : null,
+                      !sectionForm.htmlContent.trim() ? 'Código HTML' : null,
+                    ].filter(Boolean).join(' y ')}.
+                  </p>
+                )}
                 <div className="flex gap-2 pt-1">
                   <Button
                     className="flex-1 gap-2 bg-violet-600 hover:bg-violet-700 text-white"

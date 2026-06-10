@@ -111,7 +111,7 @@ export function Theme2Storefront({ slug }: { slug: string }) {
           }
           setFavorites(favs)
         }
-        if (sedesRes?.data) setSedes(sedesRes.data)
+        if (Array.isArray(sedesRes?.data)) setSedes(sedesRes.data)
       } finally {
         if (alive) setLoading(false)
       }

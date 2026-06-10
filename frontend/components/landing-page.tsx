@@ -1513,7 +1513,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     // Carga modificadores (adiciones, combos, "sin X")
     setT1Mods([]); setT1Sel({}); setT1ModsLoading(true)
     fetch(`${API_URL}/modifiers/public/${product.id}`).then(r => r.json()).catch(() => null)
-      .then(res => setT1Mods(res?.data || []))
+      .then(res => setT1Mods(Array.isArray(res?.data) ? res.data : []))
       .finally(() => setT1ModsLoading(false))
     // Load approved reviews for this product
     const tid = product.tenantId || stores.find(s => s.slug === selectedStore)?.id
@@ -1577,14 +1577,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   })
   const t1SelMods = useMemo(() => {
     const out: { groupName: string; optionName: string; priceDelta: number }[] = []
-    for (const g of t1Mods) {
+    for (const g of (Array.isArray(t1Mods) ? t1Mods : [])) {
       const ids = t1Sel[g.id]; if (!ids) continue
-      for (const o of g.options) if (ids.has(o.id)) out.push({ groupName: g.name, optionName: o.name, priceDelta: Number(o.priceDelta) || 0 })
+      for (const o of (g.options || [])) if (ids.has(o.id)) out.push({ groupName: g.name, optionName: o.name, priceDelta: Number(o.priceDelta) || 0 })
     }
     return out
   }, [t1Mods, t1Sel])
   const t1Extra = t1SelMods.reduce((s, m) => s + m.priceDelta, 0)
-  const t1Missing = useMemo(() => t1Mods.filter((g: any) => g.isRequired && (t1Sel[g.id]?.size ?? 0) < Math.max(1, g.minSelect || 0)), [t1Mods, t1Sel])
+  const t1Missing = useMemo(() => (Array.isArray(t1Mods) ? t1Mods : []).filter((g: any) => g.isRequired && (t1Sel[g.id]?.size ?? 0) < Math.max(1, g.minSelect || 0)), [t1Mods, t1Sel])
 
   const addFromModal = () => {
     if (!selectedProduct) return

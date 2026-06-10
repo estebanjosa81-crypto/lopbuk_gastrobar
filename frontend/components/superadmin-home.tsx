@@ -1505,7 +1505,7 @@ export function SuperadminHome() {
                 <p className="text-sm text-muted-foreground text-center py-10">No hay comercios activos</p>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {marketplaceCards
+                  {(Array.isArray(marketplaceCards) ? marketplaceCards : [])
                     .filter(c => {
                       const q = cardSearch.trim().toLowerCase()
                       if (!q) return true

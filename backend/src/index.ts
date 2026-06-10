@@ -392,6 +392,10 @@ const startServer = async () => {
           INDEX idx_scs_tenant (tenant_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       `).catch(() => {});
+      // Corrige tablas legacy cuyo id quedó sin AUTO_INCREMENT (o sin PK)
+      await mPool.query(`ALTER TABLE store_custom_sections MODIFY COLUMN id INT NOT NULL`).catch(() => {});
+      await mPool.query(`ALTER TABLE store_custom_sections ADD PRIMARY KEY (id)`).catch(() => {}); // ignora si ya existe
+      await mPool.query(`ALTER TABLE store_custom_sections MODIFY COLUMN id INT NOT NULL AUTO_INCREMENT`).catch(() => {});
 
       await mPool.query(`
         CREATE TABLE IF NOT EXISTS product_modifier_options (

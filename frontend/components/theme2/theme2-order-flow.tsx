@@ -129,7 +129,7 @@ export function Theme2OrderFlow({
     const sedeParam = sede?.id ? `&sede=${sede.id}` : ''
     fetch(`${API_URL}/storefront/products?store=${slug}&limit=200${sedeParam}`)
       .then(r => r.json()).catch(() => null)
-      .then(res => { if (alive) setProducts(res?.data || []) })
+      .then(res => { if (alive) setProducts(Array.isArray(res?.data) ? res.data : []) })
       .finally(() => { if (alive) setLoadingProducts(false) })
     return () => { alive = false }
   }, [step, sede, slug])
@@ -154,7 +154,7 @@ export function Theme2OrderFlow({
     setDetail(p); setDetailQty(1); setDetailNotes(''); setKeepAdding(false)
     setDetailGroups([]); setSelected({}); setLoadingMods(true)
     fetch(`${API_URL}/modifiers/public/${p.id}`).then(r => r.json()).catch(() => null)
-      .then(res => setDetailGroups(res?.data || []))
+      .then(res => setDetailGroups(Array.isArray(res?.data) ? res.data : []))
       .finally(() => setLoadingMods(false))
   }
   const quickAdd = (p: T2Product) => addToCart(p, 1, '', [], priceOf(p))

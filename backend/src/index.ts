@@ -53,7 +53,8 @@ import variantsRoutes from './modules/variants/variants.routes';
 import suppliersRoutes from './modules/suppliers/suppliers.routes';
 import { gymRoutes } from './modules/gym';
 import assistantRoutes from './modules/assistant/assistant.routes';
-import modifiersRoutes from './modules/modifiers/modifiers.routes';
+import modifiersRoutes from './modules/modifiers/modifiers.routes'
+import superadminOrdersRoutes from './modules/orders/superadmin-orders.routes';
 
 const app = express();
 
@@ -171,7 +172,8 @@ app.use(`${apiPrefix}/gastrobar-ops`, gastrobarRoutes);
 app.use(`${apiPrefix}/rutina`, rutinaRoutes);
 app.use(`${apiPrefix}/gym`, gymRoutes);
 app.use(`${apiPrefix}/assistant`, assistantRoutes);
-app.use(`${apiPrefix}/modifiers`, modifiersRoutes);
+app.use(`${apiPrefix}/modifiers`, modifiersRoutes)
+app.use(`${apiPrefix}/superadmin`, superadminOrdersRoutes);
 
 // Variantes + Proveedores
 app.use(`${apiPrefix}`, variantsRoutes);

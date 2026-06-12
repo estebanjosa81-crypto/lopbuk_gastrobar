@@ -19,7 +19,7 @@ import { Customers } from '@/components/customers'
 import { Fiados } from '@/components/fiados'
 import { CashRegister } from '@/components/cash-register'
 import { TenantManagement } from '@/components/tenant-management'
-import { SuperadminHome } from '@/components/superadmin-home'
+import { SuperadminLayout } from '@/components/superadmin/SuperadminLayout'
 import { Tienda } from '@/components/tienda'
 import { Pedidos } from '@/components/pedidos'
 import { Cupones } from '@/components/cupones'
@@ -125,7 +125,7 @@ export function MerchantPanel() {
       case 'superadmin':
         return user?.role === 'superadmin' ? <TenantManagement /> : <Dashboard />
       case 'pagina-principal':
-        return user?.role === 'superadmin' ? <SuperadminHome /> : <Dashboard />
+        return user?.role === 'superadmin' ? <SuperadminLayout /> : <Dashboard />
       case 'dashboard':
         return <Dashboard />
       case 'inventory':

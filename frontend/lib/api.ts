@@ -2668,6 +2668,91 @@ class ApiService {
   async createSupplier(data: any) { return this.request<any>('/suppliers', { method: 'POST', body: JSON.stringify(data) }) }
   async updateSupplier(id: string, data: any) { return this.request<any>(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }) }
   async deleteSupplier(id: string) { return this.request<any>(`/suppliers/${id}`, { method: 'DELETE' }) }
+
+  // ─── Superadmin — Gestión de tenants ──────────────────────────────────────
+
+  async getAllTenants(params?: { search?: string; page?: number; limit?: number }) {
+    const q = new URLSearchParams()
+    if (params?.search) q.set('search', params.search)
+    q.set('page',  String(params?.page  ?? 1))
+    q.set('limit', String(params?.limit ?? 200))
+    return this.request<any>(`/tenants?${q.toString()}`)
+  }
+
+  async softDeleteTenant(id: string) {
+    return this.request<any>(`/tenants/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: 'cancelado' }),
+    })
+  }
+
+  async restoreTenant(id: string) {
+    return this.request<any>(`/tenants/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status: 'activo' }),
+    })
+  }
+
+  // ─── Superadmin — Centro de Pedidos ───────────────────────────────────────
+
+  async getSuperadminOrders(params?: {
+    tenant_id?: string
+    status?: string
+    assigned?: 'me' | 'unassigned'
+    search?: string
+    date_from?: string
+    date_to?: string
+    page?: number
+    limit?: number
+  }) {
+    const q = new URLSearchParams()
+    if (params?.tenant_id)  q.set('tenant_id',  params.tenant_id)
+    if (params?.status)     q.set('status',     params.status)
+    if (params?.assigned)   q.set('assigned',   params.assigned)
+    if (params?.search)     q.set('search',     params.search)
+    if (params?.date_from)  q.set('date_from',  params.date_from)
+    if (params?.date_to)    q.set('date_to',    params.date_to)
+    if (params?.page)       q.set('page',       String(params.page))
+    if (params?.limit)      q.set('limit',      String(params.limit))
+    const qs = q.toString()
+    return this.request<any>(`/superadmin/orders${qs ? `?${qs}` : ''}`)
+  }
+
+  async getSuperadminOrdersSummary() {
+    return this.request<any>('/superadmin/orders/summary')
+  }
+
+  async getSuperadminOrderItems(orderId: string) {
+    return this.request<any>(`/superadmin/orders/${orderId}/items`)
+  }
+
+  async patchSuperadminOrderStatus(orderId: string, status: string, note?: string) {
+    return this.request<any>(`/superadmin/orders/${orderId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, note }),
+    })
+  }
+
+  async patchSuperadminOrderAssign(orderId: string, unassign = false) {
+    return this.request<any>(`/superadmin/orders/${orderId}/assign`, {
+      method: 'PATCH',
+      body: JSON.stringify({ unassign }),
+    })
+  }
+
+  async getPlatformAnalytics(days = 30) {
+    return this.request<any>(`/superadmin/analytics?days=${days}`)
+  }
+
+  async getOrdersHeatmap(days = 30) {
+    return this.request<any>(`/superadmin/analytics/heatmap?days=${days}`)
+  }
+
+  /** Returns the base URL for constructing SSE endpoints */
+  getSseUrl(path: string): string {
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+    return `${base}${path}`
+  }
 }
 
 export const api = new ApiService()

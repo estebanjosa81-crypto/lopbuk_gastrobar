@@ -1,0 +1,366 @@
+'use client'
+
+import {
+  CalendarDays, Check, ImageIcon, LayoutTemplate, Plus, Pencil, RefreshCw,
+  Sparkles, Tag, Trash2,
+} from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
+import { formatCOP } from '@/lib/utils'
+import { useLandingConfig } from '../hooks/useLandingConfig'
+
+export function LandingConfigTab() {
+  const {
+    heroUrl, setHeroUrl, heroTitle, setHeroTitle, heroSubtitle, setHeroSubtitle,
+    isSavingHero, handleSaveHero,
+    loginImageUrl, setLoginImageUrl, isSavingLogin, handleSaveLoginImage,
+    panelTheme, isSavingTheme, handleSavePanelTheme,
+    offers, isLoadingOffers, fetchOffers,
+    drops, isLoadingDrops, fetchDrops,
+    isDropDialogOpen, setIsDropDialogOpen,
+    editingDrop, dropForm, setDropForm,
+    isSavingDrop, deletingDropId, setDeletingDropId,
+    openCreateDrop, openEditDrop, handleSaveDrop, handleDeleteDrop,
+  } = useLandingConfig()
+
+  return (
+    <div className="space-y-6">
+
+      {/* Hero Principal */}
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base lg:text-lg flex items-center gap-2">
+            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+            Hero Principal (Landing)
+          </CardTitle>
+          <CardDescription>Imagen, título y subtítulo del banner principal de la página pública</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>URL de imagen del hero</Label>
+            <Input
+              value={heroUrl}
+              onChange={(e) => setHeroUrl(e.target.value)}
+              placeholder="https://ejemplo.com/imagen.jpg o GIF"
+              className="font-mono text-sm"
+            />
+          </div>
+          {heroUrl && (
+            <div className="relative w-full max-w-md h-40 rounded border border-border overflow-hidden bg-muted">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={heroUrl} alt="Preview hero" className="w-full h-full object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Título del hero</Label>
+              <Input value={heroTitle} onChange={(e) => setHeroTitle(e.target.value)} placeholder="Ej: Bienvenidos a nuestra tienda" />
+            </div>
+            <div className="space-y-2">
+              <Label>Subtítulo del hero</Label>
+              <Input value={heroSubtitle} onChange={(e) => setHeroSubtitle(e.target.value)} placeholder="Ej: Las mejores fragancias" />
+            </div>
+          </div>
+          <Button size="sm" onClick={handleSaveHero} disabled={isSavingHero}>
+            {isSavingHero ? 'Guardando...' : 'Guardar Hero'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Login Image/GIF */}
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base lg:text-lg flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-muted-foreground" />
+            Imagen / GIF del Login
+          </CardTitle>
+          <CardDescription>Imagen o GIF de fondo que se muestra en la pantalla de inicio de sesión</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <CloudinaryUpload
+            value={loginImageUrl}
+            onChange={setLoginImageUrl}
+            accept="image/*,.gif"
+            previewClassName="w-full max-w-xs h-48 object-cover rounded-lg border border-border"
+          />
+          <p className="text-xs text-muted-foreground">
+            Acepta imágenes estáticas (.jpg, .png, .webp) o animadas (.gif).
+          </p>
+          <Button size="sm" onClick={handleSaveLoginImage} disabled={isSavingLogin}>
+            {isSavingLogin ? 'Guardando...' : 'Guardar imagen de login'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Tema del Panel del Comerciante */}
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base lg:text-lg flex items-center gap-2">
+            <LayoutTemplate className="h-5 w-5 text-muted-foreground" />
+            Tema del Panel del Comerciante
+          </CardTitle>
+          <CardDescription>
+            Elige el diseño con el que TODOS los comercios ven su panel de administración. El cambio es global e inmediato.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {([
+              { value: 'classic', title: 'Tema clásico', desc: 'Barra lateral flotante + secciones. El diseño original.', accent: '#6366f1' },
+              { value: 'comerciante', title: 'Tema 2 · Comerciante', desc: 'Navbar verde con mega-menús, accesos rápidos y asistente.', accent: '#00833E' },
+            ] as const).map(opt => {
+              const selected = panelTheme === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  disabled={isSavingTheme}
+                  onClick={() => handleSavePanelTheme(opt.value)}
+                  className={`relative text-left rounded-lg border-2 p-4 transition-all disabled:opacity-60 ${
+                    selected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border hover:border-primary/40 bg-background'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full" style={{ background: opt.accent }} />
+                      <span className="text-sm font-semibold text-foreground">{opt.title}</span>
+                    </div>
+                    {selected && <Check className="h-4 w-4 text-primary" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{opt.desc}</p>
+                  {selected && <span className="mt-2 inline-block text-[11px] font-medium text-primary">Activo</span>}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            El superadmin siempre ve el tema clásico. El Tema 2 aplica a comerciantes, vendedores y bodega.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Ofertas Activas */}
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base lg:text-lg flex items-center gap-2">
+                <Tag className="h-5 w-5 text-orange-500" />
+                Ofertas Activas en Comercios
+              </CardTitle>
+              <CardDescription>Productos con oferta activa en todas las tiendas</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={fetchOffers} disabled={isLoadingOffers} className="gap-1">
+              <RefreshCw className={`h-4 w-4 ${isLoadingOffers ? 'animate-spin' : ''}`} />
+              Actualizar
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingOffers ? (
+            <div className="flex items-center justify-center py-10">
+              <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : offers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+              <Tag className="h-10 w-10 mb-2 opacity-40" />
+              <p className="text-sm">No hay productos en oferta actualmente</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {offers.map((product: any) => (
+                <div key={product.id} className="flex gap-3 p-3 border border-border rounded-lg bg-background">
+                  <div className="w-14 h-14 shrink-0 rounded-md overflow-hidden bg-muted flex items-center justify-center">
+                    {product.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                    ) : <Sparkles className="h-5 w-5 text-muted-foreground/30" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{product.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{product.tenantName || product.brand || ''}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="text-sm font-semibold text-orange-500">{formatCOP(product.offerPrice)}</span>
+                      <span className="text-xs text-muted-foreground line-through">{formatCOP(product.salePrice)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Drops */}
+      <Card className="border-border bg-card">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base lg:text-lg flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-purple-500" />
+                Drops / Eventos de Descuento
+              </CardTitle>
+              <CardDescription>Eventos temporales con descuento global para productos seleccionados</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={fetchDrops} disabled={isLoadingDrops}>
+                <RefreshCw className={`h-4 w-4 ${isLoadingDrops ? 'animate-spin' : ''}`} />
+              </Button>
+              <Button size="sm" onClick={openCreateDrop} className="gap-1">
+                <Plus className="h-4 w-4" /> Nuevo Drop
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoadingDrops ? (
+            <div className="flex items-center justify-center py-10">
+              <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : drops.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+              <CalendarDays className="h-10 w-10 mb-2 opacity-40" />
+              <p className="text-sm">No hay drops creados</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {drops.map((drop) => {
+                const now = new Date()
+                const start = new Date(drop.startsAt)
+                const end = new Date(drop.endsAt)
+                const isLive = drop.isActive && now >= start && now <= end
+                const isPast = now > end
+                return (
+                  <div key={drop.id} className="flex items-center gap-4 p-4 border border-border rounded-lg bg-background">
+                    {drop.bannerUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={drop.bannerUrl} alt={drop.name} className="w-16 h-12 rounded object-cover shrink-0 border border-border" />
+                    ) : (
+                      <div className="w-16 h-12 rounded bg-secondary flex items-center justify-center shrink-0">
+                        <CalendarDays className="h-5 w-5 text-muted-foreground/50" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-foreground">{drop.name}</p>
+                        {isLive && <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-green-500/15 text-green-500 border border-green-500/20">EN VIVO</span>}
+                        {isPast && <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-muted text-muted-foreground">FINALIZADO</span>}
+                        {!drop.isActive && !isPast && <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-yellow-500/15 text-yellow-500 border border-yellow-500/20">INACTIVO</span>}
+                      </div>
+                      {drop.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{drop.description}</p>}
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        <span className="text-xs text-purple-400 font-medium">{drop.globalDiscount}% descuento</span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(drop.startsAt).toLocaleDateString('es-CO')} → {new Date(drop.endsAt).toLocaleDateString('es-CO')}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDrop(drop)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/70 hover:text-destructive" onClick={() => setDeletingDropId(drop.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Dialog: Crear/Editar Drop */}
+      <Dialog open={isDropDialogOpen} onOpenChange={setIsDropDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-purple-500" />
+              {editingDrop ? 'Editar Drop' : 'Nuevo Drop'}
+            </DialogTitle>
+            <DialogDescription>Configura un evento de descuento temporal para la plataforma</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Nombre <span className="text-destructive">*</span></Label>
+              <Input placeholder="Ej: Black Friday" value={dropForm.name} onChange={(e) => setDropForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Descripción</Label>
+              <Input placeholder="Descripción opcional" value={dropForm.description} onChange={(e) => setDropForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>URL del banner</Label>
+              <Input placeholder="https://..." value={dropForm.bannerUrl} onChange={(e) => setDropForm(f => ({ ...f, bannerUrl: e.target.value }))} className="font-mono text-sm" />
+            </div>
+            <div className="space-y-2">
+              <Label>Descuento global (%)</Label>
+              <Input type="number" min={0} max={100}
+                value={dropForm.globalDiscount}
+                onChange={(e) => setDropForm(f => ({ ...f, globalDiscount: Number(e.target.value) }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Fecha inicio <span className="text-destructive">*</span></Label>
+                <Input type="datetime-local" value={dropForm.startsAt} onChange={(e) => setDropForm(f => ({ ...f, startsAt: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha fin <span className="text-destructive">*</span></Label>
+                <Input type="datetime-local" value={dropForm.endsAt} onChange={(e) => setDropForm(f => ({ ...f, endsAt: e.target.value }))} />
+              </div>
+            </div>
+            <div
+              className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                dropForm.isActive ? 'border-primary bg-primary/5' : 'border-border bg-muted/30'
+              }`}
+              onClick={() => setDropForm(f => ({ ...f, isActive: !f.isActive }))}
+            >
+              <div className={`w-5 h-5 rounded flex items-center justify-center border-2 flex-shrink-0 transition-colors ${
+                dropForm.isActive ? 'border-primary bg-primary' : 'border-muted-foreground'
+              }`}>
+                {dropForm.isActive && <span className="text-white text-xs font-bold">✓</span>}
+              </div>
+              <div>
+                <p className="text-sm font-medium">Activo</p>
+                <p className="text-xs text-muted-foreground">El drop se mostrará cuando esté en rango de fechas</p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDropDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveDrop} disabled={isSavingDrop}>
+              {isSavingDrop ? 'Guardando...' : editingDrop ? 'Guardar cambios' : 'Crear Drop'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Confirmar eliminación de Drop */}
+      <Dialog open={deletingDropId !== null} onOpenChange={(open) => { if (!open) setDeletingDropId(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" /> Eliminar Drop
+            </DialogTitle>
+            <DialogDescription>¿Estás seguro? Esta acción no se puede deshacer.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeletingDropId(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={() => deletingDropId !== null && handleDeleteDrop(deletingDropId)}>
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+    </div>
+  )
+}

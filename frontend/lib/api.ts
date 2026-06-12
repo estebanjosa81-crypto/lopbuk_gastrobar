@@ -2743,6 +2743,23 @@ class ApiService {
     })
   }
 
+  async patchSuperadminOrderAssignTo(orderId: string, assigneeId: string) {
+    return this.request<any>(`/superadmin/orders/${orderId}/assign`, {
+      method: 'PATCH',
+      body: JSON.stringify({ assigneeId }),
+    })
+  }
+
+  async getSuperadminOrderDrivers(orderId: string) {
+    return this.request<{ id: string; name: string; email: string; phone: string }[]>(
+      `/superadmin/orders/${orderId}/drivers`
+    )
+  }
+
+  async getSuperadminTenantsList() {
+    return this.request<{ id: string; name: string }[]>('/superadmin/orders/tenants')
+  }
+
   async getPlatformAnalytics(days = 30) {
     return this.request<any>(`/superadmin/analytics?days=${days}`)
   }

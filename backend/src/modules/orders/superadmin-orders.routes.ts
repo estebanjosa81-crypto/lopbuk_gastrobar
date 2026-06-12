@@ -46,6 +46,19 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   cancelado:  [],
 }
 
+// ─── GET /api/superadmin/orders/tenants ─────────────────────────────────────
+// Lista mínima de tenants para el filtro de comercio en la UI
+router.get('/orders/tenants', async (_req: Request, res: Response) => {
+  try {
+    const [rows] = await pool.query(
+      "SELECT id, name FROM tenants WHERE status = 'activo' ORDER BY name"
+    ) as any
+    res.json({ success: true, data: rows })
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Error al obtener comercios' })
+  }
+})
+
 // ─── GET /api/superadmin/orders ───────────────────────────────────────────────
 // Bandeja unificada cross-tenant con filtros y paginación
 router.get('/orders', async (req: Request, res: Response) => {
@@ -196,12 +209,13 @@ router.patch('/orders/:id/status', async (req: Request, res: Response) => {
 })
 
 // ─── PATCH /api/superadmin/orders/:id/assign ─────────────────────────────────
-// Asigna el pedido al operador que hace la llamada (o lo desasigna)
+// Asigna el pedido al operador o a un repartidor específico (assigneeId en body)
 router.patch('/orders/:id/assign', async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const user = (req as any).user
-    const unassign = req.body?.unassign === true
+    const unassign   = req.body?.unassign === true
+    const assigneeId = req.body?.assigneeId as string | undefined
 
     const [rows] = await pool.query(
       'SELECT id FROM storefront_orders WHERE id = ?',
@@ -212,16 +226,47 @@ router.patch('/orders/:id/assign', async (req: Request, res: Response) => {
       return
     }
 
-    const newAssignee = unassign ? null : (user.id as string)
+    const newAssignee = unassign ? null : (assigneeId ?? user.id as string)
     await pool.query(
       'UPDATE storefront_orders SET assigned_to = ?, updated_at = NOW() WHERE id = ?',
       [newAssignee, id]
     )
 
-    res.json({ success: true, data: { id, assigned_to: newAssignee } })
+    // Return assignee name for immediate UI update
+    let assignedName: string | null = null
+    if (newAssignee) {
+      const [uRows] = await pool.query('SELECT name FROM users WHERE id = ?', [newAssignee]) as any
+      assignedName = (uRows as any[])[0]?.name ?? null
+    }
+
+    res.json({ success: true, data: { id, assigned_to: newAssignee, assigned_name: assignedName } })
   } catch (err) {
     console.error('[superadmin-orders] assign error:', err)
     res.status(500).json({ success: false, error: 'Error al asignar pedido' })
+  }
+})
+
+// ─── GET /api/superadmin/orders/:id/drivers ──────────────────────────────────
+// Repartidores activos del tenant del pedido (para asignación rápida)
+router.get('/orders/:id/drivers', async (req: Request, res: Response) => {
+  try {
+    const [orderRows] = await pool.query(
+      'SELECT tenant_id FROM storefront_orders WHERE id = ?',
+      [req.params.id]
+    ) as any
+    if (!(orderRows as any[])[0]) {
+      res.status(404).json({ success: false, error: 'Pedido no encontrado' })
+      return
+    }
+    const tenantId = (orderRows as any[])[0].tenant_id
+    const [drivers] = await pool.query(
+      "SELECT id, name, email, phone FROM users WHERE tenant_id = ? AND role = 'repartidor' AND is_active = 1 ORDER BY name",
+      [tenantId]
+    ) as any
+    res.json({ success: true, data: drivers })
+  } catch (err) {
+    console.error('[superadmin-orders] drivers error:', err)
+    res.status(500).json({ success: false, error: 'Error al obtener repartidores' })
   }
 })
 

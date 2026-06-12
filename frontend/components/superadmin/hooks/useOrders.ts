@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -69,6 +69,18 @@ export interface OrderFilters {
   dateTo: string
 }
 
+export interface Driver {
+  id: string
+  name: string
+  email: string
+  phone: string
+}
+
+export interface TenantOption {
+  id: string
+  name: string
+}
+
 // SLA thresholds in minutes
 const SLA_YELLOW_MIN = 10
 const SLA_RED_MIN = 30
@@ -122,7 +134,13 @@ export function useOrders() {
     tenantId: '', status: '', assigned: '', search: '', dateFrom: '', dateTo: '',
   })
 
-  // Summary (polling)
+  // View mode
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table')
+
+  // Tenant filter options
+  const [tenantsList, setTenantsList] = useState<TenantOption[]>([])
+
+  // Summary (SSE / polling)
   const [summary, setSummary] = useState<OrderSummaryCounts>({
     pendiente: 0, confirmado: 0, preparando: 0, enviado: 0, entregado: 0, cancelado: 0,
   })
@@ -135,11 +153,38 @@ export function useOrders() {
   const [drawerHistory, setDrawerHistory] = useState<StatusHistoryEntry[]>([])
   const [isLoadingDrawer, setIsLoadingDrawer] = useState(false)
 
+  // Drivers for quick-assign in drawer
+  const [drawerDrivers, setDrawerDrivers] = useState<Driver[]>([])
+  const [isLoadingDrivers, setIsLoadingDrivers] = useState(false)
+
   // Status change dialog
   const [changingStatusOrder, setChangingStatusOrder] = useState<SuperadminOrder | null>(null)
   const [newStatus, setNewStatus] = useState('')
   const [statusNote, setStatusNote] = useState('')
   const [isSavingStatus, setIsSavingStatus] = useState(false)
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false)
+
+  // ── Derived priority counts ────────────────────────────────────────────────
+
+  const priorityStats = useMemo(() => {
+    const activeOrders = orders.filter(o => o.status !== 'entregado' && o.status !== 'cancelado')
+    return {
+      sinAsignar: activeOrders.filter(o => !o.assignedTo).length,
+      retrasados: activeOrders.filter(o => getSlaColor(o.createdAt) === 'red').length,
+      enRiesgo:   activeOrders.filter(o => getSlaColor(o.createdAt) === 'yellow').length,
+    }
+  }, [orders])
+
+  // ── Fetch tenants list ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    api.getSuperadminTenantsList().then(r => {
+      if (r.success && r.data) setTenantsList(r.data as TenantOption[])
+    })
+  }, [])
 
   // ── Fetch bandeja ──────────────────────────────────────────────────────────
 
@@ -163,7 +208,7 @@ export function useOrders() {
     setIsLoading(false)
   }, [filters])
 
-  // ── SSE summary (reemplaza polling) ───────────────────────────────────────
+  // ── SSE summary ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     fetchOrders(1)
@@ -183,7 +228,7 @@ export function useOrders() {
           fetchOrders(1)
         }
         lastLatestId.current = data.latestId
-      } catch { /* ignore parse error */ }
+      } catch { /* ignore */ }
     }
 
     const connect = () => {
@@ -191,7 +236,6 @@ export function useOrders() {
         es = new EventSource(url, { withCredentials: true })
         es.onmessage = onMessage
         es.onerror = () => {
-          // EventSource auto-reconnects; start a 30s fallback poll in case SSE is blocked
           if (!fallbackTimer) {
             fallbackTimer = setInterval(async () => {
               const r = await api.getSuperadminOrdersSummary()
@@ -200,11 +244,9 @@ export function useOrders() {
           }
         }
         es.onopen = () => {
-          // SSE connected — cancel fallback polling
           if (fallbackTimer) { clearInterval(fallbackTimer); fallbackTimer = null }
         }
       } catch {
-        // EventSource not available (e.g. test env); fall back to polling
         fallbackTimer = setInterval(async () => {
           const r = await api.getSuperadminOrdersSummary()
           if (r.success && r.data) onMessage({ data: JSON.stringify(r.data) } as MessageEvent)
@@ -213,11 +255,7 @@ export function useOrders() {
     }
 
     connect()
-
-    return () => {
-      es?.close()
-      if (fallbackTimer) clearInterval(fallbackTimer)
-    }
+    return () => { es?.close(); if (fallbackTimer) clearInterval(fallbackTimer) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchOrders])
 
@@ -229,6 +267,7 @@ export function useOrders() {
     setIsLoadingDrawer(true)
     setDrawerItems([])
     setDrawerHistory([])
+    setDrawerDrivers([])
     const result = await api.getSuperadminOrderItems(order.id)
     if (result.success && result.data) {
       setDrawerItems((result.data.items as any[]).map((i: any) => ({
@@ -250,6 +289,12 @@ export function useOrders() {
       })))
     }
     setIsLoadingDrawer(false)
+    // Load drivers in background
+    setIsLoadingDrivers(true)
+    api.getSuperadminOrderDrivers(order.id).then(r => {
+      if (r.success && r.data) setDrawerDrivers(r.data as Driver[])
+      setIsLoadingDrivers(false)
+    })
   }, [])
 
   const closeDrawer = useCallback(() => {
@@ -284,14 +329,26 @@ export function useOrders() {
         setSelectedOrder(prev => prev ? { ...prev, status: newStatus as SuperadminOrder['status'] } : prev)
       }
       closeStatusDialog()
-      // SSE will update summary automatically; locally optimistic-update count via setSummary
     } else {
       toast.error(result.error || 'Error al cambiar estado')
     }
     setIsSavingStatus(false)
   }, [changingStatusOrder, newStatus, statusNote, selectedOrder, closeStatusDialog])
 
-  // ── Assign to me ───────────────────────────────────────────────────────────
+  // Kanban status drag handler
+  const handleKanbanStatusChange = useCallback(async (orderId: string, fromStatus: string, toStatus: string) => {
+    if (fromStatus === toStatus) return
+    const result = await api.patchSuperadminOrderStatus(orderId, toStatus)
+    if (result.success) {
+      setOrders(prev => prev.map(o =>
+        o.id === orderId ? { ...o, status: toStatus as SuperadminOrder['status'] } : o
+      ))
+    } else {
+      toast.error(result.error || 'Transición inválida')
+    }
+  }, [])
+
+  // ── Assign ─────────────────────────────────────────────────────────────────
 
   const handleAssignToMe = useCallback(async (order: SuperadminOrder) => {
     const isAssigned = !!order.assignedTo
@@ -304,22 +361,109 @@ export function useOrders() {
     }
   }, [fetchOrders, page])
 
+  const handleAssignToDriver = useCallback(async (orderId: string, driverId: string, driverName: string) => {
+    const result = await api.patchSuperadminOrderAssignTo(orderId, driverId)
+    if (result.success) {
+      toast.success(`Pedido asignado a ${driverName}`)
+      setOrders(prev => prev.map(o =>
+        o.id === orderId ? { ...o, assignedTo: driverId, assignedName: driverName } : o
+      ))
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(prev => prev ? { ...prev, assignedTo: driverId, assignedName: driverName } : prev)
+      }
+    } else {
+      toast.error('Error al asignar repartidor')
+    }
+  }, [selectedOrder])
+
+  // ── Bulk selection ─────────────────────────────────────────────────────────
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }, [])
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(orders.map(o => o.id)))
+  }, [orders])
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
+
+  const handleBulkStatusChange = useCallback(async (toStatus: string) => {
+    if (!selectedIds.size) return
+    setIsBulkProcessing(true)
+    let success = 0; let fail = 0
+    for (const id of selectedIds) {
+      const order = orders.find(o => o.id === id)
+      if (!order) continue
+      const r = await api.patchSuperadminOrderStatus(id, toStatus)
+      if (r.success) { success++; } else { fail++ }
+    }
+    if (success) toast.success(`${success} pedido(s) actualizados`)
+    if (fail) toast.error(`${fail} pedido(s) fallaron`)
+    clearSelection()
+    fetchOrders(page)
+    setIsBulkProcessing(false)
+  }, [selectedIds, orders, clearSelection, fetchOrders, page])
+
+  const handleBulkAssignToMe = useCallback(async () => {
+    if (!selectedIds.size) return
+    setIsBulkProcessing(true)
+    let success = 0
+    for (const id of selectedIds) {
+      const r = await api.patchSuperadminOrderAssign(id, false)
+      if (r.success) success++
+    }
+    toast.success(`${success} pedido(s) asignados`)
+    clearSelection()
+    fetchOrders(page)
+    setIsBulkProcessing(false)
+  }, [selectedIds, clearSelection, fetchOrders, page])
+
+  const handleBulkCancel = useCallback(async () => {
+    if (!selectedIds.size) return
+    setIsBulkProcessing(true)
+    let success = 0
+    for (const id of selectedIds) {
+      const order = orders.find(o => o.id === id)
+      if (!order || order.status === 'entregado' || order.status === 'cancelado') continue
+      const r = await api.patchSuperadminOrderStatus(id, 'cancelado')
+      if (r.success) success++
+    }
+    toast.success(`${success} pedido(s) cancelados`)
+    clearSelection()
+    fetchOrders(page)
+    setIsBulkProcessing(false)
+  }, [selectedIds, orders, clearSelection, fetchOrders, page])
+
   return {
     // List
     orders, isLoading, total, page, LIMIT,
     fetchOrders,
+    // View mode
+    viewMode, setViewMode,
     // Filters
     filters, setFilters,
+    tenantsList,
     // Summary
     summary,
+    priorityStats,
     // Drawer
     selectedOrder, drawerOpen, drawerItems, drawerHistory, isLoadingDrawer,
+    drawerDrivers, isLoadingDrivers,
     openDrawer, closeDrawer,
     // Status dialog
     changingStatusOrder, newStatus, setNewStatus, statusNote, setStatusNote,
     isSavingStatus,
     openStatusDialog, closeStatusDialog, handleSaveStatus,
+    handleKanbanStatusChange,
     // Assign
-    handleAssignToMe,
+    handleAssignToMe, handleAssignToDriver,
+    // Bulk
+    selectedIds, toggleSelect, selectAll, clearSelection,
+    isBulkProcessing, handleBulkStatusChange, handleBulkAssignToMe, handleBulkCancel,
   }
 }

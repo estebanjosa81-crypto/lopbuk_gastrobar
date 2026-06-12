@@ -320,6 +320,7 @@ export class TenantsService {
     id: string,
     data: {
       name?: string;
+      slug?: string;
       businessType?: string;
       plan?: string;
       status?: string;
@@ -336,6 +337,15 @@ export class TenantsService {
     if (data.name !== undefined) {
       updates.push('name = ?');
       values.push(data.name);
+    }
+    if (data.slug !== undefined) {
+      const [existing] = await db.execute<RowDataPacket[]>(
+        'SELECT id FROM tenants WHERE slug = ? AND id != ?',
+        [data.slug, id]
+      );
+      if ((existing as any[]).length > 0) throw new AppError('El slug ya está en uso por otro comercio', 409);
+      updates.push('slug = ?');
+      values.push(data.slug);
     }
     if (data.businessType !== undefined) {
       updates.push('business_type = ?');
@@ -441,10 +451,10 @@ export class TenantsService {
     );
   }
 
-  async activateTrial(id: string): Promise<TenantWithSummary> {
+  async activateTrial(id: string, days: number = 7): Promise<TenantWithSummary> {
     await this.findById(id);
     const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + 7);
+    trialEnd.setDate(trialEnd.getDate() + Math.max(1, Math.min(days, 365)));
     await db.execute(
       'UPDATE tenants SET plan = ?, trial_ends_at = ? WHERE id = ?',
       ['empresarial', trialEnd, id]

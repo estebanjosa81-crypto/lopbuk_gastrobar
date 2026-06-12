@@ -7,12 +7,17 @@ router.use(authenticate)
 router.use(authorize('superadmin'))
 
 // Auto-migrate: add assigned_to column and create history table if not present
+// Uses INFORMATION_SCHEMA check for MySQL 5.7 compatibility (no IF NOT EXISTS in ALTER TABLE)
 ;(async () => {
   try {
-    await pool.query(
-      'ALTER TABLE storefront_orders ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(36) NULL'
-    )
-  } catch { /* column already exists or DB version < 8 */ }
+    const [cols] = await pool.query(
+      `SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'storefront_orders' AND COLUMN_NAME = 'assigned_to'`
+    ) as any
+    if (Number((cols as any[])[0]?.n) === 0) {
+      await pool.query('ALTER TABLE storefront_orders ADD COLUMN assigned_to VARCHAR(36) NULL')
+    }
+  } catch { /* ignore */ }
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS order_status_history (

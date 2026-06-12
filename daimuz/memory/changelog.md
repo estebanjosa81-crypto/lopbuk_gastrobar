@@ -4,6 +4,48 @@
 
 ---
 
+## [2026-06-12] — Panel Superadmin Modular — Sprints 0-4 completos
+
+Refactorización completa del panel superadmin + 4 sprints de nuevas funcionalidades:
+
+**Sprint 0 — Arquitectura modular (3444 líneas → 25 archivos)**
+- `frontend/components/superadmin/SuperadminLayout.tsx` — shell con 9 tabs, lazy-load con `next/dynamic`
+- `frontend/components/superadmin/tabs/` — 9 componentes JSX puros (uno por tab)
+- `frontend/components/superadmin/hooks/` — toda la lógica separada (useCommerces, useIntegrations, useLanding…)
+- Patrón establecido: hook → estado + fetch + handlers; tab → solo JSX que consume el hook
+
+**Sprint 2 — Centro de Pedidos cross-tenant**
+- `backend/src/modules/orders/superadmin-orders.routes.ts` — 5 endpoints iniciales
+- Auto-migración: `ALTER TABLE storefront_orders ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(36) NULL`
+- Auto-migración: `CREATE TABLE IF NOT EXISTS order_status_history` (auditoría de transiciones)
+- `frontend/components/superadmin/hooks/useOrders.ts` — estado completo: bandeja, filtros, summary, drawer, state machine
+- `frontend/components/superadmin/tabs/OrdersCenterTab.tsx` — 6 KPI contadores clicables, filtros, tabla paginada, drawer con items+historial, diálogo de transición de estado
+- SLA semáforo: verde <10min, amarillo 10-30min, rojo >30min desde creación del pedido
+
+**Sprint 3 — Wizard creación + Papelera/Restaurar**
+- `frontend/components/superadmin/shared/CommerceWizard.tsx` — wizard 4 pasos con validación por paso
+- `frontend/components/superadmin/hooks/useTenantLifecycle.ts` — auto-slug, soft-delete (status→'cancelado'), restore (status→'activo'), loaders por fila
+- `frontend/components/superadmin/tabs/CommercesTab.tsx` — reescrito con toggle papelera (badge rojo con conteo)
+- `frontend/lib/api.ts` — +3 funciones: `getAllTenants`, `softDeleteTenant`, `restoreTenant`
+
+**Sprint 4 — Analytics profesional + SSE reemplaza polling**
+- `backend/src/modules/orders/superadmin-orders.routes.ts` — +3 endpoints: SSE, analytics KPIs, heatmap
+- SSE endpoint: `res.flushHeaders()` + `res.write('data: ...\n\n')` + `req.on('close')` + ping cada 30s
+- Heatmap SQL: UNION `storefront_orders` + `sales`, agrupado por `DAYOFWEEK()-1` y `HOUR`
+- Analytics: compara período actual vs período anterior de igual duración para calcular deltas
+- `frontend/components/superadmin/hooks/useOrders.ts` — reemplaza `setInterval` 30s con `EventSource(url, { withCredentials: true })` + fallback automático si SSE falla
+- `frontend/components/superadmin/hooks/useAnalytics.ts` — reescrito: PlatformAnalytics + HeatmapData + helpers `deltaPct`, `getMaxRevenue`
+- `frontend/components/superadmin/tabs/AnalyticsTab.tsx` — reescrito: 6 KPI cards con Delta chip, TenantChart (barras), Heatmap (CSS grid 7×24)
+- `frontend/lib/api.ts` — +3 funciones: `getPlatformAnalytics`, `getOrdersHeatmap`, `getSseUrl`
+
+**Auditoría final — 2 bugs corregidos:**
+- `SuperadminLayout.tsx` l.52: `useState<TabId>('pagina')` → `useState<TabId>('pedidos')`
+- `SuperadminLayout.tsx`: import `Pin` de lucide-react eliminado (nunca usado)
+
+**Estado de TypeScript:** 0 errores en frontend y backend al cierre.
+
+---
+
 ## [2026-06-09] — Sistema de Variantes + Precios por Volumen — implementación full-stack
 
 Implementación completa del sistema de variantes de producto con precios escalonados y gestión de proveedores:

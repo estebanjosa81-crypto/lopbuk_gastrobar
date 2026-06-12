@@ -23,6 +23,33 @@
 - ✅ **Multi-tenant** — Sistema completo de tenants y módulos activables
 - ✅ **Multi-sede** — Sedes con inventario y caja independientes
 
+## ✅ Implementado: Panel Superadmin Modular — Sprints 0-4 (2026-06-12)
+
+**Sprint 0 — Refactor monolito superadmin-home.tsx (3444 líneas → arquitectura modular)**
+- `superadmin/SuperadminLayout.tsx` — shell con 9 tabs lazy-loaded (`next/dynamic`)
+- 9 tabs en `superadmin/tabs/` — cada una es JSX puro que consume un hook
+- Hooks en `superadmin/hooks/` — toda la lógica/estado separada de la UI
+
+**Sprint 2 — Centro de Pedidos cross-tenant**
+- Backend: `backend/src/modules/orders/superadmin-orders.routes.ts` (5 endpoints)
+- Auto-migración: columna `assigned_to` en `storefront_orders` + tabla `order_status_history`
+- Frontend: `useOrders.ts` + `OrdersCenterTab.tsx` (bandeja, SLA semáforo, drawer, state machine)
+
+**Sprint 3 — Wizard creación + Papelera/Restaurar tenants**
+- `CommerceWizard.tsx` — wizard 4 pasos (Comercio → Plan → Propietario → Confirmar)
+- `useTenantLifecycle.ts` — soft-delete (→ status: 'cancelado') + restore (→ status: 'activo')
+- `CommercesTab.tsx` — reescrito con sección "activos" + toggle papelera con badge rojo
+
+**Sprint 4 — Analytics profesional + SSE reemplaza polling**
+- Backend: 3 endpoints nuevos en `superadmin-orders.routes.ts` (SSE + analytics + heatmap)
+- `useOrders.ts` — EventSource con `withCredentials: true`, fallback polling automático
+- `useAnalytics.ts` — KPIs plataforma, heatmap 7×24
+- `AnalyticsTab.tsx` — 6 KPI cards con Delta chip + TenantChart + Heatmap CSS grid
+
+**Bugs encontrados y corregidos en auditoría final:**
+- Tab por defecto corregido: `'pagina'` → `'pedidos'`
+- Import `Pin` de lucide-react eliminado (nunca usado)
+
 ## En ajuste / desarrollo activo
 
 - 🔄 **Agente IA** — RAG funcionando, mejorando respuestas y herramientas
@@ -60,6 +87,7 @@ Implementación full-stack completa. Ver `daimuz/brain/variants-implementation-p
 
 > Agrega aquí cada vez que termines algo significativo
 
+- `[2026-06-12]` — **Panel Superadmin — Sprints 0-4 completados**: refactor monolito (3444 líneas → 25 archivos modulares), Centro de Pedidos cross-tenant con SSE, wizard creación de comercios, papelera/restaurar tenants, dashboard analítica con heatmap. Backend: 8 endpoints `/api/superadmin/*`. DB: columna `assigned_to` en `storefront_orders` + tabla `order_status_history`.
 - `[2026-06-09]` — **Sistema de Variantes + Precios por Volumen — implementación full-stack completa**: backend (variants.service, suppliers.service, controllers, routes), actualización de sales.service (stock atómico + price freezing), storefront con variantes+tiers, migración 004_variants_and_suppliers.sql (5 tablas), frontend (variant-manager.tsx, api.ts, inventory-list con botón variantes, point-of-sale con picker dialog y resolución de tiers). TypeScript frontend: 0 errores. Errores backend son truncaciones pre-existentes no relacionadas.
 - `[2026-06-07]` — **DAIMUZ auditado contra análisis completo**: indexes limpiados (modules, endpoints, files, db-tables), sinapsis ops-chain reescrita sin duplicados, reglas de variantes en vault business-rules, architecture/database consolidado. Scorecard final verificado: 9.8/10.
 - `[2026-06-07]` — **Arquitectura de variantes completa en DAIMUZ**: diseñado e integrado el modelo `products → product_variants → variant_price_tiers` con todas las mejores prácticas. Creado `decisions/variant-architecture.md` (8 decisiones formales), `flows/variant-flow.md` (5 flujos), actualizados governance, business-rules, ontology (limpieza de duplicados), synapses (ops-chain + delivery-chain + variants-chain), e indexes. Pendiente: implementar código backend y frontend.

@@ -3,47 +3,67 @@
  * Asistente personal de plataforma, CONSCIENTE DEL ROL:
  *  - superadmin  → Agente Maestro (KPIs globales, top comercios, pedidos, stock, inactivos)
  *  - comerciante/staff → asistente de SU negocio (ventas, pedidos, stock, citas) scoped por tenant_id
- *  (el cliente usa su propio asistente en /rutina/assistant)
  *
- * Reutiliza el runner de Gemini con function-calling y la API key central.
- * Gate: platform_settings.platform_assistant_enabled.
+ * Soporta Gemini (AIza…) y Groq (gsk_…) — detecta automáticamente por prefijo de key.
  */
 import { db } from '../../config';
 import { getAIKey } from '../agent/agent.service';
 import { RowDataPacket } from 'mysql2';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
+
 const fmt = (n: number) => `$${Number(n || 0).toLocaleString('es-CO')}`;
 
 // ─────────────────────────────────────────────────────────────
-// Tools por rol
+// Tool definitions (Gemini format — convertidas a OpenAI en toOpenAITools)
 // ─────────────────────────────────────────────────────────────
 const SUPERADMIN_TOOLS = [
-  { name: 'kpis_globales', description: 'KPIs de toda la red: comercios, usuarios, productos, ventas hoy/mes, pedidos y citas pendientes.', parameters: { type: 'OBJECT', properties: {} } },
-  { name: 'top_comercios', description: 'Top comercios por ventas.', parameters: { type: 'OBJECT', properties: { limit: { type: 'INTEGER' }, period: { type: 'STRING', description: 'hoy | mes | total' } } } },
-  { name: 'pedidos_pendientes_globales', description: 'Pedidos pendientes/en preparación de todos los comercios.', parameters: { type: 'OBJECT', properties: {} } },
-  { name: 'stock_critico_global', description: 'Productos con stock crítico en toda la red.', parameters: { type: 'OBJECT', properties: {} } },
-  { name: 'comercios_inactivos', description: 'Comercios suspendidos o sin ventas recientes.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'kpis_globales',              description: 'KPIs de toda la red: comercios, usuarios, productos, ventas hoy/mes, pedidos y citas pendientes.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'top_comercios',              description: 'Top comercios por ventas.', parameters: { type: 'OBJECT', properties: { limit: { type: 'INTEGER' }, period: { type: 'STRING', description: 'hoy | mes | total' } } } },
+  { name: 'pedidos_pendientes_globales',description: 'Pedidos pendientes/en preparación de todos los comercios.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'stock_critico_global',       description: 'Productos con stock crítico en toda la red.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'comercios_inactivos',        description: 'Comercios suspendidos o sin ventas recientes.', parameters: { type: 'OBJECT', properties: {} } },
 ];
 const MERCHANT_TOOLS = [
-  { name: 'mis_ventas', description: 'Ventas de mi negocio (hoy y mes).', parameters: { type: 'OBJECT', properties: {} } },
-  { name: 'mis_pedidos_pendientes', description: 'Pedidos pendientes de mi tienda online.', parameters: { type: 'OBJECT', properties: {} } },
-  { name: 'mi_stock_critico', description: 'Mis productos con stock bajo o agotado.', parameters: { type: 'OBJECT', properties: {} } },
-  { name: 'mis_citas', description: 'Mis próximas citas/reservas de servicios.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'mis_ventas',           description: 'Ventas de mi negocio (hoy y mes).', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'mis_pedidos_pendientes',description: 'Pedidos pendientes de mi tienda online.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'mi_stock_critico',     description: 'Mis productos con stock bajo o agotado.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'mis_citas',            description: 'Mis próximas citas/reservas de servicios.', parameters: { type: 'OBJECT', properties: {} } },
 ];
 
 const SUPERADMIN_PROMPT = `Eres el Agente Maestro de Lopbuk, el asistente del superadministrador de la plataforma. Tienes acceso de solo lectura a métricas de TODA la red de comercios. Responde en español, claro y ejecutivo. Usa las herramientas para traer datos reales; NO inventes cifras. Resume con números concretos y, si aplica, recomienda acciones.`;
-const MERCHANT_PROMPT = `Eres el asistente del negocio en Lopbuk. Ayudas al comerciante a entender y operar SU tienda: ventas, pedidos pendientes, stock crítico y citas. Responde en español, conciso y accionable. Usa las herramientas para datos reales; NO inventes.`;
+const MERCHANT_PROMPT   = `Eres el asistente del negocio en Lopbuk. Ayudas al comerciante a entender y operar SU tienda: ventas, pedidos pendientes, stock crítico y citas. Responde en español, conciso y accionable. Usa las herramientas para datos reales; NO inventes.`;
 
 // ─────────────────────────────────────────────────────────────
-// Ejecución de tools
+// Helpers
 // ─────────────────────────────────────────────────────────────
 async function q<T = any>(sql: string, params: any[] = []): Promise<T[]> {
   const [rows] = await db.execute<RowDataPacket[]>(sql, params);
   return rows as any[];
 }
 
+function toOpenAITools(tools: typeof SUPERADMIN_TOOLS) {
+  return tools.map(t => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: {
+        type: 'object',
+        properties: (t.parameters.properties as any) || {},
+        required: [] as string[],
+      },
+    },
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tool execution
+// ─────────────────────────────────────────────────────────────
 async function execSuper(name: string): Promise<string> {
   switch (name) {
     case 'kpis_globales': {
@@ -68,7 +88,7 @@ async function execSuper(name: string): Promise<string> {
         WHERE o.status IN ('pendiente','confirmado','preparando')
         ORDER BY o.created_at DESC LIMIT 15`);
       if (!rows.length) return 'No hay pedidos pendientes en la red.';
-      return `${rows.length} pedidos pendientes (recientes): ` + rows.map(r => `#${r.order_number} ${r.gym} ${r.customer_name} ${fmt(r.total)} [${r.status}]`).join('; ');
+      return `${rows.length} pedidos pendientes: ` + rows.map(r => `#${r.order_number} ${r.gym} ${r.customer_name} ${fmt(r.total)} [${r.status}]`).join('; ');
     }
     case 'stock_critico_global': {
       const [c] = await q("SELECT COUNT(*) n FROM products WHERE stock<=reorder_point");
@@ -83,7 +103,7 @@ async function execSuper(name: string): Promise<string> {
         HAVING t.status='suspendido' OR ultima IS NULL OR ultima < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
         ORDER BY ultima ASC LIMIT 15`);
       if (!rows.length) return 'Todos los comercios están activos y con ventas recientes.';
-      return 'Comercios inactivos/sin ventas: ' + rows.map(r => `${r.name} [${r.status}${r.ultima ? ', última venta ' + String(r.ultima).slice(0, 10) : ', sin ventas'}]`).join('; ');
+      return 'Comercios inactivos: ' + rows.map(r => `${r.name} [${r.status}${r.ultima ? ', última venta ' + String(r.ultima).slice(0, 10) : ', sin ventas'}]`).join('; ');
     }
     default: return 'Acción no reconocida.';
   }
@@ -119,22 +139,16 @@ async function execMerchant(name: string, tenantId: string): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Runner Gemini
+// Runner: Gemini
 // ─────────────────────────────────────────────────────────────
-export async function runPlatformAssistant(
-  user: { userId: string; role: string; tenantId?: string },
+async function runWithGemini(
+  apiKey: string,
+  systemPrompt: string,
+  tools: typeof SUPERADMIN_TOOLS,
+  history: { role: string; content: string }[],
   message: string,
-  history: { role: string; content: string }[] = [],
+  exec: (name: string) => Promise<string>,
 ): Promise<{ reply: string }> {
-  const apiKey = await getAIKey();
-  if (!apiKey) return { reply: 'El asistente no está configurado todavía.' };
-  if (!apiKey.startsWith('AIza')) return { reply: 'El asistente requiere una clave de IA compatible (Gemini).' };
-
-  const isSuper = user.role === 'superadmin';
-  const tools = isSuper ? SUPERADMIN_TOOLS : MERCHANT_TOOLS;
-  const systemPrompt = isSuper ? SUPERADMIN_PROMPT : MERCHANT_PROMPT;
-  const exec = (name: string) => isSuper ? execSuper(name) : execMerchant(name, user.tenantId || '');
-
   const contents = [...history, { role: 'user', content: message }]
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
@@ -176,6 +190,103 @@ export async function runPlatformAssistant(
   if (!r2.ok) return { reply: summary };
   const d2 = await r2.json() as any;
   return { reply: d2.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || summary };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Runner: Groq (OpenAI-compatible)
+// ─────────────────────────────────────────────────────────────
+async function runWithGroq(
+  apiKey: string,
+  systemPrompt: string,
+  tools: typeof SUPERADMIN_TOOLS,
+  history: { role: string; content: string }[],
+  message: string,
+  exec: (name: string) => Promise<string>,
+): Promise<{ reply: string }> {
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+    { role: 'user', content: message },
+  ];
+
+  const r1 = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages,
+      tools: toOpenAITools(tools),
+      tool_choice: 'auto',
+      max_tokens: 800,
+      temperature: 0.5,
+    }),
+  });
+  if (!r1.ok) {
+    if (r1.status === 429) return { reply: 'Muchas consultas a la vez, intenta en unos segundos. 🙏' };
+    throw new Error(`Groq error: ${await r1.text()}`);
+  }
+  const d1 = await r1.json() as any;
+  const choice = d1.choices?.[0];
+  const toolCall = choice?.message?.tool_calls?.[0];
+
+  if (!toolCall) {
+    return { reply: choice?.message?.content || 'No pude procesar tu mensaje.' };
+  }
+
+  const toolName = toolCall.function.name;
+  const summary = await exec(toolName);
+
+  const r2 = await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [
+        ...messages,
+        { role: 'assistant', content: null, tool_calls: [toolCall] },
+        { role: 'tool', tool_call_id: toolCall.id, content: summary },
+      ],
+      max_tokens: 600,
+      temperature: 0.5,
+    }),
+  });
+  if (!r2.ok) return { reply: summary };
+  const d2 = await r2.json() as any;
+  return { reply: d2.choices?.[0]?.message?.content || summary };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Key resolution (env fallback includes GROQ_API_KEY)
+// ─────────────────────────────────────────────────────────────
+async function getAssistantKey(): Promise<string> {
+  const dbKey = await getAIKey();
+  if (dbKey) return dbKey;
+  return process.env.GROQ_API_KEY || '';
+}
+
+// ─────────────────────────────────────────────────────────────
+// Public entry point
+// ─────────────────────────────────────────────────────────────
+export async function runPlatformAssistant(
+  user: { userId: string; role: string; tenantId?: string },
+  message: string,
+  history: { role: string; content: string }[] = [],
+): Promise<{ reply: string }> {
+  const apiKey = await getAssistantKey();
+  if (!apiKey) return { reply: 'El asistente no está configurado todavía. Agrega una clave de Gemini (AIza…) o Groq (gsk_…) en Integraciones.' };
+
+  const isSuper = user.role === 'superadmin';
+  const tools       = isSuper ? SUPERADMIN_TOOLS : MERCHANT_TOOLS;
+  const systemPrompt = isSuper ? SUPERADMIN_PROMPT : MERCHANT_PROMPT;
+  const exec = (name: string) => isSuper ? execSuper(name) : execMerchant(name, user.tenantId || '');
+
+  if (apiKey.startsWith('gsk_')) {
+    return runWithGroq(apiKey, systemPrompt, tools, history, message, exec);
+  }
+  if (apiKey.startsWith('AIza')) {
+    return runWithGemini(apiKey, systemPrompt, tools, history, message, exec);
+  }
+  return { reply: 'La clave de IA configurada no es compatible. Usa una clave de Google AI Studio (AIza…) o Groq (gsk_…).' };
 }
 
 export async function isPlatformAssistantEnabled(): Promise<boolean> {

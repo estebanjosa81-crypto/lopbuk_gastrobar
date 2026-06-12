@@ -67,7 +67,17 @@ import {
   Zap,
   Settings,
   LayoutGrid,
+  Trash2,
+  MoreVertical,
+  CalendarDays,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { ALL_MODULES, BUSINESS_PRESETS, getPresetForBusinessType } from '@/lib/modules'
 import { toast } from 'sonner'
 
@@ -114,11 +124,14 @@ export function TenantManagement() {
   const [editingTenant, setEditingTenant] = useState<TenantDetail | null>(null)
   const [editForm, setEditForm] = useState({
     name: '',
+    slug: '',
     businessType: '',
     plan: 'basico' as TenantPlan,
     maxUsers: 5,
     maxProducts: 500,
     bgColor: '#000000',
+    ownerName: '',
+    ownerEmail: '',
   })
 
   const [isDetailOpen, setIsDetailOpen] = useState(false)
@@ -141,6 +154,13 @@ export function TenantManagement() {
   const [isSavingBusinessType, setIsSavingBusinessType] = useState(false)
 
   const [activatingTrialId, setActivatingTrialId] = useState<string | null>(null)
+
+  const [trialConfirmTenant, setTrialConfirmTenant] = useState<TenantDetail | null>(null)
+  const [trialDays, setTrialDays] = useState(7)
+  const [isActivatingTrial, setIsActivatingTrial] = useState(false)
+
+  const [tenantToDelete, setTenantToDelete] = useState<TenantDetail | null>(null)
+  const [isDeletingTenant, setIsDeletingTenant] = useState(false)
 
   const [isModulesOpen, setIsModulesOpen] = useState(false)
   const [modulesForTenant, setModulesForTenant] = useState<TenantDetail | null>(null)
@@ -307,16 +327,37 @@ export function TenantManagement() {
     }
   }
 
-  const handleActivateTrial = async (tenantId: string) => {
-    setActivatingTrialId(tenantId)
-    const result = await api.activateTenantTrial(tenantId)
+  const openTrialConfirm = (tenant: TenantDetail) => {
+    setTrialDays(7)
+    setTrialConfirmTenant(tenant)
+  }
+
+  const handleConfirmActivateTrial = async () => {
+    if (!trialConfirmTenant) return
+    setIsActivatingTrial(true)
+    const result = await api.activateTenantTrial(trialConfirmTenant.id, trialDays)
     if (result.success) {
-      toast.success('Trial de 7 días activado con plan Empresarial')
+      toast.success(`Trial de ${trialDays} días activado con plan Empresarial`)
+      setTrialConfirmTenant(null)
       fetchTenants()
     } else {
       toast.error(result.error || 'Error al activar trial')
     }
-    setActivatingTrialId(null)
+    setIsActivatingTrial(false)
+  }
+
+  const handleDeleteTenant = async () => {
+    if (!tenantToDelete) return
+    setIsDeletingTenant(true)
+    const result = await api.softDeleteTenant(tenantToDelete.id)
+    if (result.success) {
+      toast.success(`Comercio "${tenantToDelete.name}" eliminado`)
+      setTenantToDelete(null)
+      fetchTenants(); fetchStats()
+    } else {
+      toast.error(result.error || 'Error al eliminar comercio')
+    }
+    setIsDeletingTenant(false)
   }
 
   const fetchPlatformSettings = useCallback(async () => {
@@ -374,8 +415,13 @@ export function TenantManagement() {
     if (!editingTenant) return
     setIsUpdating(true)
     const result = await api.updateTenant(editingTenant.id, {
-      name: editForm.name, businessType: editForm.businessType || undefined,
-      plan: editForm.plan, maxUsers: editForm.maxUsers, maxProducts: editForm.maxProducts, bgColor: editForm.bgColor,
+      name: editForm.name,
+      slug: editForm.slug || undefined,
+      businessType: editForm.businessType || undefined,
+      plan: editForm.plan,
+      maxUsers: editForm.maxUsers,
+      maxProducts: editForm.maxProducts,
+      bgColor: editForm.bgColor,
     })
     if (result.success) { toast.success('Comercio actualizado'); setIsEditOpen(false); fetchTenants() }
     else toast.error(result.error || 'Error al actualizar')
@@ -468,7 +514,17 @@ export function TenantManagement() {
 
   const openEdit = (tenant: TenantDetail) => {
     setEditingTenant(tenant)
-    setEditForm({ name: tenant.name, businessType: tenant.businessType || '', plan: tenant.plan, maxUsers: tenant.maxUsers, maxProducts: tenant.maxProducts, bgColor: (tenant as any).bgColor || '#000000' })
+    setEditForm({
+      name: tenant.name,
+      slug: tenant.slug || '',
+      businessType: tenant.businessType || '',
+      plan: tenant.plan,
+      maxUsers: tenant.maxUsers,
+      maxProducts: tenant.maxProducts,
+      bgColor: (tenant as any).bgColor || '#000000',
+      ownerName: (tenant as any).ownerName || '',
+      ownerEmail: (tenant as any).ownerEmail || '',
+    })
     setIsEditOpen(true)
   }
 
@@ -715,37 +771,42 @@ export function TenantManagement() {
                           <TableCell className="text-right text-sm">{tenant.totalProducts ?? 0}/{tenant.maxProducts}</TableCell>
                           <TableCell className="text-right text-sm">{tenant.totalSales ?? 0}</TableCell>
                           <TableCell>
-                            <div className="flex items-center justify-center gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDetail(tenant)} title="Ver detalle">
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(tenant)} title="Editar">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost" size="icon"
-                                className={`h-8 w-8 ${tenant.status === 'activo' ? 'text-yellow-500 hover:text-yellow-600' : 'text-green-500 hover:text-green-600'}`}
-                                onClick={() => handleToggleStatus(tenant)}
-                                title={tenant.status === 'activo' ? 'Suspender' : 'Activar'}
-                              >
-                                <Power className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost" size="icon" className="h-8 w-8 text-purple-500 hover:text-purple-600"
-                                onClick={() => handleActivateTrial(tenant.id)}
-                                disabled={activatingTrialId === tenant.id}
-                                title="Activar trial 7 días Empresarial"
-                              >
-                                <Zap className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:text-blue-600"
-                                onClick={() => openModules(tenant)}
-                                title="Gestionar módulos"
-                              >
-                                <LayoutGrid className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuItem onClick={() => openDetail(tenant)} className="gap-2">
+                                  <Eye className="h-4 w-4" /> Ver detalle
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openEdit(tenant)} className="gap-2">
+                                  <Edit className="h-4 w-4" /> Editar
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => handleToggleStatus(tenant)}
+                                  className={`gap-2 ${tenant.status === 'activo' ? 'text-yellow-600 focus:text-yellow-600' : 'text-green-600 focus:text-green-600'}`}
+                                >
+                                  <Power className="h-4 w-4" />
+                                  {tenant.status === 'activo' ? 'Suspender' : 'Activar'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openTrialConfirm(tenant)} className="gap-2 text-purple-600 focus:text-purple-600">
+                                  <Zap className="h-4 w-4" /> Trial Empresarial
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openModules(tenant)} className="gap-2 text-blue-600 focus:text-blue-600">
+                                  <LayoutGrid className="h-4 w-4" /> Módulos
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => setTenantToDelete(tenant)}
+                                  className="gap-2 text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" /> Eliminar
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       )
@@ -1284,15 +1345,29 @@ export function TenantManagement() {
 
       {/* Edit Tenant */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Edit className="h-5 w-5 text-primary" />Editar Comercio</DialogTitle>
             <DialogDescription>{editingTenant?.name}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Nombre</Label>
-              <Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2 col-span-2">
+                <Label>Nombre del Comercio</Label>
+                <Input value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label>Slug <span className="text-xs text-muted-foreground">(URL única del comercio)</span></Label>
+                <div className="relative">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={editForm.slug}
+                    onChange={(e) => setEditForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                    className="pl-9 font-mono text-sm"
+                    placeholder="mi-comercio"
+                  />
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Categoría del Negocio</Label>
@@ -1322,6 +1397,21 @@ export function TenantManagement() {
                 <Input type="number" min={1} value={editForm.maxProducts} onChange={(e) => setEditForm(f => ({ ...f, maxProducts: parseInt(e.target.value) || 500 }))} />
               </div>
             </div>
+            {(editForm.ownerName || editForm.ownerEmail) && (
+              <div className="rounded-lg border border-border p-3 space-y-2 bg-muted/30">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Propietario (solo lectura)</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Nombre</p>
+                    <p className="text-sm font-medium">{editForm.ownerName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Email</p>
+                    <p className="text-sm font-medium break-all">{editForm.ownerEmail || '-'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="space-y-2 border-t border-border pt-4">
               <Label className="flex items-center gap-2"><Palette className="h-4 w-4" />Color de fondo de la tienda</Label>
               <div className="flex items-center gap-3">
@@ -1577,6 +1667,88 @@ export function TenantManagement() {
             <Button onClick={handleSaveModules} disabled={isSavingModules} className="gap-2">
               <LayoutGrid className="h-4 w-4" />
               {isSavingModules ? 'Guardando...' : 'Guardar Módulos'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Trial Confirmation */}
+      <Dialog open={!!trialConfirmTenant} onOpenChange={(open) => { if (!open) setTrialConfirmTenant(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-purple-500" />
+              Activar Trial Empresarial
+            </DialogTitle>
+            <DialogDescription>
+              Activa el plan Empresarial por prueba para <strong>{trialConfirmTenant?.name}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                Días de trial
+              </Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                  onClick={() => setTrialDays(d => Math.max(1, d - 1))}
+                  disabled={trialDays <= 1}
+                >−</Button>
+                <Input
+                  type="number" min={1} max={365}
+                  value={trialDays}
+                  onChange={(e) => setTrialDays(Math.max(1, Math.min(365, parseInt(e.target.value) || 7)))}
+                  className="text-center font-semibold text-lg"
+                />
+                <Button
+                  variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                  onClick={() => setTrialDays(d => Math.min(365, d + 1))}
+                  disabled={trialDays >= 365}
+                >+</Button>
+              </div>
+              <div className="flex gap-2">
+                {[7, 14, 30].map(d => (
+                  <Button key={d} variant={trialDays === d ? 'default' : 'outline'} size="sm" className="flex-1 text-xs" onClick={() => setTrialDays(d)}>
+                    {d} días
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTrialConfirmTenant(null)}>Cancelar</Button>
+            <Button
+              onClick={handleConfirmActivateTrial}
+              disabled={isActivatingTrial}
+              className="gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              <Zap className="h-4 w-4" />
+              {isActivatingTrial ? 'Activando...' : `Activar ${trialDays} días`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Tenant Confirm */}
+      <Dialog open={!!tenantToDelete} onOpenChange={(open) => { if (!open) setTenantToDelete(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Eliminar Comercio
+            </DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que deseas eliminar <strong>{tenantToDelete?.name}</strong>?
+              El comercio quedará cancelado y sus usuarios no podrán acceder.
+              Esta acción se puede revertir desde el soporte.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTenantToDelete(null)}>Cancelar</Button>
+            <Button variant="destructive" disabled={isDeletingTenant} onClick={handleDeleteTenant}>
+              {isDeletingTenant ? 'Eliminando...' : 'Eliminar Comercio'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -85,7 +85,8 @@ backend/src/
     │   ├── merma.controller.ts
     │   └── merma.service.ts             ← registrar merma + PAR levels
     ├── orders/
-    │   └── orders.routes.ts             ← pedidos mesa/delivery + socket.emit a cocina
+    │   ├── orders.routes.ts             ← pedidos mesa/delivery + socket.emit a cocina
+    │   └── superadmin-orders.routes.ts  ← 8 endpoints cross-tenant (pedidos + SSE + analytics + heatmap)
     ├── variants/
     │   ├── variants.routes.ts           ← CRUD variantes + price tiers + import
     │   ├── variants.controller.ts
@@ -282,7 +283,27 @@ components/
 ├── tapiceria.tsx                       ← Módulo tapicería: órdenes de trabajo
 
 ── ADMIN SaaS ───────────────────────────────────────────────────────────
-├── tenant-management.tsx               ← Superadmin: gestión de tenants
+├── superadmin/                         ← Panel superadmin modular (Sprint 0-4)
+│   ├── SuperadminLayout.tsx            ← Shell: 9 tabs lazy-loaded, default 'pedidos'
+│   ├── tabs/
+│   │   ├── OrdersCenterTab.tsx         ← Centro pedidos cross-tenant (KPIs + bandeja + drawer)
+│   │   ├── CommercesTab.tsx            ← Gestión comercios: wizard creación + papelera/restaurar
+│   │   ├── AnalyticsTab.tsx            ← Dashboard analítica: KPIs + gráficas + heatmap
+│   │   ├── LandingConfigTab.tsx        ← Config landing page pública
+│   │   ├── FeaturedProductsTab.tsx     ← Productos destacados en landing
+│   │   ├── IntegrationsTab.tsx         ← Config chatbot, asistente, WhatsApp, Stripe
+│   │   ├── SubscriptionsTab.tsx        ← Gestión suscripciones SaaS
+│   │   ├── PortfolioTab.tsx            ← Config portafolio DAIMUZ
+│   │   └── DevRequestsTab.tsx          ← Solicitudes de features de tenants
+│   ├── hooks/
+│   │   ├── useOrders.ts                ← Estado bandeja + SSE + drawer + state machine
+│   │   ├── useAnalytics.ts             ← KPIs plataforma + timeline + heatmap
+│   │   ├── useTenantLifecycle.ts       ← Wizard 4-pasos + papelera + restore
+│   │   ├── useCommerces.ts             ← Marketplace cards + toggle estado tenant
+│   │   └── useIntegrations.ts          ← Config chatbot/asistente/WhatsApp/Stripe
+│   └── shared/
+│       └── CommerceWizard.tsx          ← Wizard 4 pasos: Comercio → Plan → Propietario → Confirmar
+├── tenant-management.tsx               ← (legacy) Superadmin: gestión de tenants
 ├── printers.tsx                        ← Config impresoras POS por tenant
 
 ── CHAT / IA ─────────────────────────────────────────────────────────────

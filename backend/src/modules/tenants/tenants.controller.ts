@@ -77,11 +77,12 @@ export class TenantsController {
 
   async activateTrial(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
-      const tenant = await tenantsService.activateTrial(req.params.id);
+      const days = Number(req.body?.days) || 7;
+      const tenant = await tenantsService.activateTrial(req.params.id, days);
       res.json({
         success: true,
         data: tenant,
-        message: 'Período de prueba de 7 días activado con plan empresarial',
+        message: `Período de prueba de ${days} días activado con plan empresarial`,
       });
     } catch (error) {
       next(error);

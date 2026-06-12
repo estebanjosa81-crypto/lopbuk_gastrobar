@@ -1,5 +1,13 @@
 # ✅ Features Completados
 
+## Panel Superadmin Modular — Sprints 0-4 (2026-06-12)
+- **Sprint 0**: `superadmin-home.tsx` (monolito 3444 líneas) → `superadmin/` (25 archivos: 1 layout + 9 tabs + 5 hooks + shared)
+- **Sprint 2**: Centro de Pedidos cross-tenant — bandeja filtrable, SLA semáforo, drawer con historial, state machine de estados, asignación de operador
+- **Sprint 3**: Wizard 4 pasos para crear comercios (Comercio → Plan → Propietario → Confirmar) + papelera/restaurar tenants (soft-delete)
+- **Sprint 4**: Dashboard analítica (6 KPIs con deltas %, gráficas por tenant, heatmap 7×24 CSS grid) + SSE reemplaza polling con fallback automático
+- **Patrón establecido**: hook = estado + fetch + handlers; tab = JSX puro que consume el hook; lazy-load con `next/dynamic`
+- **Backend**: `superadmin-orders.routes.ts` — 8 endpoints, auto-migración al montar rutas
+
 ## Variantes + Precios por Volumen (2026-06-09)
 - `product_variants` — color/size/material/SKU/stock con stock atómico (race-safe)
 - `variant_price_tiers` — precios escalonados por min_qty sin gaps, resolución `WHERE min_qty <= qty ORDER BY min_qty DESC LIMIT 1`

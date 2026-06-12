@@ -836,7 +836,7 @@ class ApiService {
     })
   }
 
-  async updateTenant(id: string, data: { name?: string; businessType?: string; plan?: string; status?: string; maxUsers?: number; maxProducts?: number; bgColor?: string }) {
+  async updateTenant(id: string, data: { name?: string; slug?: string; businessType?: string; plan?: string; status?: string; maxUsers?: number; maxProducts?: number; bgColor?: string }) {
     return this.request<any>(`/tenants/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -864,8 +864,11 @@ class ApiService {
     })
   }
 
-  async activateTenantTrial(id: string) {
-    return this.request<any>(`/tenants/${id}/activate-trial`, { method: 'POST' })
+  async activateTenantTrial(id: string, days: number = 7) {
+    return this.request<any>(`/tenants/${id}/activate-trial`, {
+      method: 'POST',
+      body: JSON.stringify({ days }),
+    })
   }
 
   async getBusinessTypes() {

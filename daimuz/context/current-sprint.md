@@ -4,8 +4,23 @@
 
 ## Sprint activo: Junio 2026
 
-### Objetivo del sprint
-Implementar el modulo Variants: variantes de producto + precios escalonados + stock atomico + flujo proveedor (Sprints 1-4).
+### ✅ Completado [2026-06-12]: Panel Superadmin Modular
+
+| Sprint | Estado | Descripción |
+|---|---|---|
+| Sprint 0 — Refactor monolito | ✅ Completo | 3444 líneas → 25 archivos, arquitectura hook+tab |
+| Sprint 2 — Centro de Pedidos | ✅ Completo | Bandeja cross-tenant, SSE, state machine, drawer |
+| Sprint 3 — Wizard + Papelera | ✅ Completo | Wizard 4 pasos, soft-delete, restore tenants |
+| Sprint 4 — Analytics + SSE | ✅ Completo | KPIs plataforma, heatmap 7×24, SSE reemplaza polling |
+
+**Archivos clave del resultado:**
+- Backend nuevo: `backend/src/modules/orders/superadmin-orders.routes.ts` (8 endpoints)
+- Frontend nuevo: `frontend/components/superadmin/` (25 archivos)
+- DB: `storefront_orders.assigned_to` (col) + `order_status_history` (tabla)
+
+---
+
+### ✅ Completado [2026-06-09]: Variantes + Precios por Volumen
 
 ### Estado Variantes
 

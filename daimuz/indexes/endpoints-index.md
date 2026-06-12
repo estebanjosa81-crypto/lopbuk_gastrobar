@@ -22,8 +22,19 @@ TENANTS (superadmin)
   GET   /tenants                 lista todos
   POST  /tenants                 crea tenant
   PUT   /tenants/:id             actualiza config
+  PATCH /tenants/:id/status      activa / suspende / cancela (soft-delete) tenant
   GET   /tenants/:id/modules     módulos activos
   PUT   /tenants/:id/modules     activa/desactiva módulos
+
+SUPERADMIN — Centro de Pedidos + Analítica  (solo superadmin)
+  GET   /superadmin/orders                       cross-tenant: ?tenant_id, status, assigned, search, date_from, date_to, page, limit
+  GET   /superadmin/orders/summary               conteos { pendiente, confirmado, preparando, enviado, entregado, cancelado }
+  GET   /superadmin/orders/:id/items             ítems del pedido + historial de estados (order_status_history)
+  PATCH /superadmin/orders/:id/status            { status, note } → transición de estado + auditoría
+  PATCH /superadmin/orders/:id/assign            { unassign? } → asigna/desasigna req.user al pedido
+  GET   /superadmin/events                       SSE stream: { counts, latestId } cada 20s + ping 30s (fallback polling /summary)
+  GET   /superadmin/analytics?days=N             KPIs plataforma: revenue, orders, avgTicket, activeTenants, newTenants (actual vs período anterior)
+  GET   /superadmin/analytics/heatmap?days=N     pedidos por día(0=Dom..6=Sáb) × hora(0-23) — UNION storefront_orders + sales
 
 PRODUCTS
   GET   /products                lista del tenant

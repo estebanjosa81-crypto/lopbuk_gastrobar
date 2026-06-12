@@ -41,8 +41,9 @@
 | `deliveries` | delivery | Asignaciones de delivery |
 | `fleet_vehicles` | delivery | Vehículos de la flota |
 | `drivers` | delivery | Conductores |
-| `storefront_orders` | storefront | Pedidos desde tienda online |
+| `storefront_orders` | storefront | Pedidos desde tienda online (+ `assigned_to` VARCHAR 36 para operador asignado) |
 | `storefront_order_items` | storefront | Ítems de pedidos online |
+| `order_status_history` | storefront | Auditoría de transiciones de estado de pedidos (from→to, nota, operador) |
 | `suppliers` | suppliers | Proveedores del tenant |
 | `supplier_products` | suppliers | Relación N:N productos-proveedores (cost_price, lead_time) |
 | `inventory_movements` | variants | Kardex universal (fuente de verdad del stock) |
@@ -191,6 +192,32 @@ ALTER TABLE storefront_order_items ADD COLUMN (
 
 -- stock_movements legacy: referencia opcional a variante
 ALTER TABLE stock_movements ADD COLUMN variant_id VARCHAR(36) NULL;
+```
+
+## Columnas Superadmin en `storefront_orders`
+
+```sql
+-- Columna agregada por auto-migración en superadmin-orders.routes.ts (Sprint 2)
+ALTER TABLE storefront_orders
+  ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(36) NULL;
+-- FK lógica → users.id (superadmin/operador asignado a ese pedido)
+```
+
+## Tabla `order_status_history` (Sprint 2, auto-migración)
+
+```sql
+CREATE TABLE IF NOT EXISTS order_status_history (
+  id           VARCHAR(36)  PRIMARY KEY DEFAULT (UUID()),
+  order_id     VARCHAR(36)  NOT NULL,     -- FK → storefront_orders.id
+  from_status  VARCHAR(50)  NULL,         -- NULL si es el primer estado
+  to_status    VARCHAR(50)  NOT NULL,
+  changed_by   VARCHAR(36)  NOT NULL,     -- FK → users.id (quién hizo el cambio)
+  note         TEXT         NULL,
+  created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_order (order_id),
+  KEY idx_changed_by (changed_by)
+)
+-- ⚠️ Sin tenant_id: la tabla es de auditoría y hereda el scope del pedido padre
 ```
 
 ## Columnas Universales

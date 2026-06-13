@@ -486,12 +486,17 @@ export class TenantsService {
     const connection = await db.getConnection();
     let deletedRows = 0;
     try {
-      // Descubre todas las tablas del esquema actual que tengan columna tenant_id
+      // Descubre solo las TABLAS BASE (no vistas) del esquema con columna tenant_id.
+      // Importante: excluir vistas (TABLE_TYPE='VIEW', p.ej. v_customer_balances)
+      // porque no son actualizables/borrables.
       const [colRows] = await connection.query<RowDataPacket[]>(
-        `SELECT TABLE_NAME AS t
-           FROM information_schema.COLUMNS
-          WHERE TABLE_SCHEMA = DATABASE()
-            AND COLUMN_NAME = 'tenant_id'`
+        `SELECT c.TABLE_NAME AS t
+           FROM information_schema.COLUMNS c
+           JOIN information_schema.TABLES tb
+             ON tb.TABLE_SCHEMA = c.TABLE_SCHEMA AND tb.TABLE_NAME = c.TABLE_NAME
+          WHERE c.TABLE_SCHEMA = DATABASE()
+            AND c.COLUMN_NAME = 'tenant_id'
+            AND tb.TABLE_TYPE = 'BASE TABLE'`
       );
       const tenantTables = colRows
         .map(r => String(r.t))

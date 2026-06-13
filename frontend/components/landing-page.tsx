@@ -269,6 +269,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
   // ====== HOME THEME (Tema 1 clásico / Tema 2 marketplace) ======
   const [homeTheme, setHomeTheme] = useState<'theme1' | 'theme2'>('theme1')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const [homeHeroSlides, setHomeHeroSlides] = useState<HeroSlide[]>([])
   const [homeHeroSplit, setHomeHeroSplit] = useState('60-40')
   const [homeHeroRight, setHomeHeroRight] = useState('producto')
@@ -1127,6 +1128,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           }
         }
       } catch {}
+      finally { if (!cancelled) setSettingsLoaded(true) }
     }
     fetchPlatformSettings()
 
@@ -2456,6 +2458,16 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           freeDeliveryMin={DELIVERY_FREE_MIN}
           deliveryFee={activeDeliveryFee}
         />
+      </div>
+    )
+  }
+
+  // ── Evita el flash de la estructura base: mientras no se sepa el tema de la
+  //    home (theme1/theme2), mostramos un loader neutro en la vista de marketplace ──
+  if (showStoresView && selectedStore === 'all' && !settingsLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-[#00833E]" />
       </div>
     )
   }

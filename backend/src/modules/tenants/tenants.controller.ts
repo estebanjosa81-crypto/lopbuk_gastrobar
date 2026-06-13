@@ -89,6 +89,33 @@ export class TenantsController {
     }
   }
 
+  async deactivateTrial(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const revertPlan = (req.body?.revertPlan as string) || 'basico';
+      const tenant = await tenantsService.deactivateTrial(req.params.id, revertPlan);
+      res.json({
+        success: true,
+        data: tenant,
+        message: 'Período de prueba desactivado',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async destroy(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await tenantsService.destroy(req.params.id);
+      res.json({
+        success: true,
+        data: result,
+        message: `Comercio "${result.name}" eliminado definitivamente`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const stats = await tenantsService.getStats();

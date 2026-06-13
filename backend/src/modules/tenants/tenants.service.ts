@@ -32,6 +32,7 @@ interface TenantSummaryRow extends RowDataPacket {
   max_users: number;
   max_products: number;
   bg_color: string | null;
+  trial_ends_at: Date | null;
   total_users: number;
   total_products: number;
   total_sales: number;
@@ -61,6 +62,7 @@ export interface TenantWithSummary extends Tenant {
   ownerName?: string;
   ownerEmail?: string;
   bgColor?: string;
+  trialEndsAt?: string | null;
   totalUsers: number;
   totalProducts: number;
   totalSales: number;
@@ -96,6 +98,7 @@ export class TenantsService {
       status: row.status,
       maxUsers: row.max_users,
       maxProducts: row.max_products,
+      trialEndsAt: row.trial_ends_at ? new Date(row.trial_ends_at).toISOString() : null,
       totalUsers: Number(row.total_users) || 0,
       totalProducts: Number(row.total_products) || 0,
       totalSales: Number(row.total_sales) || 0,
@@ -130,7 +133,7 @@ export class TenantsService {
     const [rows] = await db.execute<TenantSummaryRow[]>(
       `SELECT
         t.id, t.name, t.slug, t.business_type, t.owner_id, t.plan, t.status,
-        t.max_users, t.max_products, t.bg_color, t.created_at, t.updated_at,
+        t.max_users, t.max_products, t.bg_color, t.trial_ends_at, t.created_at, t.updated_at,
         u.name as owner_name, u.email as owner_email,
         (SELECT COUNT(*) FROM users WHERE tenant_id = t.id) as total_users,
         (SELECT COUNT(*) FROM products WHERE tenant_id = t.id) as total_products,
@@ -158,7 +161,7 @@ export class TenantsService {
     const [rows] = await db.execute<TenantSummaryRow[]>(
       `SELECT
         t.id, t.name, t.slug, t.business_type, t.owner_id, t.plan, t.status,
-        t.max_users, t.max_products, t.bg_color, t.created_at, t.updated_at,
+        t.max_users, t.max_products, t.bg_color, t.trial_ends_at, t.created_at, t.updated_at,
         u.name as owner_name, u.email as owner_email,
         (SELECT COUNT(*) FROM users WHERE tenant_id = t.id) as total_users,
         (SELECT COUNT(*) FROM products WHERE tenant_id = t.id) as total_products,
@@ -460,6 +463,73 @@ export class TenantsService {
       ['empresarial', trialEnd, id]
     );
     return this.findById(id);
+  }
+
+  /** Desactiva el trial: limpia la fecha y revierte el plan a básico. */
+  async deactivateTrial(id: string, revertPlan: string = 'basico'): Promise<TenantWithSummary> {
+    await this.findById(id);
+    const plan = ['basico', 'profesional', 'empresarial'].includes(revertPlan) ? revertPlan : 'basico';
+    await db.execute(
+      'UPDATE tenants SET plan = ?, trial_ends_at = NULL WHERE id = ?',
+      [plan, id]
+    );
+    return this.findById(id);
+  }
+
+  /**
+   * Borrado DEFINITIVO de un comercio y TODOS sus datos (productos, ventas,
+   * pedidos, usuarios, etc.). Irreversible. Elimina en cascada todas las filas
+   * con `tenant_id` del tenant, más sus usuarios y el propio tenant.
+   */
+  async destroy(id: string): Promise<{ id: string; name: string; deletedRows: number }> {
+    const tenant = await this.findById(id);
+    const connection = await db.getConnection();
+    let deletedRows = 0;
+    try {
+      // Descubre todas las tablas del esquema actual que tengan columna tenant_id
+      const [colRows] = await connection.query<RowDataPacket[]>(
+        `SELECT TABLE_NAME AS t
+           FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND COLUMN_NAME = 'tenant_id'`
+      );
+      const tenantTables = colRows
+        .map(r => String(r.t))
+        .filter(t => t.toLowerCase() !== 'tenants'); // la tabla tenants se borra al final
+
+      await connection.beginTransaction();
+      // Desactiva FKs para no depender del orden de borrado
+      await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+
+      for (const table of tenantTables) {
+        // Nombre de tabla viene de information_schema (no de input del usuario)
+        const [res] = await connection.query<ResultSetHeader>(
+          `DELETE FROM \`${table}\` WHERE tenant_id = ?`,
+          [id]
+        );
+        deletedRows += res.affectedRows || 0;
+      }
+
+      // Usuarios del tenant (por si la columna se llama distinto o quedaron sueltos)
+      const [uRes] = await connection.query<ResultSetHeader>(
+        'DELETE FROM users WHERE tenant_id = ?',
+        [id]
+      );
+      deletedRows += uRes.affectedRows || 0;
+
+      // Finalmente, el tenant
+      await connection.query('DELETE FROM tenants WHERE id = ?', [id]);
+
+      await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      try { await connection.query('SET FOREIGN_KEY_CHECKS = 1'); } catch { /* noop */ }
+      throw error;
+    } finally {
+      connection.release();
+    }
+    return { id, name: tenant.name, deletedRows };
   }
 
   async getBusinessTypes(): Promise<string[]> {

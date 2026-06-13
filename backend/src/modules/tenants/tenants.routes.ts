@@ -151,6 +151,24 @@ router.post(
   tenantsController.activateTrial.bind(tenantsController)
 );
 
+// POST /api/tenants/:id/deactivate-trial - Desactiva el trial y revierte el plan
+router.post(
+  '/:id/deactivate-trial',
+  [
+    param('id').notEmpty().withMessage('ID requerido'),
+    body('revertPlan').optional().isIn(['basico', 'profesional', 'empresarial']),
+    validateRequest,
+  ],
+  tenantsController.deactivateTrial.bind(tenantsController)
+);
+
+// DELETE /api/tenants/:id - Borrado DEFINITIVO (irreversible) del comercio y sus datos
+router.delete(
+  '/:id',
+  [param('id').notEmpty().withMessage('ID requerido'), validateRequest],
+  tenantsController.destroy.bind(tenantsController)
+);
+
 // GET /api/tenants/:id/modules - Get enabled modules for a tenant
 router.get(
   '/:id/modules',

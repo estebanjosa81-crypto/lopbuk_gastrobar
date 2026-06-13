@@ -17,6 +17,9 @@ import { getAIKey } from '../agent/agent.service';
 const GEMINI_MODEL =
   process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || 'gemini-flash-latest';
 
+const GROQ_VISION_MODEL =
+  process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+
 const OCR_PROMPT = `Eres un asistente experto en digitalizar facturas de compra de proveedores (Colombia).
 Analiza la imagen de la factura y responde EXCLUSIVAMENTE con un JSON válido, sin texto adicional ni markdown, con esta forma exacta:
 {
@@ -80,7 +83,7 @@ export interface OcrInvoiceResult {
     taxId: string | null;
   };
   items: MatchedInvoiceItem[];
-  provider: 'gemini' | 'openai';
+  provider: 'gemini' | 'openai' | 'groq';
 }
 
 // ─── Llamada a IA con visión ────────────────────────────────────────────────────
@@ -139,6 +142,37 @@ async function callOpenAIVision(apiKey: string, base64: string, mimeType: string
     const txt = await response.text();
     if (response.status === 429) throw new AppError('La IA está recibiendo muchas solicitudes. Intenta de nuevo en unos segundos.', 429);
     throw new AppError(`Error de OpenAI Vision: ${txt.slice(0, 300)}`, 502);
+  }
+  const data = (await response.json()) as any;
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function callGroqVision(apiKey: string, base64: string, mimeType: string): Promise<string> {
+  // API compatible con OpenAI. Llama 4 Scout admite imágenes vía image_url.
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: GROQ_VISION_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: OCR_PROMPT },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+          ],
+        },
+      ],
+      max_completion_tokens: 2048,
+      temperature: 0.1,
+      top_p: 1,
+      stream: false,
+    }),
+  });
+  if (!response.ok) {
+    const txt = await response.text();
+    if (response.status === 429) throw new AppError('La IA está recibiendo muchas solicitudes. Intenta de nuevo en unos segundos.', 429);
+    throw new AppError(`Error de Groq Vision: ${txt.slice(0, 300)}`, 502);
   }
   const data = (await response.json()) as any;
   return data.choices?.[0]?.message?.content || '';
@@ -219,17 +253,20 @@ export class InvoiceOcrService {
       throw new AppError('La IA no está configurada. Agrega una clave de Gemini u OpenAI en Integraciones.', 400);
     }
 
-    let provider: 'gemini' | 'openai';
+    let provider: 'gemini' | 'openai' | 'groq';
     let rawText: string;
     if (apiKey.startsWith('AIza')) {
       provider = 'gemini';
       rawText = await callGeminiVision(apiKey, base64, mimeType);
+    } else if (apiKey.startsWith('gsk_')) {
+      provider = 'groq';
+      rawText = await callGroqVision(apiKey, base64, mimeType);
     } else if (apiKey.startsWith('sk-')) {
       provider = 'openai';
       rawText = await callOpenAIVision(apiKey, base64, mimeType);
     } else {
       throw new AppError(
-        'La IA configurada no admite lectura de imágenes (OCR). Configura una clave de Gemini (AIza…) u OpenAI (sk-…).',
+        'La IA configurada no admite lectura de imágenes (OCR). Configura una clave de Gemini (AIza…), Groq (gsk_…) u OpenAI (sk-…).',
         400
       );
     }

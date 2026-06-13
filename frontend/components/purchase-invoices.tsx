@@ -957,7 +957,7 @@ export function PurchaseInvoices() {
                     </Button>
                     {ocrProvider && !ocrLoading && (
                       <span className="text-[11px] text-muted-foreground self-center flex items-center gap-1">
-                        <CheckCircle className="h-3.5 w-3.5 text-green-500" /> Procesado con {ocrProvider === 'gemini' ? 'Gemini' : 'OpenAI'}
+                        <CheckCircle className="h-3.5 w-3.5 text-green-500" /> Procesado con {ocrProvider === 'gemini' ? 'Gemini' : ocrProvider === 'groq' ? 'Groq (Llama 4 Scout)' : 'OpenAI'}
                       </span>
                     )}
                   </div>

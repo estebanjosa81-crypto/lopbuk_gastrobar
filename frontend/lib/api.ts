@@ -871,6 +871,20 @@ class ApiService {
     })
   }
 
+  async deactivateTenantTrial(id: string, revertPlan: string = 'basico') {
+    return this.request<any>(`/tenants/${id}/deactivate-trial`, {
+      method: 'POST',
+      body: JSON.stringify({ revertPlan }),
+    })
+  }
+
+  // Borrado DEFINITIVO (irreversible) del comercio y todos sus datos
+  async hardDeleteTenant(id: string) {
+    return this.request<{ id: string; name: string; deletedRows: number }>(`/tenants/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
   async getBusinessTypes() {
     return this.request<string[]>('/tenants/business-types')
   }
@@ -1502,7 +1516,7 @@ class ApiService {
         lastPurchasePrice: number | null
         matched: boolean
       }>
-      provider: 'gemini' | 'openai'
+      provider: 'gemini' | 'openai' | 'groq'
     }>('/purchases/ocr', { method: 'POST', body: JSON.stringify(payload) })
   }
 

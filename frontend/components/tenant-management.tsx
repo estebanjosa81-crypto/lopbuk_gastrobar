@@ -65,6 +65,7 @@ import {
   EyeOff,
   Tags,
   Zap,
+  ZapOff,
   Settings,
   LayoutGrid,
   Trash2,
@@ -95,6 +96,12 @@ interface TenantDetail extends Tenant {
   businessType?: string
   totalCustomers?: number
   inventoryValue?: number
+  trialEndsAt?: string | null
+}
+
+// Trial activo = tiene fecha de fin y aún no ha pasado
+function hasActiveTrial(t: { trialEndsAt?: string | null }): boolean {
+  return !!t.trialEndsAt && new Date(t.trialEndsAt).getTime() > Date.now()
 }
 
 export function TenantManagement() {
@@ -161,6 +168,15 @@ export function TenantManagement() {
 
   const [tenantToDelete, setTenantToDelete] = useState<TenantDetail | null>(null)
   const [isDeletingTenant, setIsDeletingTenant] = useState(false)
+
+  // Borrado DEFINITIVO (irreversible)
+  const [tenantToPurge, setTenantToPurge] = useState<TenantDetail | null>(null)
+  const [purgeConfirmText, setPurgeConfirmText] = useState('')
+  const [isPurging, setIsPurging] = useState(false)
+
+  // Desactivar trial
+  const [tenantToDeactivateTrial, setTenantToDeactivateTrial] = useState<TenantDetail | null>(null)
+  const [isDeactivatingTrial, setIsDeactivatingTrial] = useState(false)
 
   const [isModulesOpen, setIsModulesOpen] = useState(false)
   const [modulesForTenant, setModulesForTenant] = useState<TenantDetail | null>(null)
@@ -351,13 +367,42 @@ export function TenantManagement() {
     setIsDeletingTenant(true)
     const result = await api.softDeleteTenant(tenantToDelete.id)
     if (result.success) {
-      toast.success(`Comercio "${tenantToDelete.name}" eliminado`)
+      toast.success(`Comercio "${tenantToDelete.name}" enviado a la papelera`)
       setTenantToDelete(null)
       fetchTenants(); fetchStats()
     } else {
-      toast.error(result.error || 'Error al eliminar comercio')
+      toast.error(result.error || 'Error al cancelar comercio')
     }
     setIsDeletingTenant(false)
+  }
+
+  const handlePurgeTenant = async () => {
+    if (!tenantToPurge) return
+    setIsPurging(true)
+    const result = await api.hardDeleteTenant(tenantToPurge.id)
+    if (result.success) {
+      toast.success(`Comercio "${tenantToPurge.name}" eliminado definitivamente`)
+      setTenantToPurge(null)
+      setPurgeConfirmText('')
+      fetchTenants(); fetchStats()
+    } else {
+      toast.error(result.error || 'Error al eliminar el comercio')
+    }
+    setIsPurging(false)
+  }
+
+  const handleDeactivateTrial = async () => {
+    if (!tenantToDeactivateTrial) return
+    setIsDeactivatingTrial(true)
+    const result = await api.deactivateTenantTrial(tenantToDeactivateTrial.id, 'basico')
+    if (result.success) {
+      toast.success(`Trial de "${tenantToDeactivateTrial.name}" desactivado`)
+      setTenantToDeactivateTrial(null)
+      fetchTenants()
+    } else {
+      toast.error(result.error || 'Error al desactivar el trial')
+    }
+    setIsDeactivatingTrial(false)
   }
 
   const fetchPlatformSettings = useCallback(async () => {
@@ -792,18 +837,32 @@ export function TenantManagement() {
                                   <Power className="h-4 w-4" />
                                   {tenant.status === 'activo' ? 'Suspender' : 'Activar'}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openTrialConfirm(tenant)} className="gap-2 text-purple-600 focus:text-purple-600">
-                                  <Zap className="h-4 w-4" /> Trial Empresarial
-                                </DropdownMenuItem>
+                                {hasActiveTrial(tenant) ? (
+                                  <DropdownMenuItem onClick={() => setTenantToDeactivateTrial(tenant)} className="gap-2 text-orange-600 focus:text-orange-600">
+                                    <ZapOff className="h-4 w-4" /> Desactivar trial
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onClick={() => openTrialConfirm(tenant)} className="gap-2 text-purple-600 focus:text-purple-600">
+                                    <Zap className="h-4 w-4" /> Trial Empresarial
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem onClick={() => openModules(tenant)} className="gap-2 text-blue-600 focus:text-blue-600">
                                   <LayoutGrid className="h-4 w-4" /> Módulos
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
+                                {tenant.status !== 'cancelado' && (
+                                  <DropdownMenuItem
+                                    onClick={() => setTenantToDelete(tenant)}
+                                    className="gap-2 text-yellow-600 focus:text-yellow-600"
+                                  >
+                                    <Trash2 className="h-4 w-4" /> Enviar a papelera
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
-                                  onClick={() => setTenantToDelete(tenant)}
+                                  onClick={() => { setPurgeConfirmText(''); setTenantToPurge(tenant) }}
                                   className="gap-2 text-destructive focus:text-destructive"
                                 >
-                                  <Trash2 className="h-4 w-4" /> Eliminar
+                                  <AlertTriangle className="h-4 w-4" /> Eliminar definitivamente
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -1731,24 +1790,108 @@ export function TenantManagement() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Tenant Confirm */}
+      {/* Enviar a papelera (soft delete / cancelar) */}
       <Dialog open={!!tenantToDelete} onOpenChange={(open) => { if (!open) setTenantToDelete(null) }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
+            <DialogTitle className="flex items-center gap-2 text-yellow-600">
               <Trash2 className="h-5 w-5" />
-              Eliminar Comercio
+              Enviar a papelera
             </DialogTitle>
             <DialogDescription>
-              ¿Estás seguro de que deseas eliminar <strong>{tenantToDelete?.name}</strong>?
-              El comercio quedará cancelado y sus usuarios no podrán acceder.
-              Esta acción se puede revertir desde el soporte.
+              El comercio <strong>{tenantToDelete?.name}</strong> quedará <strong>cancelado</strong>:
+              sus usuarios no podrán iniciar sesión y dejará de aparecer en la página principal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md border border-yellow-300 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/20 px-3 py-2 text-xs text-yellow-800 dark:text-yellow-300 flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>No se borran datos. Puedes reactivarlo cuando quieras desde el botón <strong>Activar</strong>. Para borrar todo de forma permanente usa <strong>Eliminar definitivamente</strong>.</span>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setTenantToDelete(null)}>Cancelar</Button>
+            <Button disabled={isDeletingTenant} onClick={handleDeleteTenant}
+              className="gap-2 bg-yellow-500 hover:bg-yellow-600 text-white">
+              <Trash2 className="h-4 w-4" />
+              {isDeletingTenant ? 'Enviando...' : 'Enviar a papelera'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Eliminar DEFINITIVAMENTE (hard delete, irreversible) */}
+      <Dialog open={!!tenantToPurge} onOpenChange={(open) => { if (!open) { setTenantToPurge(null); setPurgeConfirmText('') } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Eliminar definitivamente
+            </DialogTitle>
+            <DialogDescription>
+              Vas a borrar <strong>{tenantToPurge?.name}</strong> y <strong>TODOS</strong> sus datos de forma permanente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-xs text-destructive space-y-1.5">
+              <p className="font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4" /> Esta acción NO se puede deshacer
+              </p>
+              <p>Se eliminarán para siempre: productos, inventario, ventas, pedidos, facturas, clientes, usuarios y toda la configuración de este comercio.</p>
+              {tenantToPurge && (
+                <p className="text-[11px] opacity-80">
+                  Afecta aprox.: {tenantToPurge.totalProducts ?? 0} producto(s), {tenantToPurge.totalSales ?? 0} venta(s), {tenantToPurge.totalUsers ?? 0} usuario(s).
+                </p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                Para confirmar, escribe el nombre del comercio: <strong>{tenantToPurge?.name}</strong>
+              </Label>
+              <Input
+                value={purgeConfirmText}
+                onChange={(e) => setPurgeConfirmText(e.target.value)}
+                placeholder={tenantToPurge?.name || ''}
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setTenantToPurge(null); setPurgeConfirmText('') }}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={isPurging || purgeConfirmText.trim() !== (tenantToPurge?.name || '').trim()}
+              onClick={handlePurgeTenant}
+              className="gap-2"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              {isPurging ? 'Eliminando...' : 'Eliminar para siempre'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Desactivar trial */}
+      <Dialog open={!!tenantToDeactivateTrial} onOpenChange={(open) => { if (!open) setTenantToDeactivateTrial(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-600">
+              <ZapOff className="h-5 w-5" />
+              Desactivar trial
+            </DialogTitle>
+            <DialogDescription>
+              Se cancelará el período de prueba de <strong>{tenantToDeactivateTrial?.name}</strong> y el plan volverá a <strong>Básico</strong>.
+              {tenantToDeactivateTrial?.trialEndsAt && (
+                <> El trial estaba vigente hasta el {new Date(tenantToDeactivateTrial.trialEndsAt).toLocaleDateString('es-CO')}.</>
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setTenantToDelete(null)}>Cancelar</Button>
-            <Button variant="destructive" disabled={isDeletingTenant} onClick={handleDeleteTenant}>
-              {isDeletingTenant ? 'Eliminando...' : 'Eliminar Comercio'}
+            <Button variant="outline" onClick={() => setTenantToDeactivateTrial(null)}>Cancelar</Button>
+            <Button disabled={isDeactivatingTrial} onClick={handleDeactivateTrial}
+              className="gap-2 bg-orange-500 hover:bg-orange-600 text-white">
+              <ZapOff className="h-4 w-4" />
+              {isDeactivatingTrial ? 'Desactivando...' : 'Desactivar trial'}
             </Button>
           </DialogFooter>
         </DialogContent>

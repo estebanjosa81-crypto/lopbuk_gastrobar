@@ -15,7 +15,7 @@
  * ============================================================================
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from 'react'
 import { BRAND } from '@/lib/brand'
 import { FlameButton } from '@/components/ui/flame-button'
 import {
@@ -27,9 +27,13 @@ import {
 } from 'lucide-react'
 
 // ── Paleta institucional ────────────────────────────────────────────────────
-const GREEN = '#00833E'
-const GREEN_DARK = '#005C2A'
-const GOLD = '#F0A500'
+// Colores de marca como variables CSS con fallback al verde DAIMUZ.
+// Cuando el superadmin genera una colorimetría, se inyectan --brand-green /
+// --brand-green-dark en la raíz del home y TODO se tiñe automáticamente
+// (los estilos inline las resuelven en tiempo de render).
+const GREEN = 'var(--brand-green, #00833E)'
+const GREEN_DARK = 'var(--brand-green-dark, #005C2A)'
+const GOLD = 'var(--brand-gold, #F0A500)'
 
 // ── Tipos compartidos ─────────────────────────────────────────────────────────
 export interface HeroSlide {
@@ -426,6 +430,7 @@ export function MarketplaceHomeGovCo({
   heroRight = 'producto',
   promoConfig,
   brandLogo = BRAND.icon,
+  themeColors,
 }: {
   stores: MarketStore[]
   products: MarketProduct[]
@@ -450,6 +455,8 @@ export function MarketplaceHomeGovCo({
   promoConfig?: PromoCardConfig[]
   /** Logo de la plataforma (configurable desde superadmin). */
   brandLogo?: string
+  /** Paleta de marca generada por IA (superadmin). Tiñe todo el home. */
+  themeColors?: { primary?: string; primary_hover?: string; secondary?: string } | null
 }) {
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<MainTab>('comercios')
@@ -544,8 +551,17 @@ export function MarketplaceHomeGovCo({
     verificados: stores.filter(s => Boolean(s.isVerified)).length,
   }
 
+  // Variables de marca: si hay paleta IA, tiñe todo el home (header verde,
+  // gradientes, chips, acentos). Si no, conserva el verde DAIMUZ por defecto.
+  const brandVars = (themeColors?.primary || themeColors?.primary_hover)
+    ? ({
+        ['--brand-green' as string]: themeColors?.primary || themeColors?.primary_hover,
+        ['--brand-green-dark' as string]: themeColors?.primary_hover || themeColors?.primary,
+      } as CSSProperties)
+    : undefined
+
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 flex flex-col">
+    <div className="min-h-screen bg-gray-50 text-gray-800 flex flex-col" style={brandVars}>
       {/* ══ Header ══ */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 sm:gap-5">

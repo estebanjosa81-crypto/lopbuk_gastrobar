@@ -2521,6 +2521,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         heroRight={homeHeroRight}
         promoConfig={homePromoCards}
         brandLogo={platformLogo}
+        themeColors={platformThemeColors}
       />
     )
   }

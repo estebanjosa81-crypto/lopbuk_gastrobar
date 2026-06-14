@@ -404,6 +404,10 @@ html {
 }
 .nt-container:hover .nt-left,
 .nt-container:focus-visible .nt-left { width: 100%; }
+/* Variante compacta: encaja en columnas estrechas (p. ej. resumen del checkout). */
+.nt-container.nt-compact { width: 100%; max-width: 320px; }
+.nt-container.nt-compact:hover,
+.nt-container.nt-compact:focus-visible { width: 220px; }
 .nt-left {
   background-color: #5de2a3;
   width: 130px;

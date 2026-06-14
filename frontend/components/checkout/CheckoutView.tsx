@@ -5,6 +5,7 @@ import { useState } from 'react';
 const formatCOP = (value: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 import { Minus, Plus, Trash2, Ticket, X, Check, Loader2, AlertCircle, Zap, ShoppingCart, Package, Sparkles, Navigation, MapPin, ChevronRight } from 'lucide-react';
+import { NewTransactionButton } from '@/components/ui/new-transaction-button';
 
 interface FieldError {
   field: string;
@@ -1017,6 +1018,16 @@ export function CheckoutView({
                     </div>
                   )
                 })()}
+
+                {/* Acceso visual de pago (decorativo) — no reemplaza el botón funcional de abajo */}
+                <div className="mt-6 flex justify-center">
+                  <NewTransactionButton
+                    label={isDeliveryOrder ? 'Pedir domicilio' : 'Pagar en línea'}
+                    onClick={() => { if (!isProcessing) (isDeliveryOrder ? handleConfirmar : handleFinalizar)() }}
+                    className="nt-compact"
+                    aria-label="Continuar con el pago"
+                  />
+                </div>
 
                 {/* Botón único */}
                 <button

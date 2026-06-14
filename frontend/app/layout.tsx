@@ -5,6 +5,7 @@ import { ThemeProvider } from 'next-themes'
 import { Toaster } from 'sonner'
 import { GoogleOAuthWrapper } from '@/components/google-oauth-wrapper'
 import { DynamicFavicon } from '@/components/dynamic-favicon'
+import { PlatformThemeLoader } from '@/components/platform-theme-loader'
 import './globals.css'
 
 const montserrat = Montserrat({
@@ -15,6 +16,8 @@ const montserrat = Montserrat({
 
 const BRAND_ISOTIPO = '/daimuz-isotipo.png'
 const BRAND_ICON = '/daimuz-icon.png'
+// Favicon: variante con esquinas transparentes (sin recuadro blanco en la pestaña).
+const BRAND_FAVICON = '/daimuz-icon-transparent.png'
 
 export const metadata: Metadata = {
   title: 'DAIMUZ - !Bienvenido al epicentro digital de colombia!',
@@ -23,8 +26,8 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   applicationName: 'DAIMUZ',
   icons: {
-    icon: BRAND_ICON,
-    shortcut: BRAND_ICON,
+    icon: BRAND_FAVICON,
+    shortcut: BRAND_FAVICON,
     apple: BRAND_ICON,
   },
   openGraph: {
@@ -55,6 +58,7 @@ export default function RootLayout({
       <body className={`${montserrat.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
           <DynamicFavicon />
+          <PlatformThemeLoader />
           <GoogleOAuthWrapper>
             {children}
           </GoogleOAuthWrapper>

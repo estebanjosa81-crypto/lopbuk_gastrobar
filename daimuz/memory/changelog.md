@@ -4,6 +4,29 @@
 
 ---
 
+## [2026-06-14] — Colorimetría de marca por IA (2 niveles) + fixes favicon/tarjeta
+
+**Arquitectura (decisión):** dos niveles de paleta. Plataforma (superadmin, desde el logo DAIMUZ) → home/marketplace + login + acento por defecto en paneles. Individual del comercio (desde su logo) → su tienda (full color) + solo acento en su panel. Jerarquía de acento: comercio > plataforma > base. Los paneles operativos NO se colorizan por completo (solo acento) para preservar contraste/legibilidad.
+
+**Colorimetría de plataforma (superadmin)**
+- `frontend/lib/platform-theme.ts` (nuevo) — `getPlatformPalette()`, `applyPlatformAccentDefault()`, `parsePlatformPalette()`; clave `platform_theme_colors` en `platform_settings`
+- `frontend/components/platform-theme-loader.tsx` (nuevo) — montado en `app/layout.tsx`, aplica el acento de plataforma como default app-wide (login + paneles)
+- `frontend/components/platform-theme-generator.tsx` (nuevo) — tarjeta en LandingConfigTab: genera desde el logo, previsualiza paleta, guarda
+- `frontend/components/landing-page.tsx` — tiñe la home/marketplace con la paleta de plataforma cuando no hay tienda seleccionada (no afecta tiendas con paleta/bg propios)
+- `frontend/components/merchant-panel.tsx` — acento de plataforma como fallback cuando el comercio no tiene paleta propia; superadmin ve el acento de plataforma
+- Sin backend nuevo: reutiliza `POST /storefront/theme/generate` y `PUT/GET /tenants/platform-settings`
+
+**Auto-colorimetría al subir logo (comerciante)**
+- `frontend/components/logo-theme-generator.tsx` — nuevo prop `autoApplySignal`; al subir logo genera+aplica+guarda y muestra toast "Colorimetría aplicada. ¿Deseas editarla?" con acción Editar
+- `frontend/components/store-customization.tsx` — el CloudinaryUpload del logo incrementa la señal al subir una URL nueva
+
+**Fixes**
+- Favicon: `app/layout.tsx` (`icon`/`shortcut`) y `dynamic-favicon.tsx` ahora usan `daimuz-icon-transparent.png` / `BRAND.iconTransparent` (antes `daimuz-icon.png` mostraba un recuadro blanco en la pestaña)
+- "Tarjeta del comercio" (`store-card-config.tsx`): el tema se guarda al instante al seleccionar la tarjeta (spinner + toast); antes solo cambiaba estado local y se perdía sin pulsar "Guardar tarjeta"
+- Backend `card-config` (`storefront.routes.ts`): `affectedRows === 0` ya no asume "fila inexistente"; verifica existencia antes de INSERT (evita error 500 por clave duplicada al reguardar sin cambios)
+
+**Nota de entorno:** el `tsc` completo del proyecto no cabe en el sandbox de Cowork (cold compile > límite de tiempo) y el mount de Linux quedó desincronizado; un typecheck acotado validó el componente de la tarjeta y los archivos se verificaron sobre el host.
+
 ## [2026-06-12] — Sprint 5: Centro de Pedidos v2 + TenantManagement mejorado
 
 **TenantManagement (tenant-management.tsx)**

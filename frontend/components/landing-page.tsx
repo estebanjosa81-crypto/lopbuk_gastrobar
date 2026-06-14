@@ -76,6 +76,7 @@ import { departamentosMunicipios } from '@/constants'
 import { useAuthStore } from '@/lib/auth-store'
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { api } from '@/lib/api'
+import { parsePlatformPalette } from '@/lib/platform-theme'
 import type { ProductoCarrito, PedidoForm, PedidoConfirmado, CuponValidacion } from '@/types'
 
 interface LandingPageProps {
@@ -262,6 +263,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
   // ====== PLATFORM BG COLOR ======
   const [platformBgColor, setPlatformBgColor] = useState('#000000')
+  // Paleta de marca de la plataforma (generada por superadmin desde el logo).
+  // Tiñe la home/marketplace cuando no se está viendo una tienda concreta.
+  const [platformThemeColors, setPlatformThemeColors] = useState<any | null>(null)
 
   // ====== PLATFORM HERO SETTINGS ======
   const [platformHeroUrl, setPlatformHeroUrl] = useState('')
@@ -1124,6 +1128,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           if (json.data.home_hero_split) setHomeHeroSplit(json.data.home_hero_split)
           if (json.data.home_hero_right) setHomeHeroRight(json.data.home_hero_right)
           if (json.data.platform_logo) setPlatformLogo(json.data.platform_logo)
+          const platformPalette = parsePlatformPalette(json.data.platform_theme_colors)
+          if (platformPalette) setPlatformThemeColors(platformPalette.colors)
           if (json.data.home_promo_cards) {
             try {
               const parsed = JSON.parse(json.data.home_promo_cards)
@@ -2352,8 +2358,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   // Effective background color: store-specific overrides platform global
   // Paleta IA del comercio (si la guardó): tiñe el fondo de la tienda
   const storeThemeColors = storeConfig?.themeColors?.colors || null
-  const effectiveBgColor = storeThemeColors?.background_store
-    ? storeThemeColors.background_store
+  // En la home/marketplace (sin tienda seleccionada) aplica la paleta de la
+  // plataforma; dentro de una tienda manda la paleta propia del comercio.
+  const activeThemeColors = storeThemeColors || (!storeConfig ? platformThemeColors : null)
+  const effectiveBgColor = activeThemeColors?.background_store
+    ? activeThemeColors.background_store
     : (storeConfig?.bgColor && storeConfig.bgColor !== '#000000') ? storeConfig.bgColor : platformBgColor
   // Card style chosen by the merchant
   const productCardStyle = storeConfig?.storeInfo?.productCardStyle || 'style1'
@@ -2520,13 +2529,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     <div className={`min-h-screen ${textClass} overflow-x-hidden pb-16 md:pb-0`} style={{ scrollBehavior: 'smooth', backgroundColor: effectiveBgColor }}>
       {/* Dynamic background overrides */}
       <style>{`
-        ${storeThemeColors ? `:root{
-          --color-primary:${storeThemeColors.primary || '#00833E'};
-          --color-primary-hover:${storeThemeColors.primary_hover || '#005C2A'};
-          --color-secondary:${storeThemeColors.secondary || '#666'};
-          --color-bg-store:${storeThemeColors.background_store || effectiveBgColor};
-          --color-surface:${storeThemeColors.surface_store || altBgColor};
-          --color-text:${storeThemeColors.text_main || '#fff'};
+        ${activeThemeColors ? `:root{
+          --color-primary:${activeThemeColors.primary || '#00833E'};
+          --color-primary-hover:${activeThemeColors.primary_hover || '#005C2A'};
+          --color-secondary:${activeThemeColors.secondary || '#666'};
+          --color-bg-store:${activeThemeColors.background_store || effectiveBgColor};
+          --color-surface:${activeThemeColors.surface_store || altBgColor};
+          --color-text:${activeThemeColors.text_main || '#fff'};
         }` : ''}
         .landing-nav { background-color: ${effectiveBgColor}cc !important; }
         .landing-section-bg { background-color: ${effectiveBgColor} !important; }

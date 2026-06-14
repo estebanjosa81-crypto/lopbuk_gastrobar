@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "skipLibCheck": true },
+  "include": [
+    "lib/platform-theme.ts",
+    "lib/theme-vars.ts",
+    "components/platform-theme-loader.tsx",
+    "components/platform-theme-generator.tsx",
+    "components/logo-theme-generator.tsx",
+    "components/store-card-config.tsx"
+  ]
+}

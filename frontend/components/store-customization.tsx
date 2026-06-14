@@ -137,6 +137,8 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
   const [categories, setCategories] = useState<CategoryItem[]>([])
   const [featuredProducts, setFeaturedProducts] = useState<FeaturedProduct[]>([])
   const [publishedProducts, setPublishedProducts] = useState<PublishedProduct[]>([])
+  // Señal que se incrementa al subir un logo nuevo → dispara la auto-colorimetría
+  const [logoAutoSignal, setLogoAutoSignal] = useState(0)
   const [storeInfo, setStoreInfo] = useState<StoreExtendedInfo>({
     logoUrl: '', schedule: '', locationMapUrl: '', termsContent: '', privacyContent: '', shippingTerms: '',
     paymentMethods: '', socialInstagram: '', socialFacebook: '',
@@ -1435,7 +1437,11 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
               <CloudinaryUpload
                 label="Logo de la tienda"
                 value={storeInfo.logoUrl}
-                onChange={url => setStoreInfo(prev => ({ ...prev, logoUrl: url }))}
+                onChange={url => {
+                  setStoreInfo(prev => ({ ...prev, logoUrl: url }))
+                  // Solo dispara la auto-colorimetría con una URL subida (no al limpiar)
+                  if (url && !url.startsWith('/')) setLogoAutoSignal(s => s + 1)
+                }}
                 previewClassName="max-h-20 w-auto object-contain rounded"
                 accept="image/*"
               />
@@ -1443,7 +1449,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
           </Card>
 
           {/* Tema automático desde el logo (IA) */}
-          <LogoThemeGenerator logoUrl={storeInfo.logoUrl} />
+          <LogoThemeGenerator logoUrl={storeInfo.logoUrl} autoApplySignal={logoAutoSignal} />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Schedule & Location */}

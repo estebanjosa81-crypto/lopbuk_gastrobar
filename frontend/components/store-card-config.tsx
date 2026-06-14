@@ -68,6 +68,7 @@ export function StoreCardConfig() {
   const [cardDescription, setCardDescription] = useState('')
   const [hours, setHours] = useState<Hours>({})
   const [theme, setTheme] = useState<'theme1' | 'theme2'>('theme1')
+  const [savingTheme, setSavingTheme] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -85,6 +86,27 @@ export function StoreCardConfig() {
   }, [])
 
   const openNow = useMemo(() => computeOpenNow(hours), [hours])
+
+  // El tema se guarda al instante al seleccionarlo (no depende del botón inferior).
+  const selectTheme = async (next: 'theme1' | 'theme2') => {
+    if (next === theme || savingTheme) return
+    const prev = theme
+    setTheme(next)
+    setSavingTheme(true)
+    try {
+      const res = await api.updateCardConfig({ theme: next })
+      if (res.success) {
+        toast.success(next === 'theme2' ? 'Tema 2 (Gastronómico) aplicado' : 'Tema 1 (Clásico) aplicado')
+      } else {
+        setTheme(prev)
+        toast.error(res.error || 'No se pudo guardar el tema')
+      }
+    } catch {
+      setTheme(prev)
+      toast.error('Error al guardar el tema')
+    }
+    setSavingTheme(false)
+  }
 
   const addSlot = (day: string) => {
     setHours(prev => ({ ...prev, [day]: [...(prev[day] ?? []), { open: '08:00', close: '18:00' }] }))
@@ -160,9 +182,12 @@ export function StoreCardConfig() {
 
       {/* Selector de tema de la tienda */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-        <div>
-          <h3 className="text-sm font-semibold">Tema de la tienda</h3>
-          <p className="text-xs text-muted-foreground">Elige cómo se ve tu tienda pública. Puedes cambiarlo cuando quieras.</p>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold">Tema de la tienda</h3>
+            <p className="text-xs text-muted-foreground">Elige cómo se ve tu tienda pública. Se guarda al instante al seleccionarlo.</p>
+          </div>
+          {savingTheme && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {([
@@ -172,8 +197,9 @@ export function StoreCardConfig() {
             <button
               key={opt.id}
               type="button"
-              onClick={() => setTheme(opt.id)}
-              className={`text-left rounded-lg border p-3 transition-colors ${theme === opt.id ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:bg-muted'}`}
+              onClick={() => selectTheme(opt.id)}
+              disabled={savingTheme}
+              className={`text-left rounded-lg border p-3 transition-colors disabled:opacity-70 ${theme === opt.id ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:bg-muted'}`}
             >
               <div className="flex items-center gap-2">
                 <span className={`w-3.5 h-3.5 rounded-full border-2 ${theme === opt.id ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`} />

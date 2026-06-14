@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import { applyAdminAccent, type ThemePalette } from '@/lib/theme-vars'
+import { parsePlatformPalette, PLATFORM_THEME_KEY } from '@/lib/platform-theme'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Palette, Sparkles, Loader2, Check, RotateCcw, Upload, Wand2 } from 'lucide-react'
@@ -12,13 +13,19 @@ const SWATCHES: { key: keyof ThemePalette['colors']; label: string }[] = [
   { key: 'primary', label: 'Primario (CTA)' },
   { key: 'primary_hover', label: 'Primario hover' },
   { key: 'secondary', label: 'Secundario' },
-  { key: 'background_store', label: 'Fondo tienda' },
+  { key: 'background_store', label: 'Fondo home' },
   { key: 'surface_store', label: 'Superficie' },
   { key: 'text_main', label: 'Texto' },
   { key: 'admin_accent', label: 'Acento panel' },
 ]
 
-export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: string | null; autoApplySignal?: number }) {
+/**
+ * Colorimetría de la PLATAFORMA (superadmin). Genera una paleta desde el logo
+ * de la plataforma y la guarda en platform_settings (clave platform_theme_colors).
+ * Esa paleta tiñe la página de inicio (marketplace) y el login, y sirve de acento
+ * por defecto en los paneles de comercios sin paleta propia.
+ */
+export function PlatformThemeGenerator({ logoUrl }: { logoUrl?: string | null }) {
   const [palette, setPalette] = useState<ThemePalette | null>(null)
   const [saved, setSaved] = useState<ThemePalette | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -26,55 +33,13 @@ export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: str
   const [provider, setProvider] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const cardRef = useRef<HTMLDivElement>(null)
-  const lastSignal = useRef(0)
 
   useEffect(() => {
-    api.getStoreThemeColors().then(res => {
-      if (res.success && res.data?.colors) { setSaved(res.data); setPalette(res.data) }
+    api.getPlatformSettings().then(res => {
+      const current = parsePlatformPalette((res.data as any)?.[PLATFORM_THEME_KEY])
+      if (current) { setSaved(current); setPalette(current) }
     }).catch(() => {})
   }, [])
-
-  // Auto-colorimetría: al subir un logo nuevo, genera + aplica + guarda y avisa.
-  useEffect(() => {
-    if (!autoApplySignal || autoApplySignal === lastSignal.current) return
-    lastSignal.current = autoApplySignal
-    if (!logoUrl || logoUrl.startsWith('/')) return
-    void autoGenerateApply()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoApplySignal])
-
-  const autoGenerateApply = async () => {
-    if (!logoUrl || generating || saving) return
-    setError(null); setGenerating(true)
-    try {
-      const res = await api.generateStoreTheme({ logoUrl })
-      if (res.success && res.data?.palette) {
-        const p = res.data.palette as ThemePalette
-        setPalette(p); setProvider(res.data.provider)
-        const saveRes = await api.saveStoreThemeColors(p)
-        if (saveRes.success) {
-          setSaved(p)
-          applyAdminAccent(p.colors.admin_accent)
-          toast.success('Colorimetría aplicada', {
-            description: 'Generada automáticamente desde tu logo. ¿Deseas editarla?',
-            action: {
-              label: 'Editar',
-              onClick: () => cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
-            },
-          })
-        } else {
-          toast.error(saveRes.error || 'No se pudo guardar la colorimetría')
-        }
-      } else {
-        setError(res.error || 'No se pudo generar el tema')
-      }
-    } catch (e: any) {
-      setError(e?.message || 'Error al generar el tema')
-    } finally {
-      setGenerating(false)
-    }
-  }
 
   const runGenerate = async (payload: { imageBase64?: string; logoUrl?: string }) => {
     setError(null); setGenerating(true)
@@ -84,17 +49,17 @@ export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: str
         setPalette(res.data.palette)
         setProvider(res.data.provider)
       } else {
-        setError(res.error || 'No se pudo generar el tema')
+        setError(res.error || 'No se pudo generar la paleta')
       }
     } catch (e: any) {
-      setError(e?.message || 'Error al generar el tema')
+      setError(e?.message || 'Error al generar la paleta')
     } finally {
       setGenerating(false)
     }
   }
 
   const handleGenerateFromLogo = () => {
-    if (logoUrl) runGenerate({ logoUrl })
+    if (logoUrl && !logoUrl.startsWith('/')) runGenerate({ logoUrl })
     else fileRef.current?.click()
   }
 
@@ -111,23 +76,23 @@ export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: str
   const handleSave = async () => {
     if (!palette) return
     setSaving(true)
-    const res = await api.saveStoreThemeColors(palette)
+    const res = await api.updatePlatformSetting(PLATFORM_THEME_KEY, JSON.stringify(palette))
     if (res.success) {
       setSaved(palette)
       applyAdminAccent(palette.colors.admin_accent)
-      toast.success('Tema aplicado y guardado')
+      toast.success('Colorimetría de la plataforma aplicada y guardada')
     } else {
-      toast.error(res.error || 'No se pudo guardar el tema')
+      toast.error(res.error || 'No se pudo guardar la colorimetría')
     }
     setSaving(false)
   }
 
   const handleReset = async () => {
-    const res = await api.resetStoreTheme()
+    const res = await api.updatePlatformSetting(PLATFORM_THEME_KEY, '')
     if (res.success) {
       setSaved(null); setPalette(null); setProvider(null)
       applyAdminAccent(null)
-      toast.success('Tema restablecido al diseño base')
+      toast.success('Colorimetría restablecida al diseño base')
     } else {
       toast.error(res.error || 'No se pudo restablecer')
     }
@@ -136,14 +101,15 @@ export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: str
   const dirty = palette && JSON.stringify(palette) !== JSON.stringify(saved)
 
   return (
-    <Card ref={cardRef} className="border-border bg-card">
+    <Card className="border-border bg-card">
       <CardHeader className="pb-3">
         <CardTitle className="text-base lg:text-lg flex items-center gap-2">
           <Palette className="h-5 w-5 text-muted-foreground" />
-          Tema automático desde el logo (IA)
+          Colorimetría de la plataforma (IA)
         </CardTitle>
         <CardDescription>
-          La IA analiza tu logo y genera una paleta accesible: tu tienda se tiñe con esos colores y el panel usa el acento de tu marca.
+          La IA analiza el logo de la plataforma y genera una paleta accesible. Tiñe la página de inicio
+          (marketplace) y el login, y se usa como acento por defecto en los paneles de comercios sin paleta propia.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -153,13 +119,11 @@ export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: str
           <Button size="sm" onClick={handleGenerateFromLogo} disabled={generating}>
             {generating
               ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Analizando logo...</>
-              : <><Wand2 className="mr-1.5 h-4 w-4" />Generar tema con IA</>}
+              : <><Wand2 className="mr-1.5 h-4 w-4" />Generar colorimetría con IA</>}
           </Button>
-          {!logoUrl && (
-            <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={generating}>
-              <Upload className="mr-1.5 h-4 w-4" /> Subir logo
-            </Button>
-          )}
+          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={generating}>
+            <Upload className="mr-1.5 h-4 w-4" /> Subir otro logo
+          </Button>
           {saved && (
             <Button size="sm" variant="ghost" onClick={handleReset} className="text-destructive/80 hover:text-destructive">
               <RotateCcw className="mr-1.5 h-4 w-4" /> Restablecer
@@ -172,18 +136,23 @@ export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: str
           )}
         </div>
 
+        {(!logoUrl || logoUrl.startsWith('/')) && (
+          <p className="text-[11px] text-muted-foreground">
+            El logo actual es un preset DAIMUZ local. Para generar desde él, súbelo como imagen con &quot;Subir otro logo&quot;.
+          </p>
+        )}
+
         {error && <p className="text-xs text-destructive bg-destructive/10 rounded-md px-3 py-2">{error}</p>}
 
         {palette && (
           <>
             <div className="rounded-lg border border-border overflow-hidden">
-              {/* Preview tienda */}
               <div className="p-4" style={{ background: palette.colors.background_store, color: palette.colors.text_main }}>
                 <div className="rounded-lg p-3 mb-3" style={{ background: palette.colors.surface_store }}>
-                  <p className="text-sm font-semibold" style={{ color: palette.colors.text_main }}>Vista previa de la tienda</p>
-                  <p className="text-xs opacity-70" style={{ color: palette.colors.text_main }}>Tarjeta de producto de ejemplo</p>
+                  <p className="text-sm font-semibold" style={{ color: palette.colors.text_main }}>Vista previa de la home</p>
+                  <p className="text-xs opacity-70" style={{ color: palette.colors.text_main }}>Tarjeta de comercio de ejemplo</p>
                 </div>
-                <button className="text-sm font-semibold px-4 py-2 rounded-lg text-white" style={{ background: palette.colors.primary }}>Comprar ahora</button>
+                <button className="text-sm font-semibold px-4 py-2 rounded-lg text-white" style={{ background: palette.colors.primary }}>Explorar tiendas</button>
                 <span className="ml-2 text-xs px-2 py-1 rounded" style={{ background: palette.colors.secondary, color: '#fff' }}>Etiqueta</span>
               </div>
             </div>
@@ -204,7 +173,7 @@ export function LogoThemeGenerator({ logoUrl, autoApplySignal }: { logoUrl?: str
               <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>
                 {saving ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Guardando...</> : <><Sparkles className="mr-1.5 h-4 w-4" />Aplicar y guardar</>}
               </Button>
-              {!dirty && saved && <span className="text-[11px] text-muted-foreground">Tema aplicado</span>}
+              {!dirty && saved && <span className="text-[11px] text-muted-foreground">Colorimetría aplicada</span>}
               <span className="text-[11px] text-muted-foreground ml-auto">Modo: {palette.theme_type === 'dark' ? 'Oscuro' : 'Claro'}</span>
             </div>
           </>

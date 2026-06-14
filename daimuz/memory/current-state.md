@@ -22,6 +22,28 @@
 - ✅ **Stripe** — Pagos y suscripciones SaaS
 - ✅ **Multi-tenant** — Sistema completo de tenants y módulos activables
 - ✅ **Multi-sede** — Sedes con inventario y caja independientes
+- ✅ **Colorimetría por IA** — Paleta desde el logo: tienda del comercio (full), panel (solo acento), plataforma (home/login/default)
+
+## ✅ Implementado: Colorimetría de marca por IA + fixes (2026-06-14)
+
+**Arquitectura de colorimetría (2 niveles):**
+- Paleta de **plataforma** (superadmin, desde el logo DAIMUZ) → tiñe la home/marketplace + login y es el acento por defecto de los paneles de comercios sin paleta propia.
+- Paleta **individual del comercio** (desde su logo) → tiñe su tienda (full color) y solo el acento de su panel.
+- Jerarquía de acento en panel: acento propio del comercio > acento de plataforma > base. Decisión: los paneles operativos NO se colorizan por completo (solo acento) para no romper contraste/legibilidad.
+
+**Colorimetría en superadmin (`platform-theme-generator.tsx`)**
+- Nueva tarjeta "Colorimetría de la plataforma (IA)" junto al logo en LandingConfigTab; genera/previsualiza/guarda en `platform_settings` clave `platform_theme_colors`.
+- `lib/platform-theme.ts` (helper: getPlatformPalette / applyPlatformAccentDefault / parsePlatformPalette) + `platform-theme-loader.tsx` montado en `app/layout.tsx` (acento default app-wide).
+- `landing-page.tsx` tiñe la home con la paleta de plataforma cuando no hay tienda seleccionada; `merchant-panel.tsx` usa acento de plataforma como fallback.
+- Sin cambios de backend: se reutilizan `/storefront/theme/generate` y `/tenants/platform-settings`.
+
+**Auto-colorimetría al subir logo (comerciante)**
+- `logo-theme-generator.tsx` + `store-customization.tsx`: al subir un logo nuevo se genera+aplica+guarda la paleta automáticamente y aparece el toast "Colorimetría aplicada. ¿Deseas editarla?" con acción Editar.
+
+**Fixes**
+- **Favicon**: usaba `daimuz-icon.png` (recuadro blanco en la pestaña) → ahora `daimuz-icon-transparent.png` en `layout.tsx` (`icon`/`shortcut`) y `BRAND.iconTransparent` en `dynamic-favicon.tsx`.
+- **Tarjeta del comercio (`store-card-config.tsx`)**: el tema ahora se guarda al instante al seleccionarlo (antes solo cambiaba estado local y se perdía si no se pulsaba "Guardar tarjeta").
+- **Backend `card-config` (`storefront.routes.ts`)**: corregido bug donde `affectedRows === 0` (guardado sin cambios) disparaba un INSERT que fallaba por clave duplicada (500); ahora verifica existencia de la fila antes de crear.
 
 ## ✅ Implementado: Sprint 5 — Centro de Pedidos v2 (2026-06-12)
 
@@ -109,6 +131,7 @@ Implementación full-stack completa. Ver `daimuz/brain/variants-implementation-p
 
 > Agrega aquí cada vez que termines algo significativo
 
+- `[2026-06-14]` — **Colorimetría de marca por IA (2 niveles) + fixes**: paleta de plataforma (superadmin → home/login/default paneles) y paleta individual del comercio (tienda full + acento de panel); auto-colorimetría al subir el logo del comercio con toast "Colorimetría aplicada ¿desea editar?". Nuevos: `lib/platform-theme.ts`, `components/platform-theme-loader.tsx`, `components/platform-theme-generator.tsx`. Editados: `app/layout.tsx`, `superadmin/tabs/LandingConfigTab.tsx`, `logo-theme-generator.tsx`, `store-customization.tsx`, `landing-page.tsx`, `merchant-panel.tsx`. Fixes: favicon → `daimuz-icon-transparent.png`; "Tarjeta del comercio" guarda el tema al instante (`store-card-config.tsx`); backend `card-config` ya no falla con INSERT duplicado al reguardar sin cambios (`storefront.routes.ts`). Sin cambios de schema (reutiliza `platform_settings` y `/storefront/theme/*`).
 - `[2026-06-12]` — **Panel Superadmin — Sprints 0-4 completados**: refactor monolito (3444 líneas → 25 archivos modulares), Centro de Pedidos cross-tenant con SSE, wizard creación de comercios, papelera/restaurar tenants, dashboard analítica con heatmap. Backend: 8 endpoints `/api/superadmin/*`. DB: columna `assigned_to` en `storefront_orders` + tabla `order_status_history`.
 - `[2026-06-09]` — **Sistema de Variantes + Precios por Volumen — implementación full-stack completa**: backend (variants.service, suppliers.service, controllers, routes), actualización de sales.service (stock atómico + price freezing), storefront con variantes+tiers, migración 004_variants_and_suppliers.sql (5 tablas), frontend (variant-manager.tsx, api.ts, inventory-list con botón variantes, point-of-sale con picker dialog y resolución de tiers). TypeScript frontend: 0 errores. Errores backend son truncaciones pre-existentes no relacionadas.
 - `[2026-06-07]` — **DAIMUZ auditado contra análisis completo**: indexes limpiados (modules, endpoints, files, db-tables), sinapsis ops-chain reescrita sin duplicados, reglas de variantes en vault business-rules, architecture/database consolidado. Scorecard final verificado: 9.8/10.

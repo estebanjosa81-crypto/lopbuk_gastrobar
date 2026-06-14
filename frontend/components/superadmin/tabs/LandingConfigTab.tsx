@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
+import { PlatformThemeGenerator } from '@/components/platform-theme-generator'
 import { formatCOP } from '@/lib/utils'
 import { useLandingConfig } from '../hooks/useLandingConfig'
 
@@ -91,6 +92,9 @@ export function LandingConfigTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Colorimetría de la plataforma (IA, desde el logo) */}
+      <PlatformThemeGenerator logoUrl={platformLogo} />
 
       {/* Hero Principal */}
       <Card className="border-border bg-card">

@@ -4,6 +4,25 @@
 
 ## Sprint activo: Junio 2026
 
+### ✅ Completado [2026-06-14]: Colorimetría de marca por IA + fixes
+
+| Tarea | Estado | Descripción |
+|---|---|---|
+| Arquitectura 2 niveles | ✅ Completo | Paleta plataforma (home/login/default) + paleta comercio (tienda full / panel acento) |
+| Colorimetría superadmin | ✅ Completo | Tarjeta en LandingConfigTab; genera desde logo, guarda `platform_theme_colors` |
+| Acento global default | ✅ Completo | `platform-theme-loader` en layout; fallback en `merchant-panel` |
+| Auto-colorimetría comerciante | ✅ Completo | Al subir logo: genera+aplica+guarda + toast "¿desea editar?" |
+| Fix favicon | ✅ Completo | `daimuz-icon-transparent.png` (sin recuadro blanco) |
+| Fix guardado de tema (tarjeta) | ✅ Completo | `store-card-config.tsx` guarda al instante; backend `card-config` ya no falla por INSERT duplicado |
+
+**Archivos clave:**
+- Nuevos: `frontend/lib/platform-theme.ts`, `frontend/components/platform-theme-loader.tsx`, `frontend/components/platform-theme-generator.tsx`
+- Editados: `frontend/app/layout.tsx`, `frontend/components/dynamic-favicon.tsx`, `frontend/components/superadmin/tabs/LandingConfigTab.tsx`, `frontend/components/logo-theme-generator.tsx`, `frontend/components/store-customization.tsx`, `frontend/components/landing-page.tsx`, `frontend/components/merchant-panel.tsx`, `frontend/components/store-card-config.tsx`
+- Backend: `backend/src/modules/storefront/storefront.routes.ts` (fix `card-config`)
+- Sin cambios de schema (reutiliza `platform_settings` + `/storefront/theme/*`)
+
+**Pendiente de verificar en runtime:** levantar dev server, generar colorimetría desde superadmin y desde un comercio, confirmar tinte en home/login/panel; confirmar que el tema de la tarjeta del comercio persiste tras recargar. Requiere clave de IA de visión (Gemini/Groq/OpenAI) en Integraciones.
+
 ### ✅ Completado [2026-06-12]: Sprint 5 — Centro de Pedidos v2 + TenantManagement
 
 | Sprint | Estado | Descripción |

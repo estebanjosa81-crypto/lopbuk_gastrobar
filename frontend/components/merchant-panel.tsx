@@ -46,6 +46,7 @@ import { Tapiceria } from '@/components/tapiceria'
 import { Merma } from '@/components/merma'
 import { GastrobarOps } from '@/components/gastrobar-ops'
 import { applyAdminAccent } from '@/lib/theme-vars'
+import { applyPlatformAccentDefault } from '@/lib/platform-theme'
 
 /**
  * Render del panel del comerciante para un usuario YA autenticado.
@@ -82,15 +83,18 @@ export function MerchantPanel() {
     return () => { alive = false }
   }, [])
 
-  // ── Acento de marca en el panel (paleta generada por IA desde el logo) ──
+  // ── Acento de marca en el panel ──
+  // Jerarquía: acento propio del comercio > acento de plataforma (superadmin) > base.
   useEffect(() => {
     let alive = true
-    if (user?.role === 'superadmin') { applyAdminAccent(null); return }
-    api.getStoreThemeColors().then(r => {
+    // Superadmin: usa el acento de la plataforma (su propia marca).
+    if (user?.role === 'superadmin') { void applyPlatformAccentDefault(); return }
+    api.getStoreThemeColors().then(async r => {
       if (!alive) return
       const accent = (r?.data as any)?.colors?.admin_accent
       if (accent) applyAdminAccent(accent)
-    }).catch(() => {})
+      else await applyPlatformAccentDefault() // sin paleta propia → acento de plataforma
+    }).catch(() => { void applyPlatformAccentDefault() })
     return () => { alive = false }
   }, [user?.role])
 

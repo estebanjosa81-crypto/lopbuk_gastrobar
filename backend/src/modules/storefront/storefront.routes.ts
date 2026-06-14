@@ -1168,11 +1168,19 @@ router.put(
       ) as any;
 
       if (result.affectedRows === 0) {
-        // Comercio sin fila en store_info: crearla y reintentar
-        const [tRows] = await pool.query('SELECT name FROM tenants WHERE id = ? LIMIT 1', [tenantId]) as any;
-        const name = (tRows as any[])[0]?.name || 'Mi tienda';
-        await pool.query('INSERT INTO store_info (tenant_id, name) VALUES (?, ?)', [tenantId, name]);
-        await pool.query(`UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`, [...values, tenantId]);
+        // affectedRows = 0 puede significar (a) no existe la fila, o (b) la fila
+        // existe pero los valores no cambiaron. Solo creamos si realmente no existe;
+        // si existe, no hacemos nada (evita un INSERT que falla por clave duplicada).
+        const [existing] = await pool.query(
+          'SELECT 1 FROM store_info WHERE tenant_id = ? LIMIT 1',
+          [tenantId]
+        ) as any;
+        if ((existing as any[]).length === 0) {
+          const [tRows] = await pool.query('SELECT name FROM tenants WHERE id = ? LIMIT 1', [tenantId]) as any;
+          const name = (tRows as any[])[0]?.name || 'Mi tienda';
+          await pool.query('INSERT INTO store_info (tenant_id, name) VALUES (?, ?)', [tenantId, name]);
+          await pool.query(`UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`, [...values, tenantId]);
+        }
       }
 
       res.json({ success: true, message: 'Tarjeta actualizada' });

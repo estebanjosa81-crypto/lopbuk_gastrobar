@@ -17,10 +17,11 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BRAND } from '@/lib/brand'
+import { FlameButton } from '@/components/ui/flame-button'
 import {
   ChevronLeft, ChevronRight, Store, UtensilsCrossed, Zap, Tag, Package,
   Sparkles, ShoppingBag, Pill, Apple, Wrench, Scissors, Dog, Wine,
-  Croissant, Coffee, Shirt, Gem, Flower2, ArrowRight, Search, User,
+  Croissant, Coffee, Shirt, Gem, Flower2, ArrowRight, Search,
   ChevronDown, MapPin, Flame, Bell, Facebook, Instagram, Phone,
   Mail, TrendingUp, X, Menu,
 } from 'lucide-react'
@@ -251,7 +252,7 @@ export function HomeCategoryRail({
   if (cats.length === 0) return null
   return (
     <section className="landing-section-bg relative py-5 sm:py-7">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
         <div className="flex gap-2 sm:gap-2.5 overflow-x-auto scrollbar-hide pb-1 -mx-1 px-1">
           <button onClick={() => onSelect('all')} className={`shrink-0 flex items-center gap-2 px-4 py-2 rounded-full border text-xs sm:text-sm font-medium whitespace-nowrap transition-all ${active === 'all' ? 'bg-white text-black border-white shadow' : 'bg-white/5 text-white/70 border-white/12 hover:border-white/35 hover:text-white'}`}>
             <Store className="w-4 h-4" /> Todos
@@ -547,7 +548,7 @@ export function MarketplaceHomeGovCo({
     <div className="min-h-screen bg-gray-50 text-gray-800 flex flex-col">
       {/* ══ Header ══ */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 sm:gap-5">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 sm:gap-5">
           <button onClick={scrollToGrid} className="flex items-center gap-2 shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={brandLogo} alt={BRAND.name} className="w-9 h-9 object-contain rounded-lg shrink-0" />
@@ -565,9 +566,9 @@ export function MarketplaceHomeGovCo({
             />
           </div>
 
-          <button onClick={onGoToLogin} className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white shrink-0 transition-colors" style={{ background: GREEN }}>
-            <User className="w-4 h-4" /> Acceder
-          </button>
+          <span className="hidden sm:block shrink-0 pt-3">
+            <FlameButton onClick={onGoToLogin}>Acceder</FlameButton>
+          </span>
           <button onClick={() => setMobileNav(v => !v)} className="sm:hidden p-2 rounded-lg border border-gray-300 text-gray-600" aria-label="Menú">
             <Menu className="w-5 h-5" />
           </button>
@@ -576,7 +577,7 @@ export function MarketplaceHomeGovCo({
 
       {/* ══ Navbar verde ══ */}
       <nav className="text-white sticky top-[57px] z-30 shadow-sm" style={{ background: GREEN }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className={`${mobileNav ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row sm:items-stretch`}>
             <button onClick={() => { setTab('comercios'); onSelectBusinessType('all'); setMobileNav(false); setTimeout(scrollToGrid, 50) }} className="relative text-left px-4 py-3 text-sm font-medium hover:bg-black/10 transition-colors">
               Inicio
@@ -625,7 +626,7 @@ export function MarketplaceHomeGovCo({
       {/* ══ Banner de alerta ══ */}
       {alertOpen && (
         <div className="text-gray-900" style={{ background: GOLD }}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-2 text-sm">
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-2 text-sm">
             <Bell className="w-4 h-4 shrink-0" />
             <span className="flex-1">{heroTitle || `Bienvenido a ${BRAND.name} — descubre los comercios locales y sus productos.`}</span>
             <button onClick={() => setAlertOpen(false)} className="p-1 hover:bg-black/10 rounded" aria-label="Cerrar"><X className="w-4 h-4" /></button>
@@ -635,7 +636,7 @@ export function MarketplaceHomeGovCo({
 
       {/* ══ Contenido ══ */}
       <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-7">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-7">
 
           {/* Hero — split configurable: editorial/carrusel (izq) + panel (der) */}
           <section className={`grid grid-cols-1 ${splitClass} gap-4`}>
@@ -678,7 +679,7 @@ export function MarketplaceHomeGovCo({
                 <div className="rounded-xl p-5 text-white flex-1 flex flex-col justify-center" style={{ background: `linear-gradient(120deg, ${GREEN_DARK}, ${GREEN})` }}>
                   <h3 className="font-bold text-lg">{heroTitle || '¿Tienes un comercio?'}</h3>
                   <p className="text-white/80 text-sm mt-1">{heroSubtitle || 'Publica tus productos y llega a más clientes.'}</p>
-                  <button onClick={onGoToLogin} className="mt-4 self-start inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg text-gray-900" style={{ background: GOLD }}>Empezar <ArrowRight className="w-4 h-4" /></button>
+                  <FlameButton onClick={onGoToLogin} className="mt-7 self-start">Empezar</FlameButton>
                 </div>
               ) : (
                 <button onClick={() => topFeatured && onOpenProduct(topFeatured)} className="group relative rounded-xl overflow-hidden text-left flex-1 min-h-[160px] bg-gray-900">
@@ -724,26 +725,24 @@ export function MarketplaceHomeGovCo({
                   const isOffer = !!(product.isOnOffer && product.offerPrice)
                   const disc = isOffer ? Math.round(((product.salePrice - (product.offerPrice as number)) / product.salePrice) * 100) : 0
                   return (
-                    <button key={`p-${i}-${product.id}`} onClick={() => onOpenProduct(product)} className="snap-start shrink-0 w-44 bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-shadow p-3 text-left flex flex-col">
-                      <p className="text-[13px] font-bold text-gray-800 mb-2">{c.label}</p>
-                      <div className="aspect-square bg-gray-50 rounded-lg overflow-hidden flex items-center justify-center mb-2">
+                    <button key={`p-${i}-${product.id}`} onClick={() => onOpenProduct(product)} className="snap-start shrink-0 w-44 sm:w-52 bg-white rounded-2xl border border-gray-200 hover:shadow-lg hover:border-gray-300 transition-all p-3 text-left flex flex-col">
+                      <span className="self-start text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mb-2" style={{ background: '#EAF3DE', color: GREEN_DARK }}>{c.label}</span>
+                      <div className="relative aspect-square bg-gray-50 rounded-xl overflow-hidden flex items-center justify-center mb-2.5">
                         {product.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain p-1" />
                         ) : <Package className="w-8 h-8 text-gray-300" />}
-                      </div>
-                      <p className="text-xs text-gray-700 line-clamp-2 leading-snug">{product.name}</p>
-                      <div className="mt-auto pt-1.5">
-                        {isOffer ? (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[11px] text-gray-400 line-through">{fmtCOP(product.salePrice)}</span>
-                            <span className="text-sm font-bold text-gray-900">{fmtCOP(product.offerPrice as number)}</span>
-                            <span className="text-[11px] font-bold" style={{ color: GREEN }}>{disc}% OFF</span>
-                          </div>
-                        ) : (
-                          <span className="text-sm font-bold text-gray-900">{fmtCOP(product.salePrice)}</span>
+                        {isOffer && (
+                          <span className="absolute top-1.5 right-1.5 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md text-white shadow-sm" style={{ background: GREEN }}>-{disc}%</span>
                         )}
-                        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: GREEN }}>
+                      </div>
+                      <p className="text-[13px] font-semibold text-gray-800 line-clamp-2 leading-snug min-h-[34px]">{product.name}</p>
+                      <div className="mt-auto pt-2">
+                        <div className="flex items-baseline gap-1.5 flex-wrap">
+                          <span className="text-base font-extrabold text-gray-900">{fmtCOP(isOffer ? (product.offerPrice as number) : product.salePrice)}</span>
+                          {isOffer && <span className="text-[11px] text-gray-400 line-through">{fmtCOP(product.salePrice)}</span>}
+                        </div>
+                        <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: GREEN }}>
                           <span className="w-1.5 h-1.5 rounded-full" style={{ background: GREEN }} /> Disponible
                         </span>
                       </div>
@@ -757,11 +756,11 @@ export function MarketplaceHomeGovCo({
                 }
                 const m = meta[c.key] || { desc: '', cta: 'Ver', icon: <Store className="w-7 h-7" />, onClick: () => setTimeout(scrollToGrid, 50) }
                 return (
-                  <div key={`a-${i}-${c.key}`} className="snap-start shrink-0 w-44 bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-shadow p-3 flex flex-col items-center text-center">
-                    <p className="text-[13px] font-bold text-gray-800 mb-2 self-start">{c.label}</p>
-                    <span className="w-16 h-16 rounded-full flex items-center justify-center my-2" style={{ background: '#EAF3DE', color: GREEN }}>{m.icon}</span>
-                    <p className="text-[11.5px] text-gray-500 leading-snug mb-3">{m.desc}</p>
-                    <button onClick={m.onClick} className="mt-auto w-full py-1.5 rounded-lg text-xs font-semibold border transition-colors" style={{ borderColor: GREEN, color: GREEN }}>
+                  <div key={`a-${i}-${c.key}`} className="snap-start shrink-0 w-44 sm:w-52 bg-white rounded-2xl border border-gray-200 hover:shadow-lg hover:border-gray-300 transition-all p-3 flex flex-col items-center text-center">
+                    <span className="self-start text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full mb-2" style={{ background: '#EAF3DE', color: GREEN_DARK }}>{c.label}</span>
+                    <span className="w-16 h-16 rounded-full flex items-center justify-center my-3" style={{ background: '#EAF3DE', color: GREEN }}>{m.icon}</span>
+                    <p className="text-xs text-gray-500 leading-snug mb-4 px-1">{m.desc}</p>
+                    <button onClick={m.onClick} className="mt-auto w-full py-2 rounded-lg text-xs font-semibold border transition-colors" style={{ borderColor: GREEN, color: GREEN }} onMouseEnter={e => { e.currentTarget.style.background = GREEN; e.currentTarget.style.color = '#fff' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = GREEN }}>
                       {m.cta}
                     </button>
                   </div>
@@ -920,7 +919,7 @@ export function MarketplaceHomeGovCo({
 
       {/* ══ Footer ══ */}
       <footer className="text-white mt-6" style={{ background: GREEN_DARK }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-10 grid grid-cols-2 md:grid-cols-4 gap-8">
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 mb-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -960,7 +959,7 @@ export function MarketplaceHomeGovCo({
           </div>
         </div>
         <div className="border-t border-white/10">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-white/60">
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-white/60">
             <p>© {new Date().getFullYear()} {BRAND.name}. Todos los derechos reservados.</p>
             <div className="flex items-center gap-4">
               <a href="#" className="hover:text-white">Términos</a>

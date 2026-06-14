@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '@/lib/auth-store'
 import { api } from '@/lib/api'
+import { NewTransactionButton } from '@/components/ui/new-transaction-button'
 import {
   Dialog,
   DialogContent,
@@ -169,6 +170,20 @@ export function ProfileModal({ open, onClose }: Props) {
   const isCommerciante = user?.role === 'comerciante'
   const showPlans = isCommerciante || user?.role === 'superadmin'
 
+  // Plan sugerido para el CTA de "Nueva suscripción": el siguiente nivel al actual.
+  const PLAN_ORDER: TenantPlan[] = ['basico', 'profesional', 'empresarial']
+  const recommendedPlan: TenantPlan = currentPlan
+    ? (PLAN_ORDER[Math.min(PLAN_ORDER.indexOf(currentPlan) + 1, PLAN_ORDER.length - 1)] as TenantPlan)
+    : 'profesional'
+
+  const handleNewTransaction = () => {
+    if (!stripeConfigured) {
+      toast.error('El sistema de pagos aún no está configurado. Contacta al administrador.')
+      return
+    }
+    handleUpgrade(recommendedPlan)
+  }
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent
@@ -285,16 +300,26 @@ export function ProfileModal({ open, onClose }: Props) {
           </div>
 
           {/* ── RIGHT PANEL: Plans ── */}
-          <div className="flex flex-1 flex-col px-10 py-10 overflow-hidden">
+          <div className="flex flex-1 flex-col px-10 py-10 overflow-y-auto">
             {showPlans ? (
               <>
-                <div className="mb-8">
-                  <h3 className="text-xl font-bold text-foreground">Planes disponibles</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {isCommerciante
-                      ? 'Escoge el plan que mejor se adapte a tu negocio'
-                      : 'Planes disponibles en la plataforma'}
-                  </p>
+                <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-foreground">Planes disponibles</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {isCommerciante
+                        ? 'Escoge el plan que mejor se adapte a tu negocio'
+                        : 'Planes disponibles en la plataforma'}
+                    </p>
+                  </div>
+                  {isCommerciante && (
+                    <NewTransactionButton
+                      label="Nueva suscripción"
+                      onClick={handleNewTransaction}
+                      className="shrink-0"
+                      aria-label="Iniciar una nueva suscripción"
+                    />
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-5 flex-1">

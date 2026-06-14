@@ -24,8 +24,8 @@ export function DynamicFavicon() {
     // 1) Favicon de plataforma (configurable desde superadmin). Por defecto el icono DAIMUZ.
     fetch(`${API_URL}/storefront/platform-settings`)
       .then(r => r.json())
-      .then(j => setFavicon((j?.data?.platform_logo as string) || BRAND.iconTransparent))
-      .catch(() => setFavicon(BRAND.iconTransparent))
+      .then(j => setFavicon((j?.data?.platform_logo as string) || BRAND.icon))
+      .catch(() => setFavicon(BRAND.icon))
 
     // 2) Si hay comercio autenticado con logo propio, lo sobrescribe (su marca en la pestaña).
     if (!api.getToken()) return

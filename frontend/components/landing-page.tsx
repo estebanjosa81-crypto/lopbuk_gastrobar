@@ -2536,7 +2536,37 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           --color-bg-store:${activeThemeColors.background_store || effectiveBgColor};
           --color-surface:${activeThemeColors.surface_store || altBgColor};
           --color-text:${activeThemeColors.text_main || '#fff'};
-        }` : ''}
+        }
+        /* ── Colorimetría IA: las clases de marca (verde/emerald) hardcodeadas
+              pasan a consumir la paleta generada. Sin esto la paleta se guarda
+              pero la página nunca cambia de color. ── */
+        .bg-green-400, .bg-green-500, .bg-green-600, .bg-green-700,
+        .bg-emerald-400, .bg-emerald-500, .bg-emerald-600 { background-color: var(--color-primary) !important; }
+        .hover\\:bg-green-500:hover, .hover\\:bg-green-600:hover { background-color: var(--color-primary-hover) !important; }
+        .bg-green-500\\/20  { background-color: color-mix(in srgb, var(--color-primary) 20%, transparent) !important; }
+        .bg-green-500\\/15  { background-color: color-mix(in srgb, var(--color-primary) 15%, transparent) !important; }
+        .bg-green-500\\/10, .bg-emerald-500\\/10 { background-color: color-mix(in srgb, var(--color-primary) 10%, transparent) !important; }
+        .bg-green-500\\/8   { background-color: color-mix(in srgb, var(--color-primary) 8%, transparent) !important; }
+        .bg-green-500\\/6   { background-color: color-mix(in srgb, var(--color-primary) 6%, transparent) !important; }
+        .bg-emerald-400\\/50 { background-color: color-mix(in srgb, var(--color-primary) 50%, transparent) !important; }
+        .text-green-300, .text-green-400, .text-green-500, .text-green-600,
+        .text-emerald-400, .text-emerald-500 { color: var(--color-primary) !important; }
+        .hover\\:text-green-400:hover { color: var(--color-primary) !important; }
+        .text-green-400\\/80, .text-emerald-400\\/80 { color: color-mix(in srgb, var(--color-primary) 80%, transparent) !important; }
+        .text-green-400\\/70, .text-emerald-400\\/70 { color: color-mix(in srgb, var(--color-primary) 70%, transparent) !important; }
+        .border-green-400, .border-emerald-400 { border-color: var(--color-primary) !important; }
+        .border-green-500\\/50, .border-green-400\\/50 { border-color: color-mix(in srgb, var(--color-primary) 50%, transparent) !important; }
+        .border-green-500\\/30, .border-emerald-500\\/30 { border-color: color-mix(in srgb, var(--color-primary) 30%, transparent) !important; }
+        .border-green-500\\/25, .border-emerald-500\\/25 { border-color: color-mix(in srgb, var(--color-primary) 25%, transparent) !important; }
+        .border-green-500\\/20 { border-color: color-mix(in srgb, var(--color-primary) 20%, transparent) !important; }
+        .ring-green-400\\/30 { --tw-ring-color: color-mix(in srgb, var(--color-primary) 30%, transparent) !important; }
+        .from-emerald-500 { --tw-gradient-from: var(--color-primary) !important; }
+        .from-emerald-900\\/60, .from-emerald-500\\/60 { --tw-gradient-from: color-mix(in srgb, var(--color-primary) 60%, transparent) !important; }
+        .from-emerald-500\\/\\[0\\.07\\] { --tw-gradient-from: color-mix(in srgb, var(--color-primary) 7%, transparent) !important; }
+        .to-emerald-500 { --tw-gradient-to: var(--color-primary) !important; }
+        .to-emerald-500\\/\\[0\\.03\\] { --tw-gradient-to: color-mix(in srgb, var(--color-primary) 3%, transparent) !important; }
+        .via-emerald-400\\/40 { --tw-gradient-via: color-mix(in srgb, var(--color-primary) 40%, transparent) !important; }
+        .to-teal-950\\/80 { --tw-gradient-to: color-mix(in srgb, var(--color-secondary) 80%, transparent) !important; }` : ''}
         .landing-nav { background-color: ${effectiveBgColor}cc !important; }
         .landing-section-bg { background-color: ${effectiveBgColor} !important; }
         .landing-section-alt { background-color: ${altBgColor} !important; }

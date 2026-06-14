@@ -16,8 +16,8 @@ const montserrat = Montserrat({
 
 const BRAND_ISOTIPO = '/daimuz-isotipo.png'
 const BRAND_ICON = '/daimuz-icon.png'
-// Favicon: variante con esquinas transparentes (sin recuadro blanco en la pestaña).
-const BRAND_FAVICON = '/daimuz-icon-transparent.png'
+// Favicon de la pestaña: icono DAIMUZ oficial.
+const BRAND_FAVICON = '/daimuz-icon.png'
 
 export const metadata: Metadata = {
   title: 'DAIMUZ - !Bienvenido al epicentro digital de colombia!',

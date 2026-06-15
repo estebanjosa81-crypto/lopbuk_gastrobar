@@ -1,9 +1,8 @@
 // @ts-nocheck
 'use client'
 
-// Credencial 3D colgante (showpiece del portafolio) — réplica del Lanyard del
-// portafolio de Esteban. Requiere el stack 3D (ver package.json):
-//   three, @react-three/fiber@^9, @react-three/drei@^10, @react-three/rapier@^2, meshline
+// Credencial 3D colgante (Lanyard) — réplica del portafolio de Esteban.
+// Texturas configurables: cardImageUrl (foto sobre el carnet) y bandImageUrl (cordón).
 // Assets en /public: models/card.glb y assets/lanyard.png
 import { useEffect, useRef, useState } from 'react'
 import { Canvas, extend, useFrame } from '@react-three/fiber'
@@ -14,7 +13,6 @@ import * as THREE from 'three'
 
 const cardGLB = '/models/card.glb'
 const DEFAULT_BAND = '/assets/lanyard.png'
-// PNG 1x1 transparente — placeholder cuando no hay imagen de tarjeta personalizada.
 const TRANSPARENT_PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
@@ -56,18 +54,16 @@ function Band({ maxSpeed = 50, minSpeed = 0, cardImageUrl = '', bandImageUrl = '
   const segmentProps = { type: 'dynamic', canSleep: true, colliders: false, angularDamping: 4, linearDamping: 4 }
 
   const { nodes, materials } = useGLTF(cardGLB)
-  // Textura de la banda/cordón (configurable por tarjeta; default DAIMUZ).
   const texture = useTexture(bandImageUrl || DEFAULT_BAND)
-  // Textura de la cara del carnet = foto del desarrollador (si se configuró).
   const cardTexture = useTexture(cardImageUrl || TRANSPARENT_PX)
   useEffect(() => {
     if (cardTexture) {
       cardTexture.colorSpace = THREE.SRGBColorSpace
-      // Las UV del modelo GLTF usan flipY=false; ajustamos para que la foto no salga invertida.
       cardTexture.flipY = false
       cardTexture.needsUpdate = true
     }
   }, [cardTexture])
+
   const [curve] = useState(() => new THREE.CatmullRomCurve3([new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()]))
   const [dragged, drag] = useState(false)
   const [hovered, hover] = useState(false)

@@ -294,7 +294,7 @@ function TeamCarousel({ cards, brandTitle, accentColor }: {
       </div>
 
       {/* Tarjeta del desarrollador = carnet 3D colgante (Lanyard).
-          La foto se mapea sobre el carnet; la banda/cordón es configurable por tarjeta. */}
+          La foto se mapea sobre el carnet; la banda/cordon es configurable por tarjeta. */}
       <div style={{ width: 340, maxWidth: '90vw' }}>
         <LanyardShowpiece
           key={card.id}
@@ -1694,4 +1694,21 @@ export default function PortfolioPage() {
             </div>
           )}
 
-          {/* Fallback si no hay dat
+          {/* Fallback si no hay datos de contacto configurados */}
+          {!data?.contactWhatsapp && !data?.contactEmail && !data?.contactInstagram && (
+            <p className="text-center text-sm" style={{ color: 'var(--pf-subtle)' }}>
+              Configura tus canales de contacto desde el panel de administración.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-8 text-center border-t border-white/5" style={{ borderColor: 'var(--pf-border)' }}>
+        <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--pf-subtle)' }}>
+          {title} · {new Date().getFullYear()} · Powered by Lopbuk
+        </p>
+      </footer>
+    </div>
+  )
+}

@@ -17,6 +17,13 @@
 
 ## Historial
 
+### [2026-06-14] — Archivos truncados por mezclar `sed` con el editor (build roto)
+**Síntoma:** `next build` falla con `Unterminated block comment` en `app/portfolio/page.tsx:1697`. Varios archivos del portafolio quedaron truncados en disco (page.tsx, lanyard.tsx, package.json, usePortfolio.ts, PortfolioTab.tsx, portfolio.routes.ts).
+**Causa:** Se editó `page.tsx` con `sed -i` mientras la vista del editor y el disco estaban desincronizados; `sed` reescribió una copia cortada y se commiteó. Otras escrituras quedaron truncadas por el mismo desfase.
+**Fix:** Restaurar `page.tsx` desde el último commit íntegro (`60f4f77`) y reaplicar los cambios de forma atómica; reescribir `lanyard.tsx` completo; restaurar el resto desde HEAD con `git show HEAD:ruta > ruta`. Verificar en disco: fin-de-archivo + balance de llaves + `tsc`.
+**Archivos:** portafolio (frontend + backend), `frontend/package.json`
+**Regla:** Nunca `sed -i` / `>` para parchar archivos existentes; usar el editor y verificar en disco. Ver [[lessons-learned]].
+
 ### [2026-06-14] — Colorimetría no teñía el home (Tema 2)
 **Síntoma:** El superadmin generaba y guardaba la paleta, pero el home seguía verde.
 **Causa:** El Tema 2 (`MarketplaceHomeGovCo`) pintaba la marca con estilos **inline** (`style={{ background: GREEN }}`, constante JS fija) y nunca recibía la paleta. Los estilos inline NO se pueden sobreescribir con reglas CSS de clases.
@@ -94,26 +101,4 @@
 **Causa:** `categories.id` (VARCHAR(50)) se genera como slug del nombre y era PRIMARY KEY global. Distintos tenants con el mismo nombre → mismo id → choque, ignorando el aislamiento multi-tenant.
 **Fix:** PK compuesta `(tenant_id, id)`. Seguro: sin FKs hacia `categories(id)`, ids únicos globalmente al migrar, y el service ya validaba unicidad por `id + tenant_id`. Solo migración de BD, sin rebuild.
 **Archivos:** `backend/migrations/fix_categories_composite_pk.sql` (nuevo), `backend/inventarioEsteban_v3_multitenant.sql` (esquema base)
-**Regla:** En multi-tenant, cualquier id derivado de datos del usuario (slug, nombre) debe ser único POR tenant. La PK debe incluir `tenant_id`, no confiar solo en un UNIQUE secundario.
-
----
-
-### [2026-06-04] — Google OAuth no carga en producción
-**Síntoma:** "Google OAuth components must be used within GoogleOAuthProvider" en el login en prod
-**Causa:** `NEXT_PUBLIC_GOOGLE_CLIENT_ID` iba vacío en los `build args` del frontend. En Next.js las vars `NEXT_PUBLIC_*` se compilan en el build, no se leen en runtime; con valor vacío el provider no se monta.
-**Fix:** Pasar el client ID real como build arg en el compose (y `ARG`+`ENV` en el Dockerfile antes de `npm run build`). Rebuild de la imagen, no solo redeploy.
-**Archivos:** `docker-compose` (Komodo), `frontend/Dockerfile`
-**Regla:** Toda var `NEXT_PUBLIC_*` debe ir como build arg y reconstruir la imagen. Ponerla en `environment:` (runtime) no sirve.
-
----
-
-### [2026-06-04] — Chatbot 500: modelo Gemini retirado
-**Síntoma:** `POST /api/chatbot/message` 500. Log: `gemini-2.0-flash is no longer available` (404).
-**Causa:** Nombre de modelo hardcodeado en `agent.service.ts`; Google retiró `gemini-2.0-flash`.
-**Fix:** Usar alias `gemini-flash-latest` (no fija versión), configurable con env `GEMINI_MODEL`.
-**Archivos:** `backend/src/modules/agent/agent.service.ts`
-**Regla:** No fijar versión exacta de modelos de IA; usar alias `-latest` o env var. Ojo: el código desplegado por Komodo viene del repo GitHub, hay que `commit`+`push` para que el fix llegue al build (resuelto: push + rebuild → chatbot OK).
-
----
-
-← [[lessons-learned]] | [[DAIMUZ]] | → [[bugs-history]]
+**Regla:** En multi-tenant, cualquier id derivado de datos del usuario (slug, nombre) debe ser único POR tenant. La PK debe incluir `tenant_id`, no conf

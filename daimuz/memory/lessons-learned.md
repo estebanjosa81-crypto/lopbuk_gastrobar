@@ -9,6 +9,14 @@
 - **Siempre usar `pnpm add <paquete>`** para instalar dependencias en `/frontend`
 - El proyecto tiene `pnpm-lock.yaml` y config `shamefully-hoist` que indica pnpm como gestor principal
 
+### ⚠️ NO editar archivos con `sed -i` ni rewrites de shell — usar el editor
+- Mezclar ediciones del editor con `sed -i` / redirecciones `>` sobre el mismo archivo **corrompió/truncó** varios archivos (jun 2026): el disco y la vista del editor se desincronizaron y `sed` reescribió una **copia cortada** → build roto (`Unterminated block comment`, `'}' expected`).
+- Reglas:
+  - Editar **siempre con el editor** (no `sed -i`, no `>` para "parchar" un archivo existente).
+  - Si hay que reescribir un archivo entero, hacerlo **de una sola vez con el contenido completo**.
+  - Tras tocar muchos archivos, **verificar en disco** que cada uno termina bien (último token) y está balanceado — NO confiar solo en `tsc`, que puede leer una vista distinta del disco.
+  - Recuperación: `git show <commit-bueno>:ruta > ruta` restaura una versión íntegra.
+
 ### ✅ @dnd-kit para Kanban sin dependencias pesadas
 - `@dnd-kit/core` + `@dnd-kit/utilities` — drag & drop con ~15KB, sin conflictos con React 19
 - Patrón "drag to column": `useDraggable` en tarjeta + `useDroppable` en columna (no `SortableContext`)
@@ -73,19 +81,4 @@
 | Tiempo total estimado | ~45 min | ~18 min |
 | Files explorados para orientarse | 8-12 | 3 |
 | Backtracking / re-lecturas | Frecuente | 0 |
-| Bugs en runtime por falta de contexto | 2-3 | 0 |
-| Bugs detectados en pre-lectura | Raro | 1 (duplicado api.ts) |
-
-### Por qué funcionó
-- El `context/current-sprint.md` + el summary de sesión anterior tenían exactamente qué archivos tocar
-- Los `compressed.md` de cada módulo dijeron el patrón sin leer código
-- `endpoints-index.md` confirmó qué backend ya existía sin explorar routes
-- `governance/universal-constraints.md` evitó errores de patrón (tenant_id, service-only logic)
-
-### Regla derivada
-> **Antes de implementar, leer:** compressed.md del módulo → endpoints-index → files-index → el archivo específico.
-> Eso reemplaza 20-30 minutos de exploración ciega.
-
----
-
-← [[completed-features]] | [[DAIMUZ]] | → [[important-fixes]]
+| Bu

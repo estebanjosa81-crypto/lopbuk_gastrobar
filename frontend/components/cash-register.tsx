@@ -12,6 +12,10 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  ShiftSelector, EmployeePicker, ShiftEmployeeManager, BonusDiscountPanel, DailySummaryView, ShiftBadge,
+  type ShiftType, type PickedEmployee, type ShiftBonus,
+} from '@/components/cash-shifts/shift-components'
+import {
   Table,
   TableBody,
   TableCell,
@@ -67,6 +71,11 @@ export function CashRegister() {
   // Opening form
   const [openingAmount, setOpeningAmount] = useState('')
   const [isOpening, setIsOpening] = useState(false)
+  // Turnos
+  const [shiftType, setShiftType] = useState<ShiftType>('unico')
+  const [pickedEmployees, setPickedEmployees] = useState<PickedEmployee[]>([])
+  const [closeBonuses, setCloseBonuses] = useState<ShiftBonus[]>([])
+  const [showDailySummary, setShowDailySummary] = useState(false)
 
   // Movement dialog
   const [isMovementDialogOpen, setIsMovementDialogOpen] = useState(false)
@@ -195,10 +204,15 @@ export function CashRegister() {
       return
     }
     setIsOpening(true)
-    const result = await api.openCashSession(amount, user?.name || 'Usuario')
+    const result = await api.openCashSession(amount, user?.name || 'Usuario', {
+      shiftType,
+      employees: pickedEmployees,
+    })
     if (result.success && result.data) {
       setActiveSession(result.data)
       setOpeningAmount('')
+      setPickedEmployees([])
+      setShiftType('unico')
       toast.success('Caja abierta exitosamente')
     } else {
       toast.error(result.error || 'Error al abrir caja')
@@ -249,10 +263,12 @@ export function CashRegister() {
       actualCash: amount,
       observations: observations.trim() || undefined,
       userName: user?.name,
+      bonuses: closeBonuses.length ? closeBonuses : undefined,
     })
     if (result.success && result.data) {
       setCierreResult(result.data)
       setCierreStep('result')
+      setCloseBonuses([])
     } else {
       toast.error(result.error || 'Error al cerrar caja')
     }
@@ -308,6 +324,9 @@ export function CashRegister() {
             <CardDescription>Registre el fondo inicial para iniciar el turno</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Selector de turno (opcional: 'Único' = flujo de hoy) */}
+            <ShiftSelector value={shiftType} onChange={setShiftType} />
+
             <div className="space-y-2">
               <Label htmlFor="openingAmount">Fondo de caja (efectivo inicial)</Label>
               <div className="relative">
@@ -328,6 +347,10 @@ export function CashRegister() {
                 Dinero disponible para dar cambio al inicio del turno
               </p>
             </div>
+
+            {/* Empleados del turno (opcional) */}
+            <EmployeePicker value={pickedEmployees} onChange={setPickedEmployees} />
+
             <Button onClick={handleOpenSession} disabled={isOpening} className="w-full gap-2">
               <Unlock className="h-4 w-4" />
               {isOpening ? 'Abriendo...' : 'Abrir Caja'}
@@ -413,7 +436,10 @@ export function CashRegister() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold text-foreground">Caja Registradora</h2>
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold text-foreground flex items-center gap-2">
+            Caja Registradora
+            <ShiftBadge shiftType={(activeSession as any).shiftType} shiftLabel={(activeSession as any).shiftLabel} />
+          </h2>
           <p className="text-sm text-muted-foreground">
             Abierta por <span className="font-medium text-foreground">{activeSession.openedByName}</span> el{' '}
             {new Date(activeSession.openedAt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -421,6 +447,10 @@ export function CashRegister() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowDailySummary(true)} className="gap-1">
+            <RefreshCw className="h-4 w-4" />
+            Resumen del día
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { fetchTotals(); fetchMovements() }} className="gap-1">
             <RefreshCw className="h-4 w-4" />
             Actualizar
@@ -438,6 +468,23 @@ export function CashRegister() {
           )}
         </div>
       </div>
+
+      {/* Empleados del turno (solo si la sesión usa turnos) */}
+      {(activeSession as any).shiftType && (activeSession as any).shiftType !== 'unico' && (
+        <Card className="border-border bg-card">
+          <CardContent className="pt-4">
+            <ShiftEmployeeManager sessionId={activeSession.id} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Resumen del día (modal) */}
+      <Dialog open={showDailySummary} onOpenChange={setShowDailySummary}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Resumen consolidado del día</DialogTitle></DialogHeader>
+          <DailySummaryView />
+        </DialogContent>
+      </Dialog>
 
       {/* Live Totals Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -839,6 +886,13 @@ export function CashRegister() {
                     rows={3}
                   />
                 </div>
+
+                {/* Bonos y descuentos por empleado (si la sesión tiene turno) */}
+                {(activeSession as any).shiftType && (activeSession as any).shiftType !== 'unico' && (
+                  <div className="border-t pt-3">
+                    <BonusDiscountPanel sessionId={activeSession.id} onChange={setCloseBonuses} />
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCierreDialogOpen(false)}>Cancelar</Button>

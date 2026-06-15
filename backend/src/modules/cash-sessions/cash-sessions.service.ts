@@ -202,7 +202,12 @@ export class CashSessionsService {
     tenantId: string,
     userId: string,
     userName: string,
-    openingAmount: number
+    openingAmount: number,
+    opts?: {
+      shiftType?: 'mañana' | 'tarde' | 'unico';
+      shiftLabel?: string | null;
+      employees?: { userId?: string | null; name: string; role?: string | null }[];
+    }
   ): Promise<CashSession> {
     const connection = await db.getConnection();
 
@@ -220,12 +225,24 @@ export class CashSessionsService {
       }
 
       const id = uuidv4();
+      const shiftType = opts?.shiftType && ['mañana', 'tarde', 'unico'].includes(opts.shiftType) ? opts.shiftType : 'unico';
 
       await connection.execute<ResultSetHeader>(
-        `INSERT INTO cash_sessions (id, tenant_id, opened_by, opened_by_name, opening_amount, status)
-         VALUES (?, ?, ?, ?, ?, 'abierta')`,
-        [id, tenantId, userId, userName, openingAmount]
+        `INSERT INTO cash_sessions (id, tenant_id, opened_by, opened_by_name, opening_amount, status, shift_type, shift_label)
+         VALUES (?, ?, ?, ?, ?, 'abierta', ?, ?)`,
+        [id, tenantId, userId, userName, openingAmount, shiftType, opts?.shiftLabel || null]
       );
+
+      // Empleados del turno (de cuenta o ad-hoc)
+      for (const e of (opts?.employees || [])) {
+        const name = String(e?.name || '').trim();
+        if (!name) continue;
+        await connection.execute<ResultSetHeader>(
+          `INSERT INTO shift_employees (id, tenant_id, session_id, user_id, employee_name, role_label, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
+          [uuidv4(), tenantId, id, e.userId || null, name.slice(0, 100), e.role ? String(e.role).slice(0, 50) : null]
+        );
+      }
 
       await connection.commit();
 
@@ -398,7 +415,8 @@ export class CashSessionsService {
     closedBy: string,
     closedByName: string,
     actualCash: number,
-    observations?: string
+    observations?: string,
+    bonuses?: { shiftEmpId: string; type: 'bono' | 'descuento'; amount: number; concept?: string | null }[]
   ): Promise<CashSession> {
     const connection = await db.getConnection();
 
@@ -554,6 +572,22 @@ export class CashSessionsService {
         ]
       );
 
+      // Bonos/descuentos por empleado del turno (reemplaza los previos del cierre)
+      if (Array.isArray(bonuses) && bonuses.length > 0) {
+        const tenantId = sessionRows[0].tenant_id;
+        await connection.execute('DELETE FROM shift_employee_bonuses WHERE session_id = ?', [sessionId]);
+        for (const b of bonuses) {
+          const amount = Number(b.amount) || 0;
+          if (!b.shiftEmpId || amount <= 0) continue;
+          const type = b.type === 'descuento' ? 'descuento' : 'bono';
+          await connection.execute<ResultSetHeader>(
+            `INSERT INTO shift_employee_bonuses (id, tenant_id, session_id, shift_emp_id, type, amount, concept)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [uuidv4(), tenantId, sessionId, b.shiftEmpId, type, amount, b.concept ? String(b.concept).slice(0, 255) : null]
+          );
+        }
+      }
+
       await connection.commit();
 
       return this.findById(sessionId);
@@ -563,6 +597,119 @@ export class CashSessionsService {
     } finally {
       connection.release();
     }
+  }
+
+  // ════════════════ EMPLEADOS DEL TURNO ════════════════
+
+  private mapShiftEmployee(r: any) {
+    return {
+      id: r.id, sessionId: r.session_id, userId: r.user_id || null,
+      name: r.employee_name, role: r.role_label || null,
+      status: r.status, bajaReason: r.baja_reason || null, createdAt: r.created_at,
+      bonuses: r.bonuses || [],
+    };
+  }
+
+  async getShiftEmployees(sessionId: string): Promise<any[]> {
+    const [emps] = await db.execute<any[]>(
+      'SELECT * FROM shift_employees WHERE session_id = ? ORDER BY created_at ASC',
+      [sessionId]
+    );
+    if (emps.length === 0) return [];
+    const [bonuses] = await db.execute<any[]>(
+      'SELECT id, shift_emp_id, type, amount, concept FROM shift_employee_bonuses WHERE session_id = ?',
+      [sessionId]
+    );
+    const byEmp: Record<string, any[]> = {};
+    for (const b of bonuses) (byEmp[b.shift_emp_id] ||= []).push({ id: b.id, type: b.type, amount: Number(b.amount), concept: b.concept });
+    return emps.map(e => this.mapShiftEmployee({ ...e, bonuses: byEmp[e.id] || [] }));
+  }
+
+  async addShiftEmployee(
+    tenantId: string, sessionId: string,
+    data: { userId?: string | null; name: string; role?: string | null }
+  ): Promise<any> {
+    const session = await this.findById(sessionId);
+    if (session.status !== 'abierta') throw new AppError('La sesion de caja ya esta cerrada', 400);
+    const name = String(data?.name || '').trim();
+    if (!name) throw new AppError('El nombre del empleado es requerido', 400);
+    const id = uuidv4();
+    await db.execute<ResultSetHeader>(
+      `INSERT INTO shift_employees (id, tenant_id, session_id, user_id, employee_name, role_label, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
+      [id, tenantId, sessionId, data.userId || null, name.slice(0, 100), data.role ? String(data.role).slice(0, 50) : null]
+    );
+    const [rows] = await db.execute<any[]>('SELECT * FROM shift_employees WHERE id = ?', [id]);
+    return this.mapShiftEmployee({ ...rows[0], bonuses: [] });
+  }
+
+  async updateShiftEmployee(
+    tenantId: string, empId: string,
+    data: { role?: string | null; status?: 'activo' | 'baja'; bajaReason?: string | null }
+  ): Promise<any> {
+    const sets: string[] = []; const params: any[] = [];
+    if (data.role !== undefined) { sets.push('role_label = ?'); params.push(data.role ? String(data.role).slice(0, 50) : null); }
+    if (data.status !== undefined && ['activo', 'baja'].includes(data.status)) { sets.push('status = ?'); params.push(data.status); }
+    if (data.bajaReason !== undefined) { sets.push('baja_reason = ?'); params.push(data.bajaReason ? String(data.bajaReason).slice(0, 255) : null); }
+    if (!sets.length) throw new AppError('Sin cambios', 400);
+    params.push(empId, tenantId);
+    await db.execute(`UPDATE shift_employees SET ${sets.join(', ')} WHERE id = ? AND tenant_id = ?`, params);
+    const [rows] = await db.execute<any[]>('SELECT * FROM shift_employees WHERE id = ?', [empId]);
+    if (rows.length === 0) throw new AppError('Empleado no encontrado', 404);
+    return this.mapShiftEmployee({ ...rows[0], bonuses: [] });
+  }
+
+  // ════════════════ RESUMEN DIARIO (consolidado de turnos) ════════════════
+
+  async getDailySummary(tenantId: string, dateStr?: string): Promise<any> {
+    const date = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : new Date().toISOString().slice(0, 10);
+    const [sessions] = await db.execute<any[]>(
+      `SELECT * FROM cash_sessions
+        WHERE tenant_id = ? AND DATE(opened_at) = ?
+        ORDER BY opened_at ASC`,
+      [tenantId, date]
+    );
+
+    const shifts = [];
+    let totals = { opening: 0, cashSales: 0, cardSales: 0, transferSales: 0, fiadoSales: 0, expected: 0, actual: 0, difference: 0, bonuses: 0, discounts: 0, salesCount: 0 };
+
+    for (const s of sessions) {
+      const employees = await this.getShiftEmployees(s.id);
+      let bono = 0, desc = 0;
+      for (const e of employees) for (const b of e.bonuses) { if (b.type === 'bono') bono += b.amount; else desc += b.amount; }
+
+      shifts.push({
+        id: s.id,
+        shiftType: s.shift_type, shiftLabel: s.shift_label,
+        status: s.status,
+        openedAt: s.opened_at, closedAt: s.closed_at,
+        openingAmount: Number(s.opening_amount || 0),
+        totalCashSales: Number(s.total_cash_sales || 0),
+        totalCardSales: Number(s.total_card_sales || 0),
+        totalTransferSales: Number(s.total_transfer_sales || 0),
+        totalFiadoSales: Number(s.total_fiado_sales || 0),
+        totalSalesCount: Number(s.total_sales_count || 0),
+        expectedCash: Number(s.expected_cash || 0),
+        actualCash: Number(s.actual_cash || 0),
+        difference: Number(s.difference || 0),
+        closingStatus: s.closing_status || null,
+        bonusesTotal: bono, discountsTotal: desc,
+        employees,
+      });
+
+      totals.opening += Number(s.opening_amount || 0);
+      totals.cashSales += Number(s.total_cash_sales || 0);
+      totals.cardSales += Number(s.total_card_sales || 0);
+      totals.transferSales += Number(s.total_transfer_sales || 0);
+      totals.fiadoSales += Number(s.total_fiado_sales || 0);
+      totals.expected += Number(s.expected_cash || 0);
+      totals.actual += Number(s.actual_cash || 0);
+      totals.difference += Number(s.difference || 0);
+      totals.salesCount += Number(s.total_sales_count || 0);
+      totals.bonuses += bono; totals.discounts += desc;
+    }
+
+    return { date, shifts, totals };
   }
 }
 

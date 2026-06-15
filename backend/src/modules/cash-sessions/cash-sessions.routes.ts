@@ -11,6 +11,13 @@ router.use(authenticate);
 // GET /api/cash-sessions/active - Get current open session
 router.get('/active', cashSessionsController.getActive.bind(cashSessionsController));
 
+// GET /api/cash-sessions/daily-summary - Resumen consolidado del día (turnos)
+router.get(
+  '/daily-summary',
+  [query('date').optional().isString(), validateRequest],
+  cashSessionsController.getDailySummary.bind(cashSessionsController)
+);
+
 // GET /api/cash-sessions - List all sessions (comerciante/superadmin only)
 router.get(
   '/',
@@ -69,6 +76,38 @@ router.get(
   '/:id/totals',
   [param('id').notEmpty().withMessage('ID requerido'), validateRequest],
   cashSessionsController.getLiveTotals.bind(cashSessionsController)
+);
+
+// ── Empleados del turno ──
+// GET /api/cash-sessions/:id/employees
+router.get(
+  '/:id/employees',
+  [param('id').notEmpty().withMessage('ID requerido'), validateRequest],
+  cashSessionsController.getEmployees.bind(cashSessionsController)
+);
+// POST /api/cash-sessions/:id/employees
+router.post(
+  '/:id/employees',
+  [
+    param('id').notEmpty().withMessage('ID requerido'),
+    body('name').notEmpty().withMessage('Nombre requerido'),
+    body('role').optional().isString(),
+    body('userId').optional({ nullable: true }).isString(),
+    validateRequest,
+  ],
+  cashSessionsController.addEmployee.bind(cashSessionsController)
+);
+// PUT /api/cash-sessions/:id/employees/:empId
+router.put(
+  '/:id/employees/:empId',
+  [
+    param('empId').notEmpty().withMessage('ID empleado requerido'),
+    body('role').optional({ nullable: true }).isString(),
+    body('status').optional().isIn(['activo', 'baja']),
+    body('bajaReason').optional({ nullable: true }).isString(),
+    validateRequest,
+  ],
+  cashSessionsController.updateEmployee.bind(cashSessionsController)
 );
 
 // POST /api/cash-sessions/:id/close - Close session (cierre ciego)

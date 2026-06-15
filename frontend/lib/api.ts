@@ -776,11 +776,29 @@ class ApiService {
     return this.request<any>(`/cash-sessions/${id}`)
   }
 
-  async openCashSession(openingAmount: number, userName: string) {
+  async openCashSession(
+    openingAmount: number,
+    userName: string,
+    opts?: { shiftType?: 'mañana' | 'tarde' | 'unico'; shiftLabel?: string | null; employees?: { userId?: string | null; name: string; role?: string | null }[] }
+  ) {
     return this.request<any>('/cash-sessions/open', {
       method: 'POST',
-      body: JSON.stringify({ openingAmount, userName }),
+      body: JSON.stringify({ openingAmount, userName, ...(opts || {}) }),
     })
+  }
+
+  // ── Empleados del turno ──
+  async getShiftEmployees(sessionId: string) {
+    return this.request<any>(`/cash-sessions/${sessionId}/employees`)
+  }
+  async addShiftEmployee(sessionId: string, data: { userId?: string | null; name: string; role?: string | null }) {
+    return this.request<any>(`/cash-sessions/${sessionId}/employees`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateShiftEmployee(sessionId: string, empId: string, data: { role?: string | null; status?: 'activo' | 'baja'; bajaReason?: string | null }) {
+    return this.request<any>(`/cash-sessions/${sessionId}/employees/${empId}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  async getCashDailySummary(date?: string) {
+    return this.request<any>(`/cash-sessions/daily-summary${date ? `?date=${encodeURIComponent(date)}` : ''}`)
   }
 
   async addCashMovement(sessionId: string, data: { type: 'entrada' | 'salida'; amount: number; reason: string; notes?: string; userName?: string }) {
@@ -798,7 +816,7 @@ class ApiService {
     return this.request<any>(`/cash-sessions/${sessionId}/totals`)
   }
 
-  async closeCashSession(sessionId: string, data: { actualCash: number; observations?: string; userName?: string }) {
+  async closeCashSession(sessionId: string, data: { actualCash: number; observations?: string; userName?: string; bonuses?: { shiftEmpId: string; type: 'bono' | 'descuento'; amount: number; concept?: string | null }[] }) {
     return this.request<any>(`/cash-sessions/${sessionId}/close`, {
       method: 'POST',
       body: JSON.stringify(data),

@@ -19,6 +19,17 @@ export async function cReq<T = any>(path: string, options: RequestInit = {}): Pr
   return (body?.data ?? body) as T
 }
 
+/** ID de dispositivo persistente (para limitar 1 like anónimo por dispositivo). */
+export function getDeviceId(): string {
+  if (typeof localStorage === 'undefined') return ''
+  let id = localStorage.getItem('daimuz_did')
+  if (!id) {
+    id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)
+    try { localStorage.setItem('daimuz_did', id) } catch { /* */ }
+  }
+  return id
+}
+
 export type Category = 'noticia' | 'video' | 'tutorial' | 'app' | 'oferta'
 
 export interface PostMedia { id: string; mediaType: 'image' | 'video' | 'gif'; url: string; orderIndex: number }
@@ -29,7 +40,7 @@ export interface PostAd {
 export interface CommunityPost {
   id: string; title: string; body: string | null; category: Category; status: 'draft' | 'published'
   coverUrl: string | null; author: string; authorAvatar: string | null
-  likes: number; saves: number; comments: number; createdAt: string; publishedAt: string | null
+  likes: number; saves: number; comments: number; shares: number; createdAt: string; publishedAt: string | null
   media: PostMedia[]; ads: PostAd[]; liked: boolean; saved: boolean
 }
 export interface CommunityComment {
@@ -41,17 +52,23 @@ export interface PublicProductLite {
 }
 
 export const communityApi = {
+  settings: () => cReq<{ likeRequiresLogin: boolean }>('/settings'),
+  saveSettings: (data: { likeRequiresLogin?: boolean }) => cReq<{ likeRequiresLogin: boolean }>('/settings', { method: 'PUT', body: JSON.stringify(data) }),
   feed: (params: { sort?: string; category?: string; q?: string; page?: number } = {}) => {
     const qs = new URLSearchParams()
     if (params.sort) qs.set('sort', params.sort)
     if (params.category) qs.set('category', params.category)
     if (params.q) qs.set('q', params.q)
     if (params.page) qs.set('page', String(params.page))
+    qs.set('did', getDeviceId())
     const s = qs.toString()
     return cReq<{ data: CommunityPost[]; page: number; total: number; hasMore: boolean }>(`/posts${s ? `?${s}` : ''}`)
   },
   post: (id: string) => cReq<CommunityPost>(`/posts/${id}`),
-  react: (id: string, type: 'like' | 'save') => cReq<{ type: string; active: boolean; likes: number; saves: number }>(`/posts/${id}/react`, { method: 'POST', body: JSON.stringify({ type }) }),
+  // LIKE no requiere sesión; `active` es el estado deseado (para like anónimo).
+  react: (id: string, type: 'like' | 'save', active?: boolean) =>
+    cReq<{ type: string; active: boolean; likes: number; saves: number }>(`/posts/${id}/react`, { method: 'POST', body: JSON.stringify({ type, active, deviceId: getDeviceId() }) }),
+  share: (id: string) => cReq<{ shares: number }>(`/posts/${id}/share`, { method: 'POST' }),
   comments: (id: string) => cReq<CommunityComment[]>(`/posts/${id}/comments`),
   comment: (id: string, body: string, parentId?: string) => cReq<CommunityComment>(`/posts/${id}/comments`, { method: 'POST', body: JSON.stringify({ body, parentId }) }),
   searchProducts: (q: string) => cReq<PublicProductLite[]>(`/products/public?q=${encodeURIComponent(q)}`),
@@ -63,6 +80,8 @@ export const communityApi = {
   deletePost: (id: string) => cReq(`/posts/${id}`, { method: 'DELETE' }),
   myComments: () => cReq<any[]>('/admin/comments'),
   moderateComment: (id: string) => cReq(`/comments/${id}`, { method: 'DELETE' }),
+  bulkComments: (postId: string, comments: { body: string; author?: string }[]) =>
+    cReq<{ inserted: number }>(`/posts/${postId}/comments/bulk`, { method: 'POST', body: JSON.stringify({ comments }) }),
   adminStats: () => cReq<{ posts: number; published: number; likes: number; saves: number; comments: number }>('/admin/stats'),
 
   // superadmin

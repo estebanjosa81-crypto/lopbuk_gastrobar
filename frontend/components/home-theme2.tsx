@@ -33,7 +33,72 @@ import {
 // (los estilos inline las resuelven en tiempo de render).
 const GREEN = 'var(--brand-green, #00833E)'
 const GREEN_DARK = 'var(--brand-green-dark, #005C2A)'
+// El acento "destacado" sigue la paleta: cuando el superadmin genera/edita una
+// colorimetría se inyecta --brand-gold (y su color de texto legible). Sin paleta,
+// cae al dorado DAIMUZ por defecto.
 const GOLD = 'var(--brand-gold, #F0A500)'
+const GOLD_TEXT = 'var(--brand-gold-text, #111827)'
+
+function hexToRgb(hex?: string | null): [number, number, number] | null {
+  if (!hex || typeof hex !== 'string') return null
+  const m = hex.replace('#', '')
+  const h = m.length === 3 ? m.split('').map(c => c + c).join('') : m
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16)
+  return [r, g, b].some(Number.isNaN) ? null : [r, g, b]
+}
+
+/** Devuelve '#fff' o '#111827' según el contraste sobre un color hex. */
+function readableOn(hex?: string | null): string {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return '#111827'
+  const L = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255
+  return L > 0.6 ? '#111827' : '#ffffff'
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h = 0, s = 0; const l = (max + min) / 2
+  const d = max - min
+  if (d !== 0) {
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+    h *= 60
+  }
+  return [h, s, l]
+}
+function hslToHex(h: number, s: number, l: number): string {
+  h = ((h % 360) + 360) % 360
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1))
+  const m = l - c / 2
+  let r = 0, g = 0, b = 0
+  if (h < 60) [r, g, b] = [c, x, 0]
+  else if (h < 120) [r, g, b] = [x, c, 0]
+  else if (h < 180) [r, g, b] = [0, c, x]
+  else if (h < 240) [r, g, b] = [0, x, c]
+  else if (h < 300) [r, g, b] = [x, 0, c]
+  else [r, g, b] = [c, 0, x]
+  const to = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, '0')
+  return `#${to(r)}${to(g)}${to(b)}`.toUpperCase()
+}
+
+/**
+ * Acento "destacado" complementario al color primario de la paleta: rota el
+ * matiz ~165° (split-complementario, evita el naranja puro) y sube saturación,
+ * para que las insignias resalten sobre el header sin salirse de la colorimetría.
+ */
+function complementaryAccent(hex?: string | null): string | null {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return null
+  const [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2])
+  // Si el color es casi gris (sin matiz), no tiene complemento útil.
+  if (s < 0.08) return null
+  const h2 = h + 165
+  const s2 = Math.min(0.92, Math.max(0.6, s + 0.15))
+  const l2 = Math.min(0.6, Math.max(0.46, l))
+  return hslToHex(h2, s2, l2)
+}
 
 // ── Tipos compartidos ─────────────────────────────────────────────────────────
 export interface HeroSlide {
@@ -358,7 +423,7 @@ function StoreCard({
           </span>
         </div>
         {store.openState === 'closed' && store.nextOpenLabel && (
-          <p className="text-[11px] text-amber-400/90 mt-0.5 truncate">🕒 {store.nextOpenLabel}</p>
+          <p className="text-[11px] text-gray-300 mt-0.5 truncate">🕒 {store.nextOpenLabel}</p>
         )}
       </div>
     </button>
@@ -553,10 +618,17 @@ export function MarketplaceHomeGovCo({
 
   // Variables de marca: si hay paleta IA, tiñe todo el home (header verde,
   // gradientes, chips, acentos). Si no, conserva el verde DAIMUZ por defecto.
-  const brandVars = (themeColors?.primary || themeColors?.primary_hover)
+  const paletteActive = !!(themeColors?.primary || themeColors?.primary_hover)
+  // Acento "destacado": complementario calculado del primario (resalta sobre el
+  // header) y, si el color es gris/sin matiz, cae al acento panel o primario.
+  const goldAccent = complementaryAccent(themeColors?.primary || themeColors?.primary_hover)
+    || themeColors?.admin_accent || themeColors?.primary_hover || themeColors?.primary
+  const brandVars = paletteActive
     ? ({
         ['--brand-green' as string]: themeColors?.primary || themeColors?.primary_hover,
         ['--brand-green-dark' as string]: themeColors?.primary_hover || themeColors?.primary,
+        ['--brand-gold' as string]: goldAccent,
+        ['--brand-gold-text' as string]: readableOn(goldAccent),
       } as CSSProperties)
     : undefined
 
@@ -641,7 +713,7 @@ export function MarketplaceHomeGovCo({
 
       {/* ══ Banner de alerta ══ */}
       {alertOpen && (
-        <div className="text-gray-900" style={{ background: GOLD }}>
+        <div style={{ background: GOLD, color: GOLD_TEXT }}>
           <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center gap-2 text-sm">
             <Bell className="w-4 h-4 shrink-0" />
             <span className="flex-1">{heroTitle || `Bienvenido a ${BRAND.name} — descubre los comercios locales y sus productos.`}</span>
@@ -679,7 +751,7 @@ export function MarketplaceHomeGovCo({
                     <div className="absolute inset-0" style={{ background: `linear-gradient(120deg, ${GREEN_DARK}, ${GREEN})` }} />
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                  <span className="absolute top-3 left-3 text-[10px] font-bold px-2 py-1 rounded-full text-gray-900" style={{ background: GOLD }}>COMERCIO DESTACADO</span>
+                  <span className="absolute top-3 left-3 text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: GOLD, color: GOLD_TEXT }}>COMERCIO DESTACADO</span>
                   <div className="absolute bottom-0 left-0 right-0 p-4">
                     <div className="flex items-center gap-1.5">
                       <p className="text-white font-semibold text-base line-clamp-1">{topStore.name}</p>
@@ -688,7 +760,7 @@ export function MarketplaceHomeGovCo({
                       )}
                     </div>
                     {(topStore.cardDescription || topStore.businessType) && <p className="text-white/70 text-[11px] line-clamp-1">{topStore.cardDescription || topStore.businessType}</p>}
-                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-900 px-3 py-1 rounded-full" style={{ background: GOLD }}>Ver comercio <ArrowRight className="w-3.5 h-3.5" /></span>
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full" style={{ background: GOLD, color: GOLD_TEXT }}>Ver comercio <ArrowRight className="w-3.5 h-3.5" /></span>
                   </div>
                 </button>
               ) : heroRight === 'cta' || !topFeatured ? (
@@ -706,7 +778,7 @@ export function MarketplaceHomeGovCo({
                     <div className="absolute inset-0" style={{ background: `linear-gradient(120deg, ${GREEN_DARK}, ${GREEN})` }} />
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                  <span className="absolute top-3 left-3 text-[10px] font-bold px-2 py-1 rounded-full text-gray-900" style={{ background: GOLD }}>DESTACADO</span>
+                  <span className="absolute top-3 left-3 text-[10px] font-bold px-2 py-1 rounded-full" style={{ background: GOLD, color: GOLD_TEXT }}>DESTACADO</span>
                   <div className="absolute bottom-0 left-0 right-0 p-4">
                     <p className="text-white font-semibold text-sm line-clamp-2">{topFeatured!.name}</p>
                     {topFeatured!.storeName && <p className="text-white/70 text-[11px] uppercase tracking-wide">{topFeatured!.storeName}</p>}

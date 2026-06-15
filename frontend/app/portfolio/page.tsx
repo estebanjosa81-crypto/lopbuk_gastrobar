@@ -299,9 +299,11 @@ function TeamCarousel({ cards, brandTitle, accentColor }: {
 
       {/* Tarjeta del desarrollador = carnet 3D colgante (Lanyard).
           La foto se mapea sobre el carnet; la banda/cordon es configurable por tarjeta. */}
-      <div style={{ width: 380, maxWidth: '92vw' }}>
+      {/* Altura adaptativa: más baja en celular, alta en escritorio.
+          El canvas llena el alto del contenedor (height="100%"). */}
+      <div className="h-[440px] sm:h-[540px] lg:h-[620px]" style={{ width: 460, maxWidth: '94vw' }}>
         <LanyardShowpiece
-          height={540}
+          height="100%"
           cardImageUrl={card.photo_url || ''}
           bandImageUrl={card.band_image_url || ''}
         />
@@ -1459,9 +1461,11 @@ export default function PortfolioPage() {
                 </div>
               )}
 
-              {/* ── Derecha: Carrusel del equipo ── */}
+              {/* ── Derecha: Carrusel del equipo ──
+                  Centrado en móvil; en escritorio se alinea a la izquierda de su
+                  columna cuando convive con la lista de comercios. */}
               {teamCards.length > 0 && (
-                <div className={teamCards.length > 0 && !(data?.showFeaturedStores && (data?.featuredStores?.length ?? 0) > 0) ? 'flex flex-col items-center' : ''}>
+                <div className={`w-full flex flex-col items-center text-center ${(data?.showFeaturedStores && (data?.featuredStores?.length ?? 0) > 0) ? 'lg:items-start lg:text-left' : ''}`}>
                   <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: accent }}>
                     Nuestro equipo
                   </p>

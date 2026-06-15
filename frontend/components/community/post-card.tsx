@@ -1,28 +1,50 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Heart, Bookmark, MessageCircle, Send, ShoppingBag, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Heart, Bookmark, MessageCircle, Send, ShoppingBag, ChevronLeft, ChevronRight, Share2 } from 'lucide-react'
 import { communityApi, formatCOP, timeAgo, ytEmbed, type CommunityPost, type CommunityComment, type PostAd } from './api'
 
 const CAT_LABEL: Record<string, string> = { noticia: 'Noticia', video: 'Video', tutorial: 'Tutorial', app: 'App', oferta: 'Oferta' }
 
-export function PostCard({ post, onRequireLogin, isAuthed }: { post: CommunityPost; onRequireLogin: () => void; isAuthed: boolean }) {
+export function PostCard({ post, onRequireLogin, isAuthed, likeRequiresLogin = false }: { post: CommunityPost; onRequireLogin: () => void; isAuthed: boolean; likeRequiresLogin?: boolean }) {
+  // `post.liked` ya viene resuelto por el servidor (por usuario o por dispositivo).
   const [liked, setLiked] = useState(post.liked)
   const [saved, setSaved] = useState(post.saved)
   const [likes, setLikes] = useState(post.likes)
   const [saves, setSaves] = useState(post.saves)
+  const [shares, setShares] = useState(post.shares || 0)
   const [showComments, setShowComments] = useState(false)
   const [comments, setComments] = useState<CommunityComment[] | null>(null)
   const [commentBody, setCommentBody] = useState('')
   const [commentCount, setCommentCount] = useState(post.comments)
   const [mediaIdx, setMediaIdx] = useState(0)
 
-  const react = async (type: 'like' | 'save') => {
-    if (!isAuthed) return onRequireLogin()
+  // LIKE: permitido SIN sesión. Con sesión el servidor hace el toggle real;
+  // anónimo usa localStorage + estado deseado para sumar/restar sin recontar.
+  const toggleLike = async () => {
+    if (likeRequiresLogin && !isAuthed) return onRequireLogin()
+    const next = !liked
+    setLiked(next); setLikes(n => Math.max(0, n + (next ? 1 : -1))) // optimista
     try {
-      const r = await communityApi.react(post.id, type)
-      if (type === 'like') { setLiked(r.active); setLikes(r.likes) } else { setSaved(r.active); setSaves(r.saves) }
-    } catch { /* noop */ }
+      const r = await communityApi.react(post.id, 'like', next)
+      setLikes(r.likes); setLiked(r.active) // el servidor es la fuente de verdad
+    } catch { setLiked(!next); setLikes(n => Math.max(0, n + (next ? -1 : 1))) }
+  }
+
+  // GUARDAR: requiere sesión.
+  const toggleSave = async () => {
+    if (!isAuthed) return onRequireLogin()
+    try { const r = await communityApi.react(post.id, 'save'); setSaved(r.active); setSaves(r.saves) } catch { /* */ }
+  }
+
+  // COMPARTIR: cuenta cada vez y abre el diálogo nativo / copia el enlace.
+  const share = async () => {
+    const url = typeof window !== 'undefined' ? `${window.location.origin}/comunidad` : ''
+    try { const r = await communityApi.share(post.id); setShares(r.shares) } catch { setShares(n => n + 1) }
+    try {
+      if (typeof navigator !== 'undefined' && (navigator as any).share) await (navigator as any).share({ title: post.title, url })
+      else if (typeof navigator !== 'undefined' && navigator.clipboard) { await navigator.clipboard.writeText(url) }
+    } catch { /* cancelado */ }
   }
 
   const toggleComments = async () => {
@@ -90,12 +112,13 @@ export function PostCard({ post, onRequireLogin, isAuthed }: { post: CommunityPo
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-5 px-4 py-3 text-gray-600">
-        <button onClick={() => react('like')} className={`inline-flex items-center gap-1.5 ${liked ? 'text-rose-600' : 'hover:text-rose-600'}`}>
+      <div className="flex items-center gap-4 sm:gap-5 px-4 py-3 text-gray-600">
+        <button onClick={toggleLike} title="Me gusta" className={`inline-flex items-center gap-1.5 transition ${liked ? 'text-rose-600' : 'hover:text-rose-600'}`}>
           <Heart className={`w-5 h-5 ${liked ? 'fill-rose-600' : ''}`} /> {likes}
         </button>
-        <button onClick={toggleComments} className="inline-flex items-center gap-1.5 hover:text-cyan-700"><MessageCircle className="w-5 h-5" /> {commentCount}</button>
-        <button onClick={() => react('save')} className={`inline-flex items-center gap-1.5 ml-auto ${saved ? 'text-amber-600' : 'hover:text-amber-600'}`}>
+        <button onClick={toggleComments} title="Comentar" className="inline-flex items-center gap-1.5 hover:text-cyan-700"><MessageCircle className="w-5 h-5" /> {commentCount}</button>
+        <button onClick={share} title="Compartir" className="inline-flex items-center gap-1.5 hover:text-emerald-600"><Share2 className="w-5 h-5" /> {shares}</button>
+        <button onClick={toggleSave} title="Guardar" className={`inline-flex items-center gap-1.5 ml-auto ${saved ? 'text-amber-600' : 'hover:text-amber-600'}`}>
           <Bookmark className={`w-5 h-5 ${saved ? 'fill-amber-600' : ''}`} /> {saves}
         </button>
       </div>

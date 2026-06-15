@@ -66,15 +66,36 @@ async function loadAds(postIds: string[]) {
   )) as any;
   return groupBy(rows.map((r: any) => ({ ...r, isOnOffer: !!r.isOnOffer })), 'post_id');
 }
-async function userReactions(postIds: string[], userId?: string) {
-  if (!userId || !postIds.length) return {} as Record<string, { liked: boolean; saved: boolean }>;
-  const [rows] = (await pool.query(
-    `SELECT post_id, type FROM community_reactions WHERE user_id = ? AND post_id IN (?)`, [userId, postIds]
-  )) as any;
+async function userReactions(postIds: string[], userId?: string, deviceId?: string) {
+  if (!postIds.length) return {} as Record<string, { liked: boolean; saved: boolean }>;
+  let rows: any[] = [];
+  if (userId) {
+    [rows] = (await pool.query(
+      `SELECT post_id, type FROM community_reactions WHERE user_id = ? AND post_id IN (?)`, [userId, postIds]
+    )) as any;
+  } else if (deviceId) {
+    // Anónimo: solo el like se rastrea por dispositivo (guardar requiere sesión).
+    [rows] = (await pool.query(
+      `SELECT post_id, type FROM community_reactions WHERE device_id = ? AND type = 'like' AND post_id IN (?)`, [deviceId, postIds]
+    )) as any;
+  } else {
+    return {} as Record<string, { liked: boolean; saved: boolean }>;
+  }
   const map: Record<string, { liked: boolean; saved: boolean }> = {};
   for (const r of rows) { (map[r.post_id] ||= { liked: false, saved: false }); if (r.type === 'like') map[r.post_id].liked = true; else map[r.post_id].saved = true; }
   return map;
 }
+// ── Ajustes globales de la comunidad ─────────────────────────────────────────
+async function getCommunitySetting(key: string, fallback = ''): Promise<string> {
+  try {
+    const [rows] = (await pool.query('SELECT setting_value AS v FROM community_settings WHERE setting_key = ? LIMIT 1', [key])) as any;
+    return rows && rows[0] ? (rows[0].v ?? fallback) : fallback;
+  } catch { return fallback; }
+}
+async function likeRequiresLogin(): Promise<boolean> {
+  return (await getCommunitySetting('like_requires_login', '0')) === '1';
+}
+
 function groupBy(rows: any[], key: string) {
   return rows.reduce((acc: Record<string, any[]>, r: any) => { (acc[r[key]] ||= []).push(r); return acc; }, {});
 }
@@ -83,11 +104,34 @@ function mapPost(r: any, media: any[], ads: any[], react?: { liked: boolean; sav
     id: r.id, title: r.title, body: r.body, category: r.category, status: r.status,
     coverUrl: r.cover_url, author: r.author, authorAvatar: r.authorAvatar,
     likes: Number(r.likes_count || 0), saves: Number(r.saves_count || 0), comments: Number(r.comments_count || 0),
+    shares: Number(r.shares_count || 0),
     createdAt: r.created_at, publishedAt: r.published_at,
     media: media || [], ads: ads || [],
     liked: react?.liked || false, saved: react?.saved || false,
   };
 }
+
+// ════════════════════════ AJUSTES ════════════════════════
+
+// Ajustes públicos de la comunidad (los lee el feed).
+router.get('/settings', async (_req: Request, res: Response) => {
+  try { ok(res, { likeRequiresLogin: await likeRequiresLogin() }); }
+  catch (e) { fail(res, e, 'Error al obtener ajustes'); }
+});
+
+// Actualizar ajustes (comunidad_admin).
+router.put('/settings', ADMIN, async (req: AuthRequest, res: Response) => {
+  try {
+    if (req.body?.likeRequiresLogin !== undefined) {
+      const v = req.body.likeRequiresLogin ? '1' : '0';
+      await pool.query(
+        `INSERT INTO community_settings (setting_key, setting_value) VALUES ('like_requires_login', ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`, [v]
+      );
+    }
+    ok(res, { likeRequiresLogin: await likeRequiresLogin() });
+  } catch (e) { fail(res, e, 'Error al guardar ajustes'); }
+});
 
 // ════════════════════════ PÚBLICO ════════════════════════
 
@@ -137,7 +181,7 @@ router.get('/posts', optionalAuth, async (req: AuthRequest, res: Response) => {
     )) as any;
 
     const ids = rows.map((r: any) => r.id);
-    const [media, ads, react] = await Promise.all([loadMedia(ids), loadAds(ids), userReactions(ids, req.user?.userId)]);
+    const [media, ads, react] = await Promise.all([loadMedia(ids), loadAds(ids), userReactions(ids, req.user?.userId, req.query.did as string)]);
     const [[{ total }]] = (await pool.query(
       `SELECT COUNT(*) AS total FROM community_posts p WHERE ${where.join(' AND ')}`, params
     )) as any;
@@ -161,7 +205,7 @@ router.get('/posts/:id', optionalAuth, async (req: AuthRequest, res: Response) =
     const r = rows[0];
     if (r.status !== 'published' && req.user?.userId !== r.author_id && req.user?.role !== 'comunidad_admin')
       return fail(res, null, 'Publicación no disponible', 404);
-    const [media, ads, react] = await Promise.all([loadMedia([r.id]), loadAds([r.id]), userReactions([r.id], req.user?.userId)]);
+    const [media, ads, react] = await Promise.all([loadMedia([r.id]), loadAds([r.id]), userReactions([r.id], req.user?.userId, req.query.did as string)]);
     ok(res, mapPost(r, media[r.id], ads[r.id], react[r.id]));
   } catch (e) { fail(res, e, 'Error al obtener la publicación'); }
 });
@@ -171,7 +215,7 @@ router.get('/posts/:id/comments', async (req: Request, res: Response) => {
   try {
     const [rows] = (await pool.query(
       `SELECT c.id, c.post_id, c.user_id AS userId, c.body, c.parent_id AS parentId, c.created_at AS createdAt,
-              u.name AS user, u.avatar
+              COALESCE(u.name, c.author_name) AS user, u.avatar
          FROM community_comments c LEFT JOIN users u ON u.id = c.user_id
         WHERE c.post_id = ? AND c.is_active = 1 ORDER BY c.created_at ASC`, [req.params.id]
     )) as any;
@@ -179,33 +223,73 @@ router.get('/posts/:id/comments', async (req: Request, res: Response) => {
   } catch (e) { fail(res, e, 'Error al obtener comentarios'); }
 });
 
-// ════════════════════════ USUARIO (autenticado) ════════════════════════
+// ════════════════════════ INTERACCIÓN ════════════════════════
 
-// Reaccionar (toggle like / save)
-router.post('/posts/:id/react', authenticate, async (req: AuthRequest, res: Response) => {
+/**
+ * Reaccionar.
+ *  - LIKE: permitido SIN sesión (el sistema lo cuenta). Con sesión se registra
+ *    por usuario (toggle real); anónimo respeta el estado deseado del cliente
+ *    (body.active) para sumar/restar y evitar inflar el contador.
+ *  - SAVE (guardar): SIEMPRE requiere sesión.
+ */
+router.post('/posts/:id/react', optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
     const type = req.body?.type === 'save' ? 'save' : 'like';
-    const userId = req.user!.userId;
     const postId = req.params.id;
     const col = type === 'like' ? 'likes_count' : 'saves_count';
+    const userId = req.user?.userId;
 
-    const [exists] = (await pool.query(
-      'SELECT id FROM community_reactions WHERE post_id = ? AND user_id = ? AND type = ?', [postId, userId, type]
-    )) as any;
+    if (type === 'save' && !userId) return fail(res, null, 'Inicia sesión para guardar', 401);
+    if (type === 'like' && !userId && await likeRequiresLogin()) return fail(res, null, 'Inicia sesión para dar like', 401);
 
     let active: boolean;
-    if (exists.length) {
-      await pool.query('DELETE FROM community_reactions WHERE id = ?', [exists[0].id]);
-      await pool.query(`UPDATE community_posts SET ${col} = GREATEST(${col} - 1, 0) WHERE id = ?`, [postId]);
-      active = false;
+    if (userId) {
+      // Usuario autenticado → toggle por usuario.
+      const [exists] = (await pool.query(
+        'SELECT id FROM community_reactions WHERE post_id = ? AND user_id = ? AND type = ?', [postId, userId, type]
+      )) as any;
+      if (exists.length) {
+        await pool.query('DELETE FROM community_reactions WHERE id = ?', [exists[0].id]);
+        await pool.query(`UPDATE community_posts SET ${col} = GREATEST(${col} - 1, 0) WHERE id = ?`, [postId]);
+        active = false;
+      } else {
+        await pool.query('INSERT INTO community_reactions (id, post_id, user_id, type) VALUES (?,?,?,?)', [uuidv4(), postId, userId, type]);
+        await pool.query(`UPDATE community_posts SET ${col} = ${col} + 1 WHERE id = ?`, [postId]);
+        active = true;
+      }
     } else {
-      await pool.query('INSERT INTO community_reactions (id, post_id, user_id, type) VALUES (?,?,?,?)', [uuidv4(), postId, userId, type]);
-      await pool.query(`UPDATE community_posts SET ${col} = ${col} + 1 WHERE id = ?`, [postId]);
-      active = true;
+      // Anónimo (solo like): toggle real por DISPOSITIVO (1 like por dispositivo).
+      const deviceId = String(req.body?.deviceId || '').slice(0, 64);
+      if (!deviceId) {
+        // Sin device_id no podemos deduplicar: suma simple (caso borde).
+        await pool.query(`UPDATE community_posts SET ${col} = ${col} + 1 WHERE id = ?`, [postId]); active = true;
+      } else {
+        const [exists] = (await pool.query(
+          `SELECT id FROM community_reactions WHERE post_id = ? AND device_id = ? AND type = 'like'`, [postId, deviceId]
+        )) as any;
+        if (exists.length) {
+          await pool.query('DELETE FROM community_reactions WHERE id = ?', [exists[0].id]);
+          await pool.query(`UPDATE community_posts SET ${col} = GREATEST(${col} - 1, 0) WHERE id = ?`, [postId]);
+          active = false;
+        } else {
+          await pool.query('INSERT INTO community_reactions (id, post_id, user_id, device_id, type) VALUES (?,?,NULL,?,?)', [uuidv4(), postId, deviceId, 'like']);
+          await pool.query(`UPDATE community_posts SET ${col} = ${col} + 1 WHERE id = ?`, [postId]);
+          active = true;
+        }
+      }
     }
     const [[counts]] = (await pool.query('SELECT likes_count AS likes, saves_count AS saves FROM community_posts WHERE id = ?', [postId])) as any;
     ok(res, { type, active, likes: Number(counts?.likes || 0), saves: Number(counts?.saves || 0) });
   } catch (e) { fail(res, e, 'Error al reaccionar'); }
+});
+
+// Compartir (cuenta cada vez que alguien comparte; sin sesión).
+router.post('/posts/:id/share', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    await pool.query('UPDATE community_posts SET shares_count = shares_count + 1 WHERE id = ?', [req.params.id]);
+    const [[c]] = (await pool.query('SELECT shares_count AS shares FROM community_posts WHERE id = ?', [req.params.id])) as any;
+    ok(res, { shares: Number(c?.shares || 0) });
+  } catch (e) { fail(res, e, 'Error al compartir'); }
 });
 
 // Comentar
@@ -221,7 +305,7 @@ router.post('/posts/:id/comments', authenticate, async (req: AuthRequest, res: R
     );
     await pool.query('UPDATE community_posts SET comments_count = comments_count + 1 WHERE id = ?', [req.params.id]);
     const [rows] = (await pool.query(
-      `SELECT c.id, c.post_id, c.user_id AS userId, c.body, c.parent_id AS parentId, c.created_at AS createdAt, u.name AS user, u.avatar
+      `SELECT c.id, c.post_id, c.user_id AS userId, c.body, c.parent_id AS parentId, c.created_at AS createdAt, COALESCE(u.name, c.author_name) AS user, u.avatar
          FROM community_comments c LEFT JOIN users u ON u.id = c.user_id WHERE c.id = ?`, [id]
     )) as any;
     ok(res, rows[0], 201);
@@ -318,6 +402,10 @@ router.put('/posts/:id', ADMIN, async (req: AuthRequest, res: Response) => {
     if (b.body !== undefined) { sets.push('body = ?'); params.push(b.body); }
     if (b.category !== undefined && CATEGORIES.includes(b.category)) { sets.push('category = ?'); params.push(b.category); }
     if (b.coverUrl !== undefined) { sets.push('cover_url = ?'); params.push(b.coverUrl); }
+    // Overrides manuales del admin (contadores)
+    if (b.likesCount !== undefined) { sets.push('likes_count = ?'); params.push(Math.max(0, Number(b.likesCount) || 0)); }
+    if (b.sharesCount !== undefined) { sets.push('shares_count = ?'); params.push(Math.max(0, Number(b.sharesCount) || 0)); }
+    if (b.savesCount !== undefined) { sets.push('saves_count = ?'); params.push(Math.max(0, Number(b.savesCount) || 0)); }
     if (b.status !== undefined) {
       const status = b.status === 'published' ? 'published' : 'draft';
       sets.push('status = ?'); params.push(status);
@@ -334,6 +422,34 @@ router.put('/posts/:id', ADMIN, async (req: AuthRequest, res: Response) => {
     }
     ok(res, { id: req.params.id });
   } catch (e) { fail(res, e, 'Error al editar la publicación'); }
+});
+
+// Inserción masiva de comentarios sintéticos (admin).
+// body: { comments: [{ body, author? }] }  ó  { items: ["texto", ...] }
+router.post('/posts/:id/comments/bulk', ADMIN, async (req: AuthRequest, res: Response) => {
+  try {
+    // Verifica que el post sea del propio admin
+    const [own] = (await pool.query('SELECT id FROM community_posts WHERE id = ? AND author_id = ? AND is_active = 1', [req.params.id, req.user!.userId])) as any;
+    if (!own.length) return fail(res, null, 'Publicación no encontrada', 404);
+
+    const raw = req.body?.comments ?? req.body?.items ?? [];
+    if (!Array.isArray(raw) || raw.length === 0) return fail(res, null, 'Sin comentarios para insertar', 400);
+
+    const NAMES = ['Camila', 'Andrés', 'Valentina', 'Sebastián', 'Daniela', 'Mateo', 'Sofía', 'Santiago', 'Luisa', 'Juan', 'Mariana', 'Carlos', 'Paula', 'Felipe', 'Laura'];
+    let n = 0;
+    for (const item of raw.slice(0, 500)) {
+      const body = String(typeof item === 'string' ? item : item?.body || '').trim();
+      if (!body) continue;
+      const author = (typeof item === 'object' && item?.author ? String(item.author) : NAMES[Math.floor(Math.random() * NAMES.length)]).slice(0, 160);
+      await pool.query(
+        'INSERT INTO community_comments (id, post_id, user_id, author_name, body) VALUES (?,?,NULL,?,?)',
+        [uuidv4(), req.params.id, author, body.slice(0, 1000)]
+      );
+      n++;
+    }
+    await pool.query('UPDATE community_posts SET comments_count = comments_count + ? WHERE id = ?', [n, req.params.id]);
+    ok(res, { inserted: n }, 201);
+  } catch (e) { fail(res, e, 'Error al insertar comentarios'); }
 });
 
 // Soft delete

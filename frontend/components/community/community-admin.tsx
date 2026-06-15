@@ -121,6 +121,11 @@ function PostEditor({ post, onDone }: { post: CommunityPost | null; onDone: () =
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showProducts, setShowProducts] = useState(false)
+  // Overrides de contadores + comentarios masivos (solo al editar un post existente)
+  const [likesCount, setLikesCount] = useState<number | ''>(post?.likes ?? '')
+  const [sharesCount, setSharesCount] = useState<number | ''>(post?.shares ?? '')
+  const [bulkText, setBulkText] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
   const fileRef = React.useRef<HTMLInputElement>(null)
   const fileType = React.useRef<'image' | 'gif'>('image')
 
@@ -142,13 +147,30 @@ function PostEditor({ post, onDone }: { post: CommunityPost | null; onDone: () =
   const guardar = async (status: 'draft' | 'published') => {
     if (!title.trim()) { toast.error('El título es requerido'); return }
     setSaving(true)
-    const payload = { title, body, category, status, media, ads: ads.map(a => ({ productId: a.productId, tenantId: a.tenantId })) }
+    const payload: any = { title, body, category, status, media, ads: ads.map(a => ({ productId: a.productId, tenantId: a.tenantId })) }
+    if (post) {
+      if (likesCount !== '') payload.likesCount = Number(likesCount)
+      if (sharesCount !== '') payload.sharesCount = Number(sharesCount)
+    }
     try {
       if (post) await communityApi.updatePost(post.id, payload)
       else await communityApi.createPost(payload)
       toast.success(status === 'published' ? 'Publicado' : 'Borrador guardado')
       onDone()
     } catch (e: any) { toast.error(e.message) } finally { setSaving(false) }
+  }
+
+  // Inserta comentarios masivos. Formato por línea: "texto" ó "Autor | texto".
+  const insertarComentarios = async () => {
+    if (!post) return
+    const comments = bulkText.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+      const i = l.indexOf('|')
+      return i > -1 ? { author: l.slice(0, i).trim(), body: l.slice(i + 1).trim() } : { body: l }
+    }).filter(c => c.body)
+    if (!comments.length) { toast.error('Escribe al menos un comentario'); return }
+    setBulkBusy(true)
+    try { const r = await communityApi.bulkComments(post.id, comments); toast.success(`${r.inserted} comentarios insertados`); setBulkText('') }
+    catch (e: any) { toast.error(e.message) } finally { setBulkBusy(false) }
   }
 
   return (
@@ -204,6 +226,35 @@ function PostEditor({ post, onDone }: { post: CommunityPost | null; onDone: () =
           </div>
         )}
       </div>
+
+      {/* Overrides + comentarios masivos (solo al editar un post existente) */}
+      {post && (
+        <div className="border-2 border-dashed border-cyan-200 rounded-xl p-4 space-y-4 bg-cyan-50/40">
+          <p className="text-sm font-semibold text-cyan-800">Métricas e interacción (admin)</p>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-600 mb-1">❤️ Me gusta (fijar)</span>
+              <input type="number" min={0} value={likesCount} onChange={e => setLikesCount(e.target.value === '' ? '' : Number(e.target.value))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="auto" />
+            </label>
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-600 mb-1">🔗 Compartidos (fijar)</span>
+              <input type="number" min={0} value={sharesCount} onChange={e => setSharesCount(e.target.value === '' ? '' : Number(e.target.value))} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="auto" />
+            </label>
+          </div>
+          <p className="text-[11px] text-gray-500">Los valores se aplican al pulsar “Publicar” o “Guardar borrador”.</p>
+
+          <div>
+            <span className="block text-xs font-medium text-gray-600 mb-1">💬 Insertar comentarios masivos</span>
+            <textarea value={bulkText} onChange={e => setBulkText(e.target.value)} placeholder={'Un comentario por línea.\nOpcional autor:  Camila | ¡Excelente!'} className="w-full border rounded-lg px-3 py-2 text-sm h-28 font-mono" />
+            <div className="flex items-center gap-2 mt-2">
+              <button onClick={insertarComentarios} disabled={bulkBusy} className="px-4 py-2 rounded-lg bg-cyan-600 text-white text-sm font-medium inline-flex items-center gap-1.5 disabled:opacity-60">
+                {bulkBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />} Insertar
+              </button>
+              <span className="text-[11px] text-gray-500">{bulkText.split('\n').filter(l => l.trim()).length} líneas · máx 500</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-2 pt-2">
         <button onClick={() => guardar('published')} disabled={saving} className="px-5 py-2.5 rounded-lg bg-cyan-600 text-white font-medium inline-flex items-center gap-2 disabled:opacity-60">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Publicar</button>
@@ -295,10 +346,21 @@ function CommentsModeration() {
   )
 }
 
-// ── Estadísticas ──────────────────────────────────────────────────────────────
+// ── Estadísticas + ajustes ────────────────────────────────────────────────────
 function Stats() {
   const [s, setS] = useState<any>(null)
+  const [likeReq, setLikeReq] = useState(false)
+  const [savingSet, setSavingSet] = useState(false)
   useEffect(() => { communityApi.adminStats().then(setS).catch(() => {}) }, [])
+  useEffect(() => { communityApi.settings().then(x => setLikeReq(!!x.likeRequiresLogin)).catch(() => {}) }, [])
+
+  const toggleLikeReq = async () => {
+    const next = !likeReq
+    setLikeReq(next); setSavingSet(true)
+    try { await communityApi.saveSettings({ likeRequiresLogin: next }); toast.success(next ? 'Ahora se requiere login para dar like' : 'El like queda libre (sin login)') }
+    catch (e: any) { setLikeReq(!next); toast.error(e.message) } finally { setSavingSet(false) }
+  }
+
   const cards = [
     { label: 'Publicaciones', value: s?.published, sub: `${s?.posts ?? 0} en total` },
     { label: 'Me gusta', value: s?.likes },
@@ -306,7 +368,7 @@ function Stats() {
     { label: 'Comentarios', value: s?.comments },
   ]
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <h1 className="text-2xl font-bold">Estadísticas</h1>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {cards.map(c => (
@@ -316,6 +378,24 @@ function Stats() {
             {c.sub && <p className="text-xs text-gray-400 mt-0.5">{c.sub}</p>}
           </div>
         ))}
+      </div>
+
+      {/* Ajustes de interacción */}
+      <div className="bg-white border rounded-xl p-4">
+        <h2 className="font-semibold mb-3">Ajustes de interacción</h2>
+        <label className="flex items-center justify-between gap-4 cursor-pointer">
+          <span>
+            <span className="block text-sm font-medium text-gray-800">Requerir iniciar sesión para dar like</span>
+            <span className="block text-xs text-gray-500">Si está activo, los visitantes deben iniciar sesión para dar me gusta. Si está inactivo, cualquiera puede (1 por dispositivo).</span>
+          </span>
+          <button
+            type="button" onClick={toggleLikeReq} disabled={savingSet}
+            className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${likeReq ? 'bg-cyan-600' : 'bg-gray-300'} disabled:opacity-60`}
+            aria-pressed={likeReq}
+          >
+            <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${likeReq ? 'translate-x-5' : ''}`} />
+          </button>
+        </label>
       </div>
     </div>
   )

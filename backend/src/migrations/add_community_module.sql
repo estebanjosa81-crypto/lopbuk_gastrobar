@@ -4,7 +4,15 @@
 -- Publica posts con media y anuncios de productos de tiendas públicas.
 -- =====================================================
 
--- (users.role es VARCHAR: el valor 'comunidad_admin' no requiere DDL.)
+-- users.role es un ENUM: hay que agregar el valor 'comunidad_admin'.
+-- (Se listan todos los roles conocidos para no perder ninguno existente.)
+ALTER TABLE users MODIFY COLUMN role ENUM(
+    'superadmin','comerciante','vendedor','cliente','repartidor',
+    'auxiliar_bodega','administrador_rb','cajero','mesero',
+    'cocinero','bartender','despachador',
+    'asesor_inmobiliario','gerente_inmobiliario',
+    'comunidad_admin'
+) NOT NULL DEFAULT 'vendedor';
 
 -- 1. community_posts ----------------------------------------------------------
 CREATE TABLE IF NOT EXISTS community_posts (

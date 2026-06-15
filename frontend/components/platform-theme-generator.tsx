@@ -19,6 +19,18 @@ const SWATCHES: { key: keyof ThemePalette['colors']; label: string }[] = [
   { key: 'admin_accent', label: 'Acento panel' },
 ]
 
+// Paleta base para edición manual (cuando aún no se ha generado con IA).
+const DEFAULT_PALETTE: ThemePalette = {
+  theme_type: 'light',
+  colors: {
+    primary: '#007BFF', primary_hover: '#0069D9', secondary: '#6C757D',
+    background_store: '#F8F9FA', surface_store: '#F5F5F5', text_main: '#212529', admin_accent: '#2196F3',
+  },
+} as ThemePalette
+
+const isHex = (v: string) => /^#?[0-9a-fA-F]{6}$/.test(v.trim())
+const normHex = (v: string) => (v.startsWith('#') ? v : `#${v}`).toUpperCase()
+
 /**
  * Colorimetría de la PLATAFORMA (superadmin). Genera una paleta desde el logo
  * de la plataforma y la guarda en platform_settings (clave platform_theme_colors).
@@ -98,6 +110,11 @@ export function PlatformThemeGenerator({ logoUrl }: { logoUrl?: string | null })
     }
   }
 
+  // Edición manual de un color de la paleta.
+  const setColor = (key: keyof ThemePalette['colors'], value: string) => {
+    setPalette(p => p ? { ...p, colors: { ...p.colors, [key]: value } } : p)
+  }
+
   const dirty = palette && JSON.stringify(palette) !== JSON.stringify(saved)
 
   return (
@@ -123,6 +140,9 @@ export function PlatformThemeGenerator({ logoUrl }: { logoUrl?: string | null })
           </Button>
           <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={generating}>
             <Upload className="mr-1.5 h-4 w-4" /> Subir otro logo
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setPalette(p => p ?? DEFAULT_PALETTE)} disabled={generating}>
+            <Palette className="mr-1.5 h-4 w-4" /> {palette ? 'Editar colores' : 'Crear paleta manual'}
           </Button>
           {saved && (
             <Button size="sm" variant="ghost" onClick={handleReset} className="text-destructive/80 hover:text-destructive">
@@ -160,14 +180,32 @@ export function PlatformThemeGenerator({ logoUrl }: { logoUrl?: string | null })
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
               {SWATCHES.map(s => (
                 <div key={s.key} className="rounded-lg border border-border overflow-hidden">
-                  <div className="h-10" style={{ background: palette.colors[s.key] }} />
+                  {/* Bloque de color = selector nativo (clic para abrir la paleta del color) */}
+                  <label className="relative block h-10 cursor-pointer" title={`Editar ${s.label}`} style={{ background: palette.colors[s.key] }}>
+                    <input
+                      type="color"
+                      value={isHex(palette.colors[s.key] || '') ? normHex(palette.colors[s.key]) : '#000000'}
+                      onChange={e => setColor(s.key, e.target.value.toUpperCase())}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      aria-label={`Color ${s.label}`}
+                    />
+                  </label>
                   <div className="p-1.5">
                     <p className="text-[10px] font-medium leading-tight">{s.label}</p>
-                    <p className="text-[9px] text-muted-foreground font-mono uppercase">{palette.colors[s.key]}</p>
+                    {/* Campo hex editable para precisión */}
+                    <input
+                      type="text"
+                      value={palette.colors[s.key] || ''}
+                      onChange={e => { const v = e.target.value; setColor(s.key, isHex(v) ? normHex(v) : v) }}
+                      className="w-full mt-0.5 text-[9px] font-mono uppercase bg-transparent outline-none text-muted-foreground focus:text-foreground"
+                      spellCheck={false}
+                      aria-label={`Hex ${s.label}`}
+                    />
                   </div>
                 </div>
               ))}
             </div>
+            <p className="text-[11px] text-muted-foreground -mt-1">Haz clic en cada color para abrir el selector, o escribe el código hex. Luego pulsa “Aplicar y guardar”.</p>
 
             <div className="flex items-center gap-2">
               <Button size="sm" onClick={handleSave} disabled={saving || !dirty}>

@@ -133,15 +133,17 @@ function Band({ maxSpeed = 50, minSpeed = 0, cardImageUrl = '', bandImageUrl = '
         <RigidBody position={[2, 0, 0]} ref={card} {...segmentProps} type={dragged ? 'kinematicPosition' : 'dynamic'}>
           <CuboidCollider args={[0.8, 1.125, 0.01]} />
           <group
-            scale={2.25}
-            position={[0, -1.2, -0.05]}
+            scale={2.7}
+            position={[0, -1.4, -0.05]}
             onPointerOver={() => hover(true)}
             onPointerOut={() => hover(false)}
             onPointerUp={(e) => (e.target.releasePointerCapture(e.pointerId), drag(false))}
             onPointerDown={(e) => (e.target.setPointerCapture(e.pointerId), drag(new THREE.Vector3().copy(e.point).sub(vec.copy(card.current.translation()))))}
           >
             <mesh geometry={nodes.card.geometry}>
-              <meshPhysicalMaterial map={cardImageUrl ? cardTexture : null} color={cardImageUrl ? '#ffffff' : '#0d1326'} map-anisotropy={16} clearcoat={1} clearcoatRoughness={0.15} roughness={0.9} metalness={0.8} />
+              {/* map-anisotropy solo si hay textura: si map es null, R3F falla al
+                  intentar setear "anisotropy" sobre un map inexistente. */}
+              <meshPhysicalMaterial map={cardImageUrl ? cardTexture : null} color={cardImageUrl ? '#ffffff' : '#0d1326'} {...(cardImageUrl ? { 'map-anisotropy': 16 } : {})} clearcoat={1} clearcoatRoughness={0.15} roughness={0.9} metalness={0.8} />
             </mesh>
             <mesh geometry={nodes.clip.geometry} material={materials.metal} material-roughness={0.3} />
             <mesh geometry={nodes.clamp.geometry} material={materials.metal} />

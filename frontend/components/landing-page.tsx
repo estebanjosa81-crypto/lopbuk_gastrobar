@@ -9639,21 +9639,34 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         </div>
       )}
 
-      {/* ========== FLOATING BACK TO STORES BUTTON ========== */}
+      {/* ========== FLOATING BACK TO STORES BUTTON ==========
+          Móvil: pill inferior centrado. Escritorio: pestaña flotante pegada al
+          borde derecho, centrada verticalmente, con deslizamiento suave al hover. */}
       {selectedStore !== 'all' && stores.length > 1 && !showProductModal && (
         <button
           onClick={() => { setSelectedStore('all'); setShowStoresView(true); setShowCatalog(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[55] flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg border text-xs font-medium uppercase tracking-widest transition-all duration-200 whitespace-nowrap md:bottom-6"
+          aria-label="Ver todas las tiendas"
+          className={[
+            'group fixed z-[55] inline-flex items-center gap-2 font-semibold uppercase tracking-widest',
+            'whitespace-nowrap transition-all duration-300 ease-out',
+            // Móvil: pill inferior centrado
+            'bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 px-5 py-3 rounded-full text-[11px]',
+            // Escritorio: pestaña al borde derecho, centrada
+            'md:bottom-auto md:left-auto md:translate-x-0 md:top-1/2 md:-translate-y-1/2 md:right-0',
+            'md:rounded-l-2xl md:rounded-r-none md:pl-5 md:pr-4 md:py-4 md:text-xs md:translate-x-1 md:hover:translate-x-0',
+          ].join(' ')}
           style={{
-            animation: 'none',
-            backgroundColor: isLightBg ? '#000000' : '#ffffff',
-            color: isLightBg ? '#ffffff' : '#000000',
-            borderColor: isLightBg ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)',
-            boxShadow: isLightBg ? '0 4px 16px rgba(0,0,0,0.25)' : '0 4px 16px rgba(0,0,0,0.5)',
+            backgroundColor: isLightBg ? '#0f172a' : '#ffffff',
+            color: isLightBg ? '#ffffff' : '#0f172a',
+            boxShadow: isLightBg
+              ? '0 8px 24px rgba(2,6,23,0.30), -4px 0 16px rgba(2,6,23,0.12)'
+              : '0 8px 24px rgba(0,0,0,0.45)',
           }}
         >
-          <ArrowLeft className="w-3.5 h-3.5 flex-shrink-0" />
-          Ver todas las tiendas
+          {/* Barra de acento que toma el color de la paleta/tema */}
+          <span className="hidden md:block absolute left-0 top-0 h-full w-1 rounded-l-2xl" style={{ background: 'var(--primary, #007BFF)' }} />
+          <ArrowLeft className="w-4 h-4 flex-shrink-0 transition-transform duration-300 group-hover:-translate-x-0.5" />
+          <span>Todas las tiendas</span>
         </button>
       )}
 

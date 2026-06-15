@@ -6,6 +6,7 @@ import { Search, Loader2, Sparkles } from 'lucide-react'
 import { useAuthStore } from '@/lib/auth-store'
 import { communityApi, type CommunityPost } from './api'
 import { PostCard } from './post-card'
+import { CommunitySidebar, AboutCard } from './community-sidebar'
 
 type Filter = { label: string; sort?: string; category?: string }
 const FILTERS: Filter[] = [
@@ -24,8 +25,11 @@ export function CommunityFeed() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
+  const [likeRequiresLogin, setLikeRequiresLogin] = useState(false)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const loadingRef = useRef(false)
+
+  useEffect(() => { communityApi.settings().then(s => setLikeRequiresLogin(!!s.likeRequiresLogin)).catch(() => {}) }, [])
 
   const pageRef = useRef(1)
   const load = useCallback(async (reset = true) => {
@@ -64,7 +68,7 @@ export function CommunityFeed() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b">
-        <div className="max-w-2xl mx-auto px-4 py-3">
+        <div className="max-w-5xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <h1 className="text-xl font-extrabold flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-cyan-600" /> DAIMUZ <span className="text-cyan-600">Comunidad</span>
@@ -85,20 +89,31 @@ export function CommunityFeed() {
         </div>
       </header>
 
-      {/* Feed */}
-      <main className="max-w-2xl mx-auto px-4 py-5 space-y-5">
-        {loading && posts.length === 0 ? (
-          <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-cyan-600" /></div>
-        ) : posts.length === 0 ? (
-          <p className="text-center text-gray-400 py-16">No hay publicaciones todavía.</p>
-        ) : (
-          posts.map(p => <PostCard key={p.id} post={p} isAuthed={isAuthenticated} onRequireLogin={requireLogin} />)
-        )}
+      {/* Feed + sidebar */}
+      <main className="max-w-5xl mx-auto px-4 py-5">
+        <div className="flex gap-6 items-start">
+          {/* Columna central (feed) */}
+          <div className="flex-1 min-w-0 max-w-2xl mx-auto lg:mx-0 space-y-5">
+            {/* Tarjeta compacta de bienvenida (solo móvil) */}
+            <div className="lg:hidden"><AboutCard compact /></div>
 
-        {/* Sentinel para scroll infinito */}
-        {hasMore && <div ref={sentinelRef} className="h-1" />}
-        {loading && posts.length > 0 && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-cyan-600" /></div>}
-        {!hasMore && posts.length > 0 && <p className="text-center text-xs text-gray-400 py-4">Has llegado al final</p>}
+            {loading && posts.length === 0 ? (
+              <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-cyan-600" /></div>
+            ) : posts.length === 0 ? (
+              <p className="text-center text-gray-400 py-16">No hay publicaciones todavía.</p>
+            ) : (
+              posts.map(p => <PostCard key={p.id} post={p} isAuthed={isAuthenticated} likeRequiresLogin={likeRequiresLogin} onRequireLogin={requireLogin} />)
+            )}
+
+            {/* Sentinel para scroll infinito */}
+            {hasMore && <div ref={sentinelRef} className="h-1" />}
+            {loading && posts.length > 0 && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-cyan-600" /></div>}
+            {!hasMore && posts.length > 0 && <p className="text-center text-xs text-gray-400 py-4">Has llegado al final</p>}
+          </div>
+
+          {/* Sidebar derecho (escritorio) */}
+          <CommunitySidebar />
+        </div>
       </main>
     </div>
   )

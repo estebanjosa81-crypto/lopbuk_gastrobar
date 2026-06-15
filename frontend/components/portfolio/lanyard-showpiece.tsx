@@ -30,7 +30,7 @@ function StaticBadge({ subtitle }: { subtitle?: string }) {
     <div className="w-full h-full flex flex-col items-center justify-center gap-3 select-none">
       <div className="w-1.5 h-16 rounded-full" style={{ background: 'linear-gradient(#666,#06b6d4cc)' }} />
       <div
-        className="w-[150px] h-[210px] rounded-2xl border flex flex-col items-center justify-center text-center gap-2"
+        className="w-[180px] h-[252px] rounded-2xl border flex flex-col items-center justify-center text-center gap-2"
         style={{ background: 'linear-gradient(160deg,#0d0d1f,#111827)', borderColor: '#06b6d455', boxShadow: '0 20px 50px rgba(0,0,0,.6)' }}
       >
         <div className="w-12 h-12 rounded-full" style={{ background: '#06b6d4' }} />

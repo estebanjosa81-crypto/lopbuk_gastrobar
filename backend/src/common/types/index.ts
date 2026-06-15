@@ -111,7 +111,8 @@ export type UserRole =
   | 'mesero'
   | 'cocinero'
   | 'bartender'
-  | 'despachador';
+  | 'despachador'
+  | 'comunidad_admin';
 export type TenantStatus = 'activo' | 'suspendido' | 'cancelado';
 export type TenantPlan = 'basico' | 'profesional' | 'empresarial';
 export type ProductType = 'general' | 'alimentos' | 'bebidas' | 'ropa' | 'electronica' | 'farmacia' | 'ferreteria' | 'libreria' | 'juguetes' | 'cosmetica' | 'perfumes' | 'deportes' | 'hogar' | 'mascotas' | 'otros';

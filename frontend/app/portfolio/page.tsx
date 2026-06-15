@@ -5,6 +5,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler'
 import { LanyardShowpiece } from '@/components/portfolio/lanyard-showpiece'
 import { RobotAssistant } from '@/components/portfolio/robot-assistant'
+import { Starfield } from '@/components/portfolio/starfield'
+import { PortfolioPreloader } from '@/components/portfolio/portfolio-preloader'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
@@ -1281,6 +1283,14 @@ export default function PortfolioPage() {
         </div>
       )}
 
+      <Starfield color={accent} />
+      <PortfolioPreloader
+        brand={title}
+        tagline={subtitle}
+        accent={accent}
+        socials={{ instagram: data?.contactInstagram, whatsapp: data?.contactWhatsapp, email: data?.contactEmail }}
+      />
+
       {/* ── HERO ────────────────────────────────────────────────────────────── */}
       <section id="inicio" className="relative min-h-screen flex items-center justify-center px-6 overflow-hidden">
 
@@ -1293,7 +1303,8 @@ export default function PortfolioPage() {
           style={{ background: `radial-gradient(circle, ${accent}18 0%, transparent 70%)` }}
         />
 
-        <div className="relative z-10 max-w-3xl mx-auto w-full flex flex-col items-center text-center gap-6 py-32">
+        <div className="relative z-10 max-w-6xl mx-auto w-full grid lg:grid-cols-2 gap-10 items-center py-28">
+          <div className="flex flex-col items-center lg:items-start text-center lg:text-left gap-6">
           <div
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-widest border"
             style={{ borderColor: `${accent}44`, color: accent, background: `${accent}11` }}
@@ -1311,7 +1322,7 @@ export default function PortfolioPage() {
             <p className="text-xs sm:text-sm text-gray-500 leading-relaxed max-w-2xl">{description}</p>
           )}
 
-          <div className="flex flex-wrap justify-center gap-3 pt-2">
+          <div className="flex flex-wrap justify-center lg:justify-start gap-3 pt-2">
             {data?.contactWhatsapp && (
               <a
                 ref={heroCTARef}
@@ -1340,7 +1351,7 @@ export default function PortfolioPage() {
           <div>
             <button
               onClick={() => setShowQr(v => !v)}
-              className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5 mx-auto"
+              className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5 mx-auto lg:mx-0"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
                 <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
@@ -1353,6 +1364,12 @@ export default function PortfolioPage() {
                 <QRCodeSVG ref={qrRef} value={pageUrl} size={120} />
               </div>
             )}
+          </div>
+          </div>
+
+          {/* Columna derecha — Robot DAIMUZ */}
+          <div className="relative z-10 w-full">
+            <RobotAssistant accent={accent} sceneUrl={data?.robotSplineUrl || undefined} robotHeight={300} />
           </div>
         </div>
 
@@ -1457,16 +1474,6 @@ export default function PortfolioPage() {
           </div>
         </section>
       )}
-
-      {/* ── ASISTENTE ROBOT (IA) ──────────────────────────────────────────── */}
-      <section id="asistente" className="py-16 sm:py-24 px-6">
-        <div className="max-w-3xl mx-auto text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest mb-2" style={{ color: accent }}>Asistente IA</p>
-          <h2 className="text-3xl sm:text-4xl font-bold mb-3">Habla con nuestro robot</h2>
-          <p className="text-sm mb-8" style={{ color: 'var(--pf-muted)' }}>Pregúntale sobre DAIMUZ, los planes o pídele una demo. Responde en tiempo real.</p>
-          <RobotAssistant accent={accent} sceneUrl={data?.robotSplineUrl || undefined} />
-        </div>
-      </section>
 
       {/* ── CARACTERÍSTICAS ───────────────────────────────────────────────── */}
       <section id="caracteristicas" className="py-16 sm:py-24 px-6 max-w-6xl mx-auto">

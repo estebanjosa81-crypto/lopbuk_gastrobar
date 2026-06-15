@@ -7,6 +7,7 @@ import { useTourStore } from '@/lib/tour-store'
 import { api } from '@/lib/api'
 import { formatCOP } from '@/lib/utils'
 import { SectionRenderer } from '@/components/section-renderer'
+import { NotificationsBell } from '@/components/notifications-bell'
 import { SalesTrendChart } from '@/components/sales-trend-chart'
 import {
   Home, Package, ShoppingCart, Store, Users, TrendingUp, Settings,
@@ -286,9 +287,12 @@ export function PanelComercianteShell() {
             <span>Guía</span>
           </button>
 
-          {/* Notificaciones */}
+          {/* Notificaciones del comercio (comunidad, etc.) */}
+          <NotificationsBell />
+
+          {/* Alertas de stock */}
           <div className="pc-notif-wrap">
-            <button className="pc-icon-btn" data-tour="notifications" onClick={() => setShowNotifs(v => !v)} aria-label="Notificaciones">
+            <button className="pc-icon-btn" data-tour="notifications" onClick={() => setShowNotifs(v => !v)} aria-label="Alertas">
               <Bell size={18} />
               {alertCount > 0 && <span className="pc-badge">{alertCount}</span>}
             </button>

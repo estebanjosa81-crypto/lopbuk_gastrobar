@@ -31,6 +31,7 @@ import { BartenderPanel } from '@/components/bartender-panel'
 import { CocineroPanel } from '@/components/cocinero-panel'
 import { CajeroPanel } from '@/components/cajero-panel'
 import { DeveloperRequests } from '@/components/developer-requests'
+import { DaimuzChatPanel } from '@/components/daimuz-chat-panel'
 import { FleetManagement } from '@/components/fleet-management'
 import { RealEstate } from '@/components/realestate'
 import { Tapiceria } from '@/components/tapiceria'
@@ -82,6 +83,8 @@ export function SectionRenderer() {
       return user?.role === 'superadmin' ? <SuperadminLayout /> : <Dashboard />
     case 'dashboard':
       return <Dashboard />
+    case 'daimuz-chat':
+      return <DaimuzChatPanel />
     case 'inventory':
       return <InventoryList />
     case 'tienda':

@@ -546,7 +546,7 @@ export interface ServiceBooking {
 
 // Auth Types
 export type UserRole = 'superadmin' | 'comerciante' | 'vendedor' | 'cliente' | 'repartidor' | 'auxiliar_bodega'
-  | 'administrador_rb' | 'cajero' | 'mesero' | 'cocinero' | 'bartender' | 'despachador'
+  | 'administrador_rb' | 'cajero' | 'mesero' | 'cocinero' | 'bartender' | 'despachador' | 'comunidad_admin'
 
 export interface User {
   id: string

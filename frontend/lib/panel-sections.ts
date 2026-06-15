@@ -19,6 +19,9 @@ export const SECTION_TO_SLUG: Record<string, string> = {
   'cupones': 'cupones',
   'reviews': 'resenas',
   'services': 'servicios',
+  'cartilla': 'cartilla',
+  'perfil': 'perfil',
+  'servicios-pro': 'servicios-pro',
   'gym': 'gimnasio',
   // Gastrobar
   'gastrobar-ops': 'gastrobar',

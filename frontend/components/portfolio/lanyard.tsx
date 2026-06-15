@@ -19,7 +19,7 @@ const TRANSPARENT_PX =
 extend({ MeshLineGeometry, MeshLineMaterial })
 
 export default function Lanyard({
-  position = [0, 0, 20],
+  position = [0, 0, 14],
   gravity = [0, -40, 0],
   fov = 20,
   transparent = true,
@@ -119,7 +119,7 @@ function Band({ maxSpeed = 50, minSpeed = 0, cardImageUrl = '', bandImageUrl = '
 
   return (
     <>
-      <group position={[0, 4, 0]}>
+      <group position={[0, 2.2, 0]}>
         <RigidBody ref={fixed} {...segmentProps} type="fixed" />
         <RigidBody position={[0.5, 0, 0]} ref={j1} {...segmentProps}>
           <BallCollider args={[0.1]} />

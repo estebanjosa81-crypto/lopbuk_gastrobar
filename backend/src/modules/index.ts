@@ -10,3 +10,4 @@ export * from './categories';
 export * from './cash-sessions';
 export * from './tenants';
 export * from './coupons';
+export * from './cartillas';

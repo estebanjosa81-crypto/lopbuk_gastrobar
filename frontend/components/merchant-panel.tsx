@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
 import { useAuthStore } from '@/lib/auth-store'
 import { api } from '@/lib/api'
@@ -28,6 +29,9 @@ import { DriverPanel } from '@/components/driver-panel'
 import { PurchaseInvoices } from '@/components/purchase-invoices'
 import { ServicesManagement } from '@/components/services-management'
 import { GymManagement } from '@/components/gym-management'
+import { CartillaManagement } from '@/components/cartilla-management'
+import { ProfileEditor } from '@/components/profile-theme3/profile-editor'
+import { Theme4Editor } from '@/components/theme4/theme4-editor'
 import { PlatformAssistant } from '@/components/platform-assistant'
 import { PrintersConfig } from '@/components/printers'
 import { VendedoresPanel } from '@/components/vendedores-panel'
@@ -59,6 +63,12 @@ import { applyPlatformAccentDefault } from '@/lib/platform-theme'
 export function MerchantPanel() {
   const { activeSection, setActiveSection } = useStore()
   const { user } = useAuthStore()
+  const router = useRouter()
+
+  // El rol comunidad_admin no usa el panel de comercio: va a su propio panel.
+  useEffect(() => {
+    if (user?.role === 'comunidad_admin') router.replace('/comunidad/admin')
+  }, [user?.role, router])
 
   // ── Tema del panel (global, lo elige el superadmin) ──
   // 'classic' (Tema 1, sidebar) | 'comerciante' (Tema 2, navbar verde).
@@ -173,6 +183,12 @@ export function MerchantPanel() {
         return <ServicesManagement />
       case 'gym':
         return <GymManagement />
+      case 'cartilla':
+        return <CartillaManagement />
+      case 'perfil':
+        return <ProfileEditor />
+      case 'servicios-pro':
+        return <Theme4Editor />
       case 'analytics':
         return <Analytics />
       case 'settings':

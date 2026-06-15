@@ -4,7 +4,7 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import {
   Briefcase, CreditCard, LayoutTemplate, MessageSquarePlus,
-  Plug, Star, Store, TrendingUp, ShoppingBag,
+  Plug, Star, Store, TrendingUp, ShoppingBag, Sparkles,
 } from 'lucide-react'
 import { RefreshCw } from 'lucide-react'
 
@@ -19,10 +19,11 @@ const SubscriptionsTab  = dynamic(() => import('./tabs/SubscriptionsTab').then(m
 const PortfolioTab      = dynamic(() => import('./tabs/PortfolioTab').then(m => ({ default: m.PortfolioTab })), { loading: () => <TabLoader /> })
 const DevRequestsTab    = dynamic(() => import('./tabs/DevRequestsTab').then(m => ({ default: m.DevRequestsTab })), { loading: () => <TabLoader /> })
 const OrdersCenterTab   = dynamic(() => import('./tabs/OrdersCenterTab').then(m => ({ default: m.OrdersCenterTab })), { loading: () => <TabLoader /> })
+const CommunityTab      = dynamic(() => import('./tabs/CommunityTab').then(m => ({ default: m.CommunityTab })), { loading: () => <TabLoader /> })
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
-type TabId = 'pedidos' | 'pagina' | 'comercios' | 'timeline' | 'destacados' | 'integraciones' | 'pagos' | 'portafolio' | 'solicitudes'
+type TabId = 'pedidos' | 'pagina' | 'comercios' | 'timeline' | 'destacados' | 'integraciones' | 'pagos' | 'portafolio' | 'solicitudes' | 'comunidad'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'pedidos',       label: 'Pedidos',          icon: ShoppingBag },
@@ -33,6 +34,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'integraciones', label: 'Integraciones',    icon: Plug },
   { id: 'pagos',         label: 'Suscripciones',    icon: CreditCard },
   { id: 'portafolio',    label: 'Portafolio',       icon: Briefcase },
+  { id: 'comunidad',     label: 'Comunidad',        icon: Sparkles },
   { id: 'solicitudes',   label: 'Dev',              icon: MessageSquarePlus },
 ]
 
@@ -94,6 +96,7 @@ export function SuperadminLayout() {
       {activeTab === 'integraciones' && <IntegrationsTab />}
       {activeTab === 'pagos'         && <SubscriptionsTab />}
       {activeTab === 'portafolio'    && <PortfolioTab />}
+      {activeTab === 'comunidad'     && <CommunityTab />}
       {activeTab === 'solicitudes'   && <DevRequestsTab />}
     </div>
   )

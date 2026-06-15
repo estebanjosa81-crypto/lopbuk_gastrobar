@@ -33,6 +33,9 @@ export const ALL_MODULES: ModuleDef[] = [
   { id: 'cupones',       name: 'Cupones',           group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
   { id: 'reviews',       name: 'Reseñas',           group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
   { id: 'services',      name: 'Servicios',         group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
+  { id: 'cartilla',      name: 'Cartilla Digital',  group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
+  { id: 'perfil',        name: 'Perfil público',    group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
+  { id: 'servicios-pro', name: 'Servicios Pro',     group: 'tienda',    groupLabel: 'Tienda Online',  defaultOn: false },
   // Reportes
   { id: 'history',       name: 'Historial',         group: 'reports',   groupLabel: 'Reportes',       defaultOn: true  },
   { id: 'analytics',     name: 'Análisis',          group: 'reports',   groupLabel: 'Reportes',       defaultOn: true  },

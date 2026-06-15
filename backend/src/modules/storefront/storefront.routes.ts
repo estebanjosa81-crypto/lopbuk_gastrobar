@@ -1125,7 +1125,7 @@ router.get('/card-config', authenticate, async (req: Request, res: Response) => 
         coverUrl: row.coverUrl ?? null,
         cardDescription: row.cardDescription ?? null,
         businessHours: businessHours ?? null,
-        theme: row.theme === 'theme2' ? 'theme2' : 'theme1',
+        theme: ['theme2', 'theme3', 'theme4'].includes(row.theme) ? row.theme : 'theme1',
       },
     });
   } catch (error) {
@@ -1142,7 +1142,7 @@ router.put(
     body('coverUrl').optional({ nullable: true }).isString().isLength({ max: 500 }),
     body('cardDescription').optional({ nullable: true }).isString().isLength({ max: 300 }),
     body('businessHours').optional({ nullable: true }),
-    body('theme').optional().isIn(['theme1', 'theme2']).withMessage('Tema inválido'),
+    body('theme').optional().isIn(['theme1', 'theme2', 'theme3', 'theme4']).withMessage('Tema inválido'),
     validateRequest,
   ],
   async (req: Request, res: Response) => {
@@ -1155,7 +1155,7 @@ router.put(
       if (coverUrl !== undefined)        { fields.push('card_cover_url = ?');  values.push(coverUrl || null); }
       if (cardDescription !== undefined) { fields.push('card_description = ?'); values.push(cardDescription || null); }
       if (businessHours !== undefined)   { fields.push('business_hours = ?');  values.push(businessHours ? JSON.stringify(businessHours) : null); }
-      if (theme !== undefined)           { fields.push('store_theme = ?');     values.push(theme === 'theme2' ? 'theme2' : 'theme1'); }
+      if (theme !== undefined)           { fields.push('store_theme = ?');     values.push(['theme2', 'theme3', 'theme4'].includes(theme) ? theme : 'theme1'); }
 
       if (fields.length === 0) {
         res.json({ success: true, message: 'Sin cambios' });

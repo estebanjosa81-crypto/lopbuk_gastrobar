@@ -13,6 +13,7 @@
 |---|---|
 | [[brain/empresa-y-ramas]] | 🏢 Visión central: empresa → ramas → modos Operativo/ControlChat |
 | [[brain/daimuz-chat]] | 🤖 DAIMUZ Chat: IA que opera el negocio (panel propio, gating por plan) |
+| [[brain/modelo-negocio]] | 💼 Modelo de negocio: Curso Chat Daimuz + suscripción (base oficial) |
 | [[branches/comercio]] | 🛒 Base de la rama Comercio (SaaS multi-tenant) |
 | [[graph/entities]] · [[graph/impact-map]] | 🕸️ Knowledge graph (entidades + impacto) |
 | [[agents/README]] · [[agents/daimuz-chat-agent]] | 🧑‍💻 Arnés de agentes (incl. ControlChat) |

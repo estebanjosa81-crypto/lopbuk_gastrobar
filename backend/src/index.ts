@@ -55,6 +55,11 @@ import { gymRoutes } from './modules/gym';
 import assistantRoutes from './modules/assistant/assistant.routes';
 import modifiersRoutes from './modules/modifiers/modifiers.routes'
 import superadminOrdersRoutes from './modules/orders/superadmin-orders.routes';
+import { cartillasRoutes } from './modules/cartillas';
+import profileRoutes from './modules/profile/profile.routes';
+import communityRoutes from './modules/community/community.routes';
+import notificationsRoutes from './modules/notifications/notifications.routes';
+import theme4Routes from './modules/theme4/theme4.routes';
 
 const app = express();
 
@@ -174,6 +179,11 @@ app.use(`${apiPrefix}/gym`, gymRoutes);
 app.use(`${apiPrefix}/assistant`, assistantRoutes);
 app.use(`${apiPrefix}/modifiers`, modifiersRoutes)
 app.use(`${apiPrefix}/superadmin`, superadminOrdersRoutes);
+app.use(`${apiPrefix}/cartillas`, cartillasRoutes);
+app.use(`${apiPrefix}/profile`, profileRoutes);
+app.use(`${apiPrefix}/community`, communityRoutes);
+app.use(`${apiPrefix}/notifications`, notificationsRoutes);
+app.use(`${apiPrefix}/theme4`, theme4Routes);
 
 // Variantes + Proveedores
 app.use(`${apiPrefix}`, variantsRoutes);

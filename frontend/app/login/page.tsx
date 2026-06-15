@@ -15,7 +15,7 @@ function safeNext(next: string | null): string {
 function LoginInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isAuthenticated, isCheckingAuth, checkAuth } = useAuthStore()
+  const { isAuthenticated, isCheckingAuth, checkAuth, user } = useAuthStore()
 
   const next = safeNext(searchParams.get('next'))
 
@@ -23,10 +23,15 @@ function LoginInner() {
     checkAuth()
   }, [checkAuth])
 
-  // En cuanto haya sesión (al cargar o tras login), va al destino solicitado
+  // En cuanto haya sesión (al cargar o tras login), va al destino solicitado.
+  // El rol comunidad_admin tiene su propio panel: /comunidad/admin.
   useEffect(() => {
-    if (isAuthenticated) router.replace(next)
-  }, [isAuthenticated, next, router])
+    if (!isAuthenticated) return
+    const dest = user?.role === 'comunidad_admin' && next === `/panel/${DEFAULT_SLUG}`
+      ? '/comunidad/admin'
+      : next
+    router.replace(dest)
+  }, [isAuthenticated, user, next, router])
 
   if (isCheckingAuth || isAuthenticated) {
     return (

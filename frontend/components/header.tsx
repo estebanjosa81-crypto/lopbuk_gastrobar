@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api'
 import { SyncStatusBar } from '@/components/sync-status-bar'
+import { NotificationsBell } from '@/components/notifications-bell'
 import { ProfileModal } from '@/components/profile-modal'
 import { PreferencesModal } from '@/components/preferences-modal'
 import { AppGuide } from '@/components/AppGuide'
@@ -288,6 +289,9 @@ export function Header() {
       <div className="flex items-center gap-3 lg:gap-4">
         {/* Sync status (solo visible en instancias locales) */}
         <SyncStatusBar />
+
+        {/* Notificaciones del comercio */}
+        <NotificationsBell />
 
         {/* Search */}
         <GlobalSearch />

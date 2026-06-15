@@ -67,7 +67,7 @@ export function StoreCardConfig() {
   const [coverUrl, setCoverUrl] = useState('')
   const [cardDescription, setCardDescription] = useState('')
   const [hours, setHours] = useState<Hours>({})
-  const [theme, setTheme] = useState<'theme1' | 'theme2'>('theme1')
+  const [theme, setTheme] = useState<'theme1' | 'theme2' | 'theme3' | 'theme4'>('theme1')
   const [savingTheme, setSavingTheme] = useState(false)
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export function StoreCardConfig() {
           setCoverUrl(res.data.coverUrl ?? '')
           setCardDescription(res.data.cardDescription ?? '')
           setHours((res.data.businessHours as Hours) ?? {})
-          setTheme(res.data.theme === 'theme2' ? 'theme2' : 'theme1')
+          setTheme(['theme2', 'theme3', 'theme4'].includes(res.data.theme) ? res.data.theme : 'theme1')
         }
       } catch { /* noop */ }
       setLoading(false)
@@ -88,7 +88,7 @@ export function StoreCardConfig() {
   const openNow = useMemo(() => computeOpenNow(hours), [hours])
 
   // El tema se guarda al instante al seleccionarlo (no depende del botón inferior).
-  const selectTheme = async (next: 'theme1' | 'theme2') => {
+  const selectTheme = async (next: 'theme1' | 'theme2' | 'theme3' | 'theme4') => {
     if (next === theme || savingTheme) return
     const prev = theme
     setTheme(next)
@@ -96,7 +96,8 @@ export function StoreCardConfig() {
     try {
       const res = await api.updateCardConfig({ theme: next })
       if (res.success) {
-        toast.success(next === 'theme2' ? 'Tema 2 (Gastronómico) aplicado' : 'Tema 1 (Clásico) aplicado')
+        const label = next === 'theme2' ? 'Tema 2 (Gastronómico)' : next === 'theme3' ? 'Tema 3 (Perfil público)' : next === 'theme4' ? 'Tema 4 (Servicios Pro)' : 'Tema 1 (Clásico)'
+        toast.success(`${label} aplicado`)
       } else {
         setTheme(prev)
         toast.error(res.error || 'No se pudo guardar el tema')
@@ -193,6 +194,8 @@ export function StoreCardConfig() {
           {([
             { id: 'theme1', name: 'Tema 1 · Clásico', desc: 'Tu diseño actual de tienda.' },
             { id: 'theme2', name: 'Tema 2 · Gastronómico', desc: 'Estilo oscuro con hero, favoritos, sedes y pedidos.' },
+            { id: 'theme3', name: 'Tema 3 · Perfil público', desc: 'Página tipo red social: banner, secciones y productos. Edítala en “Perfil público”.' },
+            { id: 'theme4', name: 'Tema 4 · Servicios Pro', desc: 'Para empresas de servicios (transporte/software). Edítalo en “Servicios Pro”.' },
           ] as const).map(opt => (
             <button
               key={opt.id}

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { LandingPage } from '@/components/landing-page'
 import { Theme2Storefront } from '@/components/theme2/theme2-storefront'
+import { ProfileThemeThree } from '@/components/profile-theme3/profile-theme-three'
+import { Theme4Layout } from '@/components/theme4/theme4-layout'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 
@@ -12,13 +14,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
  * Decide el tema de la tienda:
  *  - theme1 → LandingPage (diseño clásico actual, intacto)
  *  - theme2 → Theme2Storefront (nuevo estilo gastronómico)
+ *  - theme3 → ProfileThemeThree (perfil público tipo red social)
  */
 export default function StoreBySlugPage() {
   const params = useParams()
   const router = useRouter()
   const slug = Array.isArray(params?.slug) ? params.slug[0] : (params?.slug as string)
 
-  const [theme, setTheme] = useState<'theme1' | 'theme2' | null>(null)
+  const [theme, setTheme] = useState<'theme1' | 'theme2' | 'theme3' | 'theme4' | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -26,7 +29,7 @@ export default function StoreBySlugPage() {
       try {
         const res = await fetch(`${API_URL}/storefront/store-config/${slug}`).then(r => r.json()).catch(() => null)
         const t = res?.data?.storeInfo?.theme
-        if (alive) setTheme(t === 'theme2' ? 'theme2' : 'theme1')
+        if (alive) setTheme(['theme2', 'theme3', 'theme4'].includes(t) ? t : 'theme1')
       } catch {
         if (alive) setTheme('theme1')
       }
@@ -43,6 +46,8 @@ export default function StoreBySlugPage() {
   }
 
   if (theme === 'theme2') return <Theme2Storefront slug={slug} />
+  if (theme === 'theme3') return <ProfileThemeThree slug={slug} />
+  if (theme === 'theme4') return <Theme4Layout slug={slug} />
 
   return <LandingPage onGoToLogin={() => router.push('/login')} />
 }

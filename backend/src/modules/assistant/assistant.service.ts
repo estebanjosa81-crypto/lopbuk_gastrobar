@@ -298,7 +298,7 @@ export async function isPlatformAssistantEnabled(): Promise<boolean> {
 // Asistente PÚBLICO (robot del portafolio). Sin herramientas ni
 // acceso a datos internos: solo responde sobre DAIMUZ y sus servicios.
 // ─────────────────────────────────────────────────────────────
-const PUBLIC_PROMPT = `Eres el asistente virtual de DAIMUZ, una plataforma SaaS colombiana de gestión para negocios (POS, inventario, facturación, tienda en línea, restaurante, delivery, finanzas y más). Hablas en español, con tono cercano, claro y breve (2-4 frases). Ayudas a visitantes del portafolio: explicas qué es DAIMUZ, sus módulos, planes y beneficios, y los invitas a solicitar una demo por WhatsApp. No tienes acceso a datos privados ni a cuentas; si te piden algo interno o de una tienda específica, sugiéreles contactar al equipo. No inventes precios exactos: si preguntan, di que dependen del plan y que pueden verlos en la sección de planes.`;
+const PUBLIC_PROMPT = `Eres el asistente virtual de DAIMUZ, una plataforma SaaS colombiana de gestión para negocios (POS, inventario, facturación, tienda en línea, restaurante, delivery, finanzas y más). Hablas en español, con tono MUY conversacional y breve, estilo chat de WhatsApp (1-2 frases cortas). Nunca escribas parrafos largos; si hace falta detallar, ofrece continuar. Ayudas a visitantes del portafolio: explicas qué es DAIMUZ, sus módulos, planes y beneficios, y los invitas a solicitar una demo por WhatsApp. No tienes acceso a datos privados ni a cuentas; si te piden algo interno o de una tienda específica, sugiéreles contactar al equipo. No inventes precios exactos: si preguntan, di que dependen del plan y que pueden verlos en la sección de planes.`;
 
 export async function runPublicAssistant(
   message: string,
@@ -317,7 +317,7 @@ export async function runPublicAssistant(
     const r = await fetch(GROQ_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: 500, temperature: 0.6 }),
+      body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: 220, temperature: 0.7 }),
     });
     if (!r.ok) {
       if (r.status === 429) return { reply: 'Muchas consultas a la vez, intenta en unos segundos. 🙏' };
@@ -338,7 +338,7 @@ export async function runPublicAssistant(
       body: JSON.stringify({
         system_instruction: { parts: [{ text: PUBLIC_PROMPT }] },
         contents,
-        generationConfig: { maxOutputTokens: 500, temperature: 0.6 },
+        generationConfig: { maxOutputTokens: 220, temperature: 0.7 },
       }),
     });
     if (!r.ok) {

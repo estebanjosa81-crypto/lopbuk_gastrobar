@@ -43,6 +43,9 @@ import {
   Wrench,
   Gauge,
   Flame,
+  BookOpenText,
+  IdCard,
+  Briefcase,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { resolveActiveModules } from '@/lib/modules'
@@ -73,6 +76,7 @@ const navigation: NavItem[] = [
   { id: 'superadmin', name: 'Panel Admin', icon: Crown, adminOnly: true, superadminOnly: true, merchantOnly: false, group: 'admin' },
   { id: 'pagina-principal', name: 'Página Principal', icon: LayoutTemplate, adminOnly: true, superadminOnly: true, merchantOnly: false, group: 'admin' },
   // core
+  { id: 'daimuz-chat', name: 'DAIMUZ Chat', icon: MessageSquarePlus, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'inventory', name: 'Inventario', icon: Package, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'recipes', name: 'Recetas BOM', icon: FlaskConical, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
@@ -93,6 +97,9 @@ const navigation: NavItem[] = [
       { id: 'reviews', name: 'Reseñas', icon: Star, adminOnly: true, superadminOnly: false, merchantOnly: true },
       { id: 'services', name: 'Servicios', icon: Scissors, adminOnly: true, superadminOnly: false, merchantOnly: true },
       { id: 'gym', name: 'Gimnasio', icon: Dumbbell, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'cartilla', name: 'Cartilla Digital', icon: BookOpenText, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'perfil', name: 'Perfil público', icon: IdCard, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'servicios-pro', name: 'Servicios Pro', icon: Briefcase, adminOnly: true, superadminOnly: false, merchantOnly: true },
     ],
   },
   // gastrobar ops
@@ -132,7 +139,7 @@ const groups = [
 ]
 
 // IDs that belong to the Tienda submenu (to detect active state for parent)
-const TIENDA_CHILD_IDS = ['tienda', 'pedidos', 'cupones', 'reviews', 'services']
+const TIENDA_CHILD_IDS = ['tienda', 'pedidos', 'cupones', 'reviews', 'services', 'cartilla', 'perfil', 'servicios-pro']
 
 export function Sidebar() {
   const {
@@ -162,6 +169,7 @@ export function Sidebar() {
     if (item.merchantOnly && isSuperadmin) return false
     if (item.adminOnly && !isAdmin) return false
     if (item.id === 'tienda' && !isSuperadmin && !isEmpresarial) return false
+    if (item.id === 'daimuz-chat') return isEmpresarial
     if (activeModules && item.id && !activeModules.includes(item.id)) return false
     return true
   }

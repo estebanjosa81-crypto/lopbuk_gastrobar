@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS community_posts (
   likes_count   INT NOT NULL DEFAULT 0,
   saves_count   INT NOT NULL DEFAULT 0,
   comments_count INT NOT NULL DEFAULT 0,
+  shares_count  INT NOT NULL DEFAULT 0,
   is_active     BOOLEAN NOT NULL DEFAULT TRUE,
   created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   published_at  TIMESTAMP NULL,
@@ -62,12 +63,14 @@ CREATE TABLE IF NOT EXISTS community_post_ads (
 CREATE TABLE IF NOT EXISTS community_reactions (
   id         VARCHAR(36) PRIMARY KEY,
   post_id    VARCHAR(36) NOT NULL,
-  user_id    VARCHAR(36) NOT NULL,
+  user_id    VARCHAR(36) NULL,                     -- NULL si la reacción es anónima (por dispositivo)
+  device_id  VARCHAR(64) NULL,                     -- like anónimo rastreado por dispositivo
   type       ENUM('like','save') NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_reaction (post_id, user_id, type),
   FOREIGN KEY (post_id) REFERENCES community_posts(id) ON DELETE CASCADE,
-  KEY idx_reaction_post (post_id, type)
+  KEY idx_reaction_post (post_id, type),
+  KEY idx_reaction_device (device_id)
 );
 
 -- 5. community_comments (con respuestas anidadas) ----------------------------
@@ -82,4 +85,11 @@ CREATE TABLE IF NOT EXISTS community_comments (
   FOREIGN KEY (post_id) REFERENCES community_posts(id) ON DELETE CASCADE,
   KEY idx_comment_post (post_id, is_active, created_at),
   KEY idx_comment_parent (parent_id)
+);
+
+-- 6. community_settings — ajustes globales del feed -------------------------
+CREATE TABLE IF NOT EXISTS community_settings (
+  setting_key   VARCHAR(100) PRIMARY KEY,
+  setting_value TEXT NULL,
+  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

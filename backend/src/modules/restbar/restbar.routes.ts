@@ -301,6 +301,17 @@ router.get('/kitchen', authorize(...KITCHEN_ROLES, ...ADMIN_ROLES), restbarContr
 router.get('/bar',     authorize(...KITCHEN_ROLES, ...ADMIN_ROLES), restbarController.getBarDisplay.bind(restbarController));
 
 router.patch(
+  '/orders/:id/priority',
+  authorize(...KITCHEN_ROLES, ...WAITER_ROLES, ...ADMIN_ROLES),
+  [
+    param('id').notEmpty(),
+    body('priority').isIn(['normal','urgente']).withMessage('Prioridad inválida'),
+    validateRequest,
+  ],
+  restbarController.setOrderPriority.bind(restbarController)
+);
+
+router.patch(
   '/items/:itemId/status',
   authorize(...KITCHEN_ROLES, ...WAITER_ROLES, ...ADMIN_ROLES),
   [

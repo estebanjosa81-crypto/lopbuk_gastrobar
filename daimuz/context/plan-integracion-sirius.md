@@ -114,3 +114,72 @@
 `admin-manager/info.md` lista **46 servicios explícitos**. Resultado:
 - ✅ **Confirma deltas reales:** `report.tablePerformance` + `report.paymentSummary` + `report.topProducts` (delta A), "Priorización de pedidos" en cocina (delta B), `database.backup/restore/listBackups` (delta D).
 - ❌ **NO existen en NINGÚN repo** (restaurant-system ni admin-manager): la **generación de QR de mesa con sesión de cliente** ni la **función de elegir canción/jukebox**. No hay dep de QR, ni servicios de sesión/invitado, ni música. → Son features **a diseñar nuevas** (secciones F y G).
+
+---
+
+## 7. Plan enriquecido en 4 fases (experiencia cliente → operación → fidelización → marketing)
+
+> Roadmap completo acordado con el usuario. Cada fase es entregable de forma independiente.
+> Estado al **2026-06-15**: **Fase 1 COMPLETA y verificada** (tsc 0). Fases 2–4 pendientes.
+
+### ✅ Fase 1 — Experiencia del cliente *(HECHA)*
+1. **QR de mesa con sesión del cliente** — el mesero genera el QR por mesa; el cliente escanea,
+   entra con su nombre, ve el menú y pide desde su celular. Sesión atada al pedido: se **invalida
+   al cobrar/cancelar**.
+2. **Disponibilidad real del menú** — los agotados se muestran como "Agotado" y no se pueden pedir.
+3. **Estado del pedido visible al cliente** — vista "Mi pedido" con badges en vivo
+   (Pendiente / En preparación / Listo / Entregado), refresco cada 7 s.
+4. **Página de inicio del restaurante** (`/r/[slug]`) — portada, logo, abierto/cerrado, **promos y
+   eventos** (reusa `store_banners`), destacados y CTAs **Ver menú** / **Reservar**.
+
+**Entregables Fase 1:**
+- Backend: `backend/src/modules/restbar/restbar-qr.routes.ts` (sesiones, invitados, pedir, **estado**);
+  montado en `index.ts` como `/api/restbar-qr`. Tablas `rb_table_sessions`, `rb_table_guests`
+  (auto-migración idempotente). Endpoints: `POST /tables/:id/session` (mesero), `GET /session/:token`,
+  `POST /session/:token/join`, `POST /session/:token/order`, `GET /session/:token/order`.
+- Frontend: `app/mesa/[token]/page.tsx` (cliente: escaneo→nombre→menú→pedir→seguimiento),
+  `app/r/[slug]/page.tsx` (home restaurante), `components/restbar/table-qr-button.tsx` (botón mesero
+  con `qrcode.react`), insertado en `components/mesero-panel.tsx`.
+- Reusa `restbarService` (comanda real → KDS) y el endpoint público `storefront/store-config/:slug`.
+
+### ✅ Fase 2 — Operación *(COMPLETA)*
+- ✅ **Prioridad de cocina** (delta B): columna `rb_orders.priority` (`normal|urgente`,
+  auto-migración). Endpoint `PATCH /restbar/orders/:id/priority` (cocina/bar/mesero/admin).
+  Los paneles **cocinero** y **bartender** muestran badge 🔥 URGENTE + botón ⚡ para marcar/quitar,
+  y ordenan las comandas urgentes primero. El sort urgente también se aplica en `getAreaDisplay`.
+- ✅ **Regalo entre mesas**: desde `/mesa/[token]` el cliente elige otra mesa ocupada y le envía
+  productos; entran a la **comanda de esa mesa** con nota `🎁 Regalo de [nombre] (Mesa X)`.
+  Endpoints `GET /restbar-qr/session/:token/tables` + `POST /restbar-qr/session/:token/gift`.
+- ✅ **Reservas públicas**: la home (`/r/[slug]`) ya enlaza a `/reservar/[slug]`; al crear una reserva
+  online se emite una **notificación** al comercio (`createNotification`, tipo `reservation`).
+- ✅ **Jukebox / elegir canción** (sección G): tablas `rb_jukebox_queue` + `rb_jukebox_config`
+  (umbral por consumo, default $50.000). Público: `GET/POST /restbar-qr/session/:token/jukebox`
+  (se **desbloquea** cuando el total de la comanda ≥ umbral). Staff: `GET/PATCH /restbar-qr/jukebox`
+  + página `/jukebox` (reproducir / sonada / saltar). En `/mesa/[token]` (vista "Mi pedido"):
+  barra de progreso al desbloqueo, formulario (título + link opcional) y cola en vivo.
+
+> **Fase 2 = COMPLETA.** Siguiente: Fase 3 (fidelización/puntos).
+
+### ✅ Fase 3 — Fidelización / puntos *(COMPLETA)*
+- Módulo **loyalty** (`backend/src/modules/loyalty/loyalty.routes.ts`, montado `/api/loyalty`):
+  tablas `loyalty_config`, `loyalty_accounts`, `loyalty_transactions`, `loyalty_rewards`
+  (auto-migración idempotente). Cuentas identificadas por **teléfono**.
+- **Reglas configurables**: `loyalty_config.points_per_thousand` (puntos por cada $1.000 de consumo)
+  + on/off. Admin: `GET/PUT /loyalty/config`.
+- **Recompensas** (CRUD): `GET/POST/PATCH/DELETE /loyalty/rewards`. **Cuentas**: `GET /loyalty/accounts`,
+  `GET /loyalty/accounts/:id/transactions`, `POST /loyalty/accounts/:id/adjust`.
+- **Acúmulo**: `POST /loyalty/earn` (calcula puntos del monto; reusable). **No se tocó el flujo de pago**
+  (regla CLAUDE.md): el cajero/admin otorga puntos tras cobrar desde el panel.
+- **Canje desde la sesión del cliente** (`/mesa/[token]` → vista "Mi pedido", sección ⭐):
+  `GET /restbar-qr/session/:token/loyalty?phone=` (saldo + catálogo) y
+  `POST /restbar-qr/session/:token/loyalty/redeem` (devuelve **código de canje** para mostrar al mesero).
+- **Frontend**: página admin `/fidelizacion` (reglas + recompensas + cuentas + otorgar puntos);
+  métodos en `lib/api.ts`. tsc front 0.
+
+> **Fase 3 = COMPLETA.** Roadmap: Fase 1 ✅ · Fase 2 ✅ · Fase 3 ✅. Siguiente: Fase 4 (marketing + reportes).
+
+### ⏳ Fase 4 — Marketing y reportes
+- **Panel de marketing** (campañas, promos programadas → alimenta los banners de la home).
+- **Reportes de restaurante** (delta A): rendimiento por mesero/mesa, resumen de pagos,
+  top productos, export PDF.
+- **Backup/restore** de datos (delta D).

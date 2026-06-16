@@ -4,6 +4,72 @@
 
 ---
 
+## [2026-06-15] — Fase 3 Restaurante: módulo de fidelización / puntos
+
+Nuevo módulo **loyalty** (tsc front 0; backend sin errores nuevos):
+
+- Backend `modules/loyalty/loyalty.routes.ts` (montado `/api/loyalty`): tablas `loyalty_config`,
+  `loyalty_accounts`, `loyalty_transactions`, `loyalty_rewards` (auto-migración). Reglas
+  configurables (`points_per_thousand`), CRUD de recompensas, cuentas por teléfono, `POST /earn`
+  (acúmulo sin tocar el flujo de pago), ajustes manuales y transacciones. Helpers exportados
+  `ensureLoyaltyTables`, `getLoyaltyConfig`, `ensureAccount`, `earnPoints`.
+- Canje público desde la sesión de mesa (`restbar-qr`): `GET /session/:token/loyalty?phone=` +
+  `POST /session/:token/loyalty/redeem` → genera **código de canje** para el mesero.
+- Frontend: sección ⭐ en `/mesa/[token]` (consultar saldo por teléfono, ver recompensas, canjear)
+  y página admin **`/fidelizacion`** (reglas, recompensas, cuentas, otorgar puntos).
+  Métodos `api.getLoyaltyConfig/updateLoyaltyConfig/getLoyaltyRewards/createLoyaltyReward/...`.
+
+## [2026-06-15] — Fase 2 Restaurante COMPLETA: reservas con aviso + jukebox
+
+Cerradas las dos piezas restantes de la Fase 2 (tsc front 0):
+
+- **Reservas con notificación**: al crear una reserva pública (`POST /restbar/reservations/public`)
+  se emite `createNotification(tenant, {type:'reservation', ...})` para avisar al comercio. La home
+  `/r/[slug]` ya enlazaba a `/reservar/[slug]`.
+- **Jukebox**: tablas `rb_jukebox_queue` + `rb_jukebox_config` (auto-migración en `ensureTables`).
+  Público `GET/POST /restbar-qr/session/:token/jukebox` (se desbloquea cuando el total de la comanda
+  ≥ umbral, default $50k). Staff `GET/PATCH /restbar-qr/jukebox` + nueva página `/jukebox`
+  (reproducir/sonada/saltar). En `/mesa/[token]`: progreso al desbloqueo + pedir canción + cola en vivo.
+  `api.getJukeboxQueue()` / `api.updateJukeboxStatus()`.
+
+## [2026-06-15] — Fase 2 Restaurante: prioridad de cocina + regalo entre mesas
+
+Implementado y verificado (tsc front 0; backend solo errores preexistentes en `cartillas`):
+
+- **Prioridad de cocina (delta B)**: nueva columna `rb_orders.priority` (`normal|urgente`,
+  auto-migración idempotente en `index.ts`). `PATCH /restbar/orders/:id/priority`
+  (`setOrderPriority` en service/controller, roles cocina/bar/mesero/admin). `getAreaDisplay`
+  selecciona `priority` y ordena **urgentes primero**. Paneles `cocinero-panel.tsx` y
+  `bartender-panel.tsx`: badge 🔥 URGENTE (pulse), botón ⚡ para alternar, borde rojo + sort.
+  `api.setRestbarOrderPriority()`.
+- **Regalo entre mesas**: en `restbar-qr.routes.ts`, `GET /session/:token/tables` (mesas ocupadas)
+  y `POST /session/:token/gift` (envía items a la comanda de otra mesa, nota
+  `🎁 Regalo de [nombre] (Mesa X)`, → KDS). En `/mesa/[token]`: botón "Regalar a otra mesa",
+  selector de mesa y barra inferior que cambia a "🎁 Regalar a Mesa X".
+
+## [2026-06-15] — Fase 1 Restaurante: QR de mesa + sesión del cliente
+
+Se implementó y verificó (tsc 0) la **Fase 1** del plan de integración (sección 7 de
+`context/plan-integracion-sirius.md`):
+
+- **QR de mesa con sesión del cliente**: el mesero genera el QR por mesa
+  (`table-qr-button.tsx` con `qrcode.react`, insertado en `mesero-panel.tsx`); el cliente
+  escanea `/mesa/[token]`, entra con su nombre, ve el menú con disponibilidad real (agotados),
+  y pide desde su celular. El pedido entra a la **comanda real → KDS** vía `restbarService`.
+- **Sesión invalidada al cobrar/cancelar**: `loadSession()` hace LEFT JOIN al pedido y descarta
+  la sesión si el `rb_order` está `cerrada/cancelada` (sin tocar el flujo de pago).
+- **Estado del pedido en vivo** para el cliente: `GET /restbar-qr/session/:token/order` +
+  vista "Mi pedido" con badges (Pendiente/En preparación/Listo/Entregado), refresco cada 7 s.
+- **Home del restaurante** `/r/[slug]`: portada, logo, abierto/cerrado, promos/eventos (reusa
+  `store_banners`), destacados y CTAs Ver menú / Reservar. Reusa `storefront/store-config/:slug`.
+
+Backend nuevo: `modules/restbar/restbar-qr.routes.ts` (montado `/api/restbar-qr`), tablas
+`rb_table_sessions` + `rb_table_guests` (auto-migración idempotente en arranque).
+
+**Nota de proceso:** `lib/api.ts` se truncó por una edición con file-tools (terminaba en
+`export const ap`); restaurado desde HEAD y reaplicados los cambios con python. Reafirma la
+lección: **editar archivos existentes con bash/python y verificar en disco**, nunca file-tools.
+
 ## [2026-06-15] — Cerebro v4 + visión Empresa/Ramas/DAIMUZ Chat
 
 Se actualizó el cerebro a la estructura **DAIMUZ v4** (`brain/daimuzv4.md`) y se

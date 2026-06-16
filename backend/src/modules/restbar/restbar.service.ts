@@ -513,7 +513,7 @@ class RestbarService {
     const [rows] = await db.execute<RowDataPacket[]>(
       `SELECT
          o.id AS order_id, o.order_number, o.notes AS order_notes,
-         o.waiter_name, o.opened_at,
+         o.waiter_name, o.opened_at, o.priority,
          t.number AS table_number, t.area AS table_area,
          oi.id AS item_id, oi.menu_item_name, oi.quantity,
          oi.item_notes, oi.status AS item_status,
@@ -526,7 +526,7 @@ class RestbarService {
          AND oi.sent_to_kitchen_at IS NOT NULL
          AND o.status NOT IN ('cerrada','cancelada')
          ${areaFilter}
-       ORDER BY oi.sent_to_kitchen_at ASC, o.opened_at ASC`,
+       ORDER BY (o.priority = 'urgente') DESC, oi.sent_to_kitchen_at ASC, o.opened_at ASC`,
       [tenantId]
     );
 
@@ -538,6 +538,7 @@ class RestbarService {
           orderId: row.order_id, orderNumber: row.order_number,
           tableNumber: row.table_number, tableArea: row.table_area,
           waiterName: row.waiter_name, openedAt: row.opened_at,
+          priority: row.priority || 'normal',
           orderNotes: row.order_notes, items: [],
         });
       }
@@ -548,6 +549,16 @@ class RestbarService {
       });
     }
     return Array.from(orderMap.values());
+  }
+
+  async setOrderPriority(tenantId: string, orderId: string, priority: 'normal' | 'urgente') {
+    if (!['normal', 'urgente'].includes(priority)) throw new AppError('Prioridad inválida', 400);
+    const [result] = await db.execute<ResultSetHeader>(
+      `UPDATE rb_orders SET priority = ? WHERE id = ? AND tenant_id = ? AND status NOT IN ('cerrada','cancelada')`,
+      [priority, orderId, tenantId]
+    );
+    if (result.affectedRows === 0) throw new AppError('Comanda no encontrada o ya cerrada', 404);
+    return { orderId, priority };
   }
 
   async updateItemStatus(tenantId: string, itemId: string, status: string) {

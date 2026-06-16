@@ -28,6 +28,7 @@ interface KitchenOrder {
   waiterName:  string
   openedAt:    string
   orderNotes?: string
+  priority?:   'normal' | 'urgente'
   items:       KitchenItem[]
 }
 
@@ -129,6 +130,15 @@ export function CocineroPanel() {
     updatingRef.current = false
   }
 
+  // ── Prioridad de la comanda (urgente / normal) ─────────────────────────────
+  const togglePriority = async (orderId: string, current?: 'normal' | 'urgente') => {
+    const next = current === 'urgente' ? 'normal' : 'urgente'
+    setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, priority: next } : o))
+    const r = await api.setRestbarOrderPriority(orderId, next)
+    if (r.success) toast.success(next === 'urgente' ? '🚨 Marcada como URGENTE' : 'Prioridad normal')
+    else { toast.error(r.error ?? 'Error al cambiar prioridad'); await load(true) }
+  }
+
   // ── Stats ─────────────────────────────────────────────────────────────────
   const allItems     = orders.flatMap(o => o.items.filter(i => i.status !== 'cancelado' && i.status !== 'entregado'))
   const pendingCount = allItems.filter(i => i.status === 'pendiente').length
@@ -146,7 +156,7 @@ export function CocineroPanel() {
       }),
     }))
     .filter(o => o.items.length > 0)
-    .sort((a, b) => new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime())
+    .sort((a, b) => (b.priority === 'urgente' ? 1 : 0) - (a.priority === 'urgente' ? 1 : 0) || new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime())
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -285,6 +295,7 @@ export function CocineroPanel() {
                 order={order}
                 updating={updating}
                 onAdvance={advance}
+                onSetPriority={togglePriority}
               />
             ))}
           </div>
@@ -297,18 +308,21 @@ export function CocineroPanel() {
 // ─── OrderCard ────────────────────────────────────────────────────────────────
 
 function OrderCard({
-  order, updating, onAdvance,
+  order, updating, onAdvance, onSetPriority,
 }: {
   order: KitchenOrder
   updating: string | null
   onAdvance: (itemId: string, status: string) => void
+  onSetPriority: (orderId: string, current?: 'normal' | 'urgente') => void
 }) {
+  const isUrgent = order.priority === 'urgente'
   const elapsed    = elapsedMin(order.openedAt)
   const hasPending = order.items.some(i => i.status === 'pendiente')
   const hasPrep    = order.items.some(i => i.status === 'en_preparacion')
   const allReady   = order.items.every(i => i.status === 'listo')
 
-  const cardBorder = hasPending
+  const cardBorder = isUrgent ? 'border-red-500 ring-2 ring-red-500/40'
+    : hasPending
     ? elapsed >= 15 ? 'border-red-500/60'
     : elapsed >= 8  ? 'border-amber-500/50'
     : 'border-orange-500/30'
@@ -344,7 +358,22 @@ function OrderCard({
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5 leading-none">{order.waiterName}</p>
         </div>
-        <div className="flex flex-col items-end gap-0.5">
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5">
+            {isUrgent && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded uppercase tracking-wide animate-pulse">
+                <Flame className="h-3 w-3" /> Urgente
+              </span>
+            )}
+            <button
+              onClick={() => onSetPriority(order.orderId, order.priority)}
+              title={isUrgent ? 'Quitar urgencia' : 'Marcar urgente'}
+              className={cn('flex items-center justify-center h-6 w-6 rounded-md border transition-colors',
+                isUrgent ? 'border-red-500/50 text-red-400 bg-red-500/10' : 'border-border text-muted-foreground hover:text-red-400 hover:border-red-500/40')}
+            >
+              <Zap className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <div className={cn('flex items-center gap-1 text-xs font-bold tabular-nums', urgencyText(elapsed))}>
             <Timer className="h-3 w-3" />
             {elapsed} min

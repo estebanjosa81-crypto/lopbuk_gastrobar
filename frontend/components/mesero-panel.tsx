@@ -12,6 +12,7 @@ import {
   Trash2, Search, ChevronUp, ChevronDown, Package, AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { TableQrButton } from '@/components/restbar/table-qr-button'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -225,6 +226,8 @@ function TableCard({ table, onOpen, onAddGuest }: { table: any; onOpen: () => vo
           <UserPlus className="h-3 w-3" /> Comensal
         </button>
       )}
+
+      {!isInactive && <TableQrButton tableId={table.id} tableNumber={table.number} />}
     </div>
   )
 }

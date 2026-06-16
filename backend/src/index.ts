@@ -39,6 +39,8 @@ import reviewsRoutes from './modules/reviews/reviews.routes';
 import { syncRoutes, startSyncScheduler } from './modules/sync';
 import { subscriptionsRoutes } from './modules/subscriptions/subscriptions.routes';
 import { restbarRoutes } from './modules/restbar';
+import restbarQrRoutes from './modules/restbar/restbar-qr.routes';
+import loyaltyRoutes from './modules/loyalty/loyalty.routes';
 import { financesRoutes } from './modules/finances';
 import { portfolioRoutes } from './modules/portfolio';
 import devRequestsRoutes from './modules/dev-requests/dev-requests.routes';
@@ -165,6 +167,8 @@ app.use(`${apiPrefix}/reviews`, reviewsRoutes);
 app.use(`${apiPrefix}/sync`, syncRoutes);
 app.use(`${apiPrefix}/subscriptions`, subscriptionsRoutes);
 app.use(`${apiPrefix}/restbar`, restbarRoutes);
+app.use(`${apiPrefix}/restbar-qr`, restbarQrRoutes);
+app.use(`${apiPrefix}/loyalty`, loyaltyRoutes);
 app.use(`${apiPrefix}/finances`, financesRoutes);
 app.use(`${apiPrefix}/portfolio`, portfolioRoutes);
 app.use(`${apiPrefix}/dev-requests`, devRequestsRoutes);
@@ -440,6 +444,7 @@ const startServer = async () => {
       await pool2.query(`CREATE TABLE IF NOT EXISTS rb_tables (id VARCHAR(36) PRIMARY KEY, tenant_id VARCHAR(36) NOT NULL, number VARCHAR(20) NOT NULL, capacity INT NOT NULL DEFAULT 4, area VARCHAR(100) NULL, status ENUM('libre','ocupada','reservada','inactiva') NOT NULL DEFAULT 'libre', qr_code VARCHAR(500) NULL, notes TEXT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, UNIQUE INDEX idx_rb_table_number (tenant_id, number), INDEX idx_rb_table_status (tenant_id, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
       // Comandas
       await pool2.query(`CREATE TABLE IF NOT EXISTS rb_orders (id VARCHAR(36) PRIMARY KEY, tenant_id VARCHAR(36) NOT NULL, table_id VARCHAR(36) NOT NULL, order_number VARCHAR(20) NOT NULL, waiter_id VARCHAR(36) NOT NULL, waiter_name VARCHAR(255) NOT NULL, guests_count INT NOT NULL DEFAULT 1, status ENUM('abierta','en_proceso','lista','entregada','cerrada','cancelada') NOT NULL DEFAULT 'abierta', notes TEXT NULL, subtotal DECIMAL(12,2) NOT NULL DEFAULT 0, tax DECIMAL(12,2) NOT NULL DEFAULT 0, discount DECIMAL(12,2) NOT NULL DEFAULT 0, total DECIMAL(12,2) NOT NULL DEFAULT 0, sale_id VARCHAR(36) NULL, opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, closed_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, FOREIGN KEY (table_id) REFERENCES rb_tables(id) ON DELETE RESTRICT, FOREIGN KEY (waiter_id) REFERENCES users(id) ON DELETE RESTRICT, FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL, UNIQUE INDEX idx_rb_order_number (tenant_id, order_number), INDEX idx_rb_order_table (table_id, status), INDEX idx_rb_order_status (tenant_id, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+      await pool2.query(`ALTER TABLE rb_orders ADD COLUMN IF NOT EXISTS priority ENUM('normal','urgente') NOT NULL DEFAULT 'normal'`).catch(()=>{});
       // Ítems de comanda
       await pool2.query(`CREATE TABLE IF NOT EXISTS rb_order_items (id VARCHAR(36) PRIMARY KEY, tenant_id VARCHAR(36) NOT NULL, order_id VARCHAR(36) NOT NULL, menu_item_id VARCHAR(36) NOT NULL, menu_item_name VARCHAR(255) NOT NULL, preparation_area ENUM('bar','cocina','ambos') NOT NULL, quantity INT NOT NULL DEFAULT 1, unit_price DECIMAL(12,2) NOT NULL, subtotal DECIMAL(12,2) NOT NULL, discount DECIMAL(5,2) NOT NULL DEFAULT 0, status ENUM('pendiente','en_preparacion','listo','entregado','cancelado') NOT NULL DEFAULT 'pendiente', guest_number TINYINT NULL DEFAULT NULL, item_notes TEXT NULL, sent_to_kitchen_at TIMESTAMP NULL, ready_at TIMESTAMP NULL, delivered_at TIMESTAMP NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE, FOREIGN KEY (order_id) REFERENCES rb_orders(id) ON DELETE CASCADE, FOREIGN KEY (menu_item_id) REFERENCES products(id) ON DELETE RESTRICT, INDEX idx_rb_item_order (order_id), INDEX idx_rb_item_status (tenant_id, status), INDEX idx_rb_item_area (tenant_id, preparation_area, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
       // Secuencia de comandas

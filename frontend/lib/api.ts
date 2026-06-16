@@ -986,12 +986,17 @@ class ApiService {
     coverUrl?: string | null
     cardDescription?: string | null
     businessHours?: Record<string, { open: string; close: string }[]> | null
-    theme?: 'theme1' | 'theme2'
+    theme?: 'theme1' | 'theme2' | 'theme3' | 'theme4'
   }) {
     return this.request<{ message: string }>('/storefront/card-config', {
       method: 'PUT',
       body: JSON.stringify(data),
     })
+  }
+
+  // QR de mesa: el mesero genera/rota la sesión del cliente.
+  async createTableQrSession(tableId: string) {
+    return this.request<{ token: string; tableNumber: string; path: string }>(`/restbar-qr/tables/${tableId}/session`, { method: 'POST' })
   }
 
   async getMyPublishedProducts() {
@@ -1980,6 +1985,43 @@ class ApiService {
   }
   async updateRestbarItemStatus(itemId: string, status: string) {
     return this.request<any>(`/restbar/items/${itemId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  }
+  async setRestbarOrderPriority(orderId: string, priority: 'normal' | 'urgente') {
+    return this.request<any>(`/restbar/orders/${orderId}/priority`, { method: 'PATCH', body: JSON.stringify({ priority }) })
+  }
+  async getJukeboxQueue() {
+    return this.request<{ queue: any[] }>(`/restbar-qr/jukebox`)
+  }
+  async updateJukeboxStatus(id: string, status: 'queued' | 'playing' | 'played' | 'skipped') {
+    return this.request<any>(`/restbar-qr/jukebox/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  }
+  // ── Fidelización (Fase 3) ───────────────────────────────────────────────
+  async getLoyaltyConfig() {
+    return this.request<{ enabled: boolean; pointsPerThousand: number }>(`/loyalty/config`)
+  }
+  async updateLoyaltyConfig(data: { enabled: boolean; pointsPerThousand: number }) {
+    return this.request<any>(`/loyalty/config`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  async getLoyaltyRewards() {
+    return this.request<{ rewards: any[] }>(`/loyalty/rewards`)
+  }
+  async createLoyaltyReward(data: { name: string; description?: string; pointsCost: number }) {
+    return this.request<any>(`/loyalty/rewards`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  async updateLoyaltyReward(id: string, data: any) {
+    return this.request<any>(`/loyalty/rewards/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  async deleteLoyaltyReward(id: string) {
+    return this.request<any>(`/loyalty/rewards/${id}`, { method: 'DELETE' })
+  }
+  async getLoyaltyAccounts(search = '') {
+    return this.request<{ accounts: any[] }>(`/loyalty/accounts?search=${encodeURIComponent(search)}`)
+  }
+  async loyaltyEarn(data: { phone: string; name?: string; amount: number }) {
+    return this.request<any>(`/loyalty/earn`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  async loyaltyAdjust(accountId: string, points: number, reason?: string) {
+    return this.request<any>(`/loyalty/accounts/${accountId}/adjust`, { method: 'POST', body: JSON.stringify({ points, reason }) })
   }
   async updateRestbarOrderNotes(orderId: string, notes: string | null) {
     return this.request<any>(`/restbar/orders/${orderId}/notes`, { method: 'PATCH', body: JSON.stringify({ notes }) })

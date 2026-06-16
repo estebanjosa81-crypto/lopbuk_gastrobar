@@ -4,6 +4,7 @@ import { reservationsService } from './reservations.service';
 import { authenticate, authorize } from '../../common/middleware';
 import { validateRequest } from '../../utils/validators';
 import { UserRole } from '../../common/types';
+import { createNotification } from '../notifications/notifications.routes';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -97,6 +98,13 @@ router.post(
         res.status(409).json({ success: false, error: result.error });
         return;
       }
+      // Aviso al comercio: nueva reserva online (no bloquea la respuesta).
+      createNotification(config.tenantId, {
+        type: 'reservation',
+        title: '📅 Nueva reserva online',
+        body: `${data.customerName} · ${data.guestsCount} pers · ${data.reservationDate} ${data.reservationTime}`,
+        link: '/restbar',
+      }).catch(() => {});
       res.status(201).json({ success: true, data: result });
     } catch (err) {
       console.error('Create reservation error:', err);

@@ -153,6 +153,15 @@ export class RestbarController {
     } catch (err) { next(err); }
   }
 
+  async setOrderPriority(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await restbarService.setOrderPriority(
+        req.user!.tenantId!, req.params.id, req.body.priority
+      );
+      res.json({ success: true, data });
+    } catch (err) { next(err); }
+  }
+
   async updateItemStatus(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const data = await restbarService.updateItemStatus(

@@ -18,6 +18,7 @@ import { api } from '@/lib/api'
 import { SyncStatusBar } from '@/components/sync-status-bar'
 import { NotificationsBell } from '@/components/notifications-bell'
 import { ProfileModal } from '@/components/profile-modal'
+import { ThemeSwitch } from '@/components/theme-switch'
 import { PreferencesModal } from '@/components/preferences-modal'
 import { AppGuide } from '@/components/AppGuide'
 import { ProductTour } from '@/components/ProductTour'
@@ -308,6 +309,9 @@ export function Header() {
           <BookOpen className="h-4 w-4" />
           <span className="text-xs font-medium hidden lg:inline">Guía</span>
         </Button>
+
+        {/* Cambio de tema (claro/oscuro) con expansión dinámica */}
+        <ThemeSwitch size={16} />
 
         {/* Notifications */}
         <DropdownMenu>

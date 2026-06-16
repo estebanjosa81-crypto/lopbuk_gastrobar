@@ -185,11 +185,27 @@ export function IntegrationsTab() {
             <div className="grid sm:grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Base URL (OpenAI / compatibles)</Label>
-                <Input value={integrations.openaiBaseUrl} onChange={e => set('openaiBaseUrl', e.target.value)} placeholder="https://opencode.ai/zen/v1" className="font-mono text-sm" />
+                <Input list="dz-base-urls" value={integrations.openaiBaseUrl} onChange={e => set('openaiBaseUrl', e.target.value)} placeholder="https://opencode.ai/zen/v1" className="font-mono text-sm" />
+                <datalist id="dz-base-urls">
+                  <option value="https://opencode.ai/zen/v1">OpenCode Zen</option>
+                  <option value="https://api.openai.com/v1">OpenAI</option>
+                  <option value="https://api.groq.com/openai/v1">Groq</option>
+                  <option value="https://openrouter.ai/api/v1">OpenRouter</option>
+                </datalist>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Modelo</Label>
-                <Input value={integrations.openaiModel} onChange={e => set('openaiModel', e.target.value)} placeholder="deepseek-v4-flash" className="font-mono text-sm" />
+                <Label className="text-xs text-muted-foreground">Modelo (elige uno o escríbelo)</Label>
+                <Input list="dz-models" value={integrations.openaiModel} onChange={e => set('openaiModel', e.target.value)} placeholder="deepseek-v4-flash" className="font-mono text-sm" />
+                <datalist id="dz-models">
+                  <option value="deepseek-v4-flash">DeepSeek V4 Flash (OpenCode Go)</option>
+                  <option value="deepseek-v4-flash-free">DeepSeek V4 Flash (free)</option>
+                  <option value="deepseek-v3.1">DeepSeek V3.1</option>
+                  <option value="qwen3-coder">Qwen3 Coder</option>
+                  <option value="gpt-4o-mini">GPT-4o mini (OpenAI)</option>
+                  <option value="gpt-4o">GPT-4o (OpenAI)</option>
+                  <option value="claude-3-5-haiku">Claude 3.5 Haiku</option>
+                </datalist>
+                <p className="text-[11px] text-muted-foreground">Usa el nombre exacto del modelo de tu plan. Si no carga, prueba otro de la lista.</p>
               </div>
             </div>
 

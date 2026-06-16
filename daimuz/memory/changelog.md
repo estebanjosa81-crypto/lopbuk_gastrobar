@@ -5,6 +5,17 @@
 ---
 
 
+## [2026-06-16] — Fix IA: agente respeta Base URL (OpenCode) + selector de modelo + checklist deploy
+
+- **FIX raíz de los 500:** `agent.service.callOpenAI` tenía `api.openai.com` hardcodeado → el chatbot de
+  tienda fallaba con la key de OpenCode (con Groq sí funcionaba porque tiene URL propia). Ahora `callOpenAI`
+  acepta **baseUrl/model** y `processAgentMessage` se los pasa desde `getAIKeys()`. Así los TRES caminos
+  (chatbot/agente, asistente del panel, Modo Chat) usan la Base URL configurada. Falta **redeploy del backend**.
+- **Selector de modelo (contingencia):** en Integraciones, los campos **Base URL** y **Modelo** ahora tienen
+  `datalist` → se puede **elegir de una lista o escribir** libremente. Suaviza cambiar de modelo si uno falla.
+- **Checklist de deploy** creado en `context/deploy-checklist-ia.md` (redeploy back/front + config OpenCode + verificación).
+
+
 ## [2026-06-16] — Interruptor de tema + fixes prod (OpenCode base URL, columna priority) + pedidos reales
 
 - **Cambio de tema (claro/oscuro) con expansión dinámica:** `components/theme-switch.tsx` (botón Uiverse

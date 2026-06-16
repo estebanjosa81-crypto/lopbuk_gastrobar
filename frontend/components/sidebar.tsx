@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils'
 import { BRAND } from '@/lib/brand'
 import { panelHref } from '@/lib/panel-sections'
 import { ChatDaimuzButton } from '@/components/chat-daimuz-button'
-import { ThemeSwitch } from '@/components/theme-switch'
 import {
   LayoutDashboard,
   Package,
@@ -78,7 +77,7 @@ const navigation: NavItem[] = [
   { id: 'superadmin', name: 'Panel Admin', icon: Crown, adminOnly: true, superadminOnly: true, merchantOnly: false, group: 'admin' },
   { id: 'pagina-principal', name: 'Página Principal', icon: LayoutTemplate, adminOnly: true, superadminOnly: true, merchantOnly: false, group: 'admin' },
   // core
-  { id: 'daimuz-chat', name: 'DAIMUZ Chat', icon: MessageSquarePlus, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
+  // (DAIMUZ Chat ya no es ítem del menú: se abre desde el botón CHAT DAIMUZ del footer)
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'inventory', name: 'Inventario', icon: Package, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'recipes', name: 'Recetas BOM', icon: FlaskConical, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
@@ -389,10 +388,6 @@ export function Sidebar() {
                   <ChatDaimuzButton />
                 </div>
               )}
-              {/* Cambio de tema (claro/oscuro) con expansión dinámica */}
-              <div className="flex items-center justify-center gap-2 pb-1">
-                <ThemeSwitch size={20} />
-              </div>
               {/* User info */}
               <div className="flex items-center gap-2.5 px-1">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold">

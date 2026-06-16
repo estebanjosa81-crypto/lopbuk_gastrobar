@@ -216,12 +216,17 @@ export async function callOpenAI(
   apiKey: string,
   systemPrompt: string,
   messages: { role: string; content: string }[],
+  baseUrl?: string,
+  model?: string,
 ): Promise<string> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  // Base URL/modelo configurables (OpenAI oficial o compatibles como OpenCode/OpenRouter).
+  const url = (baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '') + '/chat/completions';
+  const mdl = model || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: mdl,
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
       max_tokens: 250,
       temperature: 0.7,
@@ -572,7 +577,7 @@ export async function processAgentMessage(
   const systemPrompt        = buildEnrichedSystemPrompt(config, dynamicCtx, matchedProducts);
   const conversationMessages = [...historyMessages, { role: 'user', content: message }];
 
-  const { geminiKey, openaiKey, groqKey, defaultProvider } = await getAIKeys();
+  const { geminiKey, openaiKey, groqKey, defaultProvider, openaiBaseUrl, openaiModel } = await getAIKeys();
   const apiKey = defaultProvider === 'gemini' ? geminiKey : defaultProvider === 'groq' ? groqKey : openaiKey;
   if (!apiKey) throw new Error('Servicio de IA no configurado');
 
@@ -587,7 +592,7 @@ export async function processAgentMessage(
   } else if (defaultProvider === 'groq') {
     rawReply = await callGroq(groqKey, systemPrompt, conversationMessages);
   } else {
-    rawReply = await callOpenAI(openaiKey, systemPrompt, conversationMessages);
+    rawReply = await callOpenAI(openaiKey, systemPrompt, conversationMessages, openaiBaseUrl, openaiModel);
   }
 
   const reply = rawReply.replace(/\[COMPRAR:[^\]]+\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();

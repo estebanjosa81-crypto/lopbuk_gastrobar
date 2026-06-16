@@ -2049,6 +2049,9 @@ class ApiService {
     return this.request<{ message: string; refresh?: string }>(
       `/daimuz-chat/restbar/execute`, { method: 'POST', body: JSON.stringify({ tool, args }) })
   }
+  async getDaimuzOverview() {
+    return this.request<any>(`/daimuz-chat/overview`)
+  }
   // ── Respaldo / restauración (Fase 4 · approval-gated) ───────────────────
   async exportRestbarBackup() {
     return this.request<any>(`/restbar/backup/export`)

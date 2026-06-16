@@ -5,6 +5,29 @@
 ---
 
 
+## [2026-06-16] — Interruptor de tema + fixes prod (OpenCode base URL, columna priority) + pedidos reales
+
+- **Cambio de tema (claro/oscuro) con expansión dinámica:** `components/theme-switch.tsx` (botón Uiverse
+  by mamyapro123, CSS scoped a `.theme-switch__*`, keyframes propios). Usa **next-themes** (ya en el layout)
+  y la **View Transitions API** para el reveal circular desde el botón (fallback si no hay soporte / reduce-motion).
+  Colocado en el footer del sidebar → visible en todas las vistas del panel.
+- **FIX prod — asistente usaba api.openai.com con la key de OpenCode:** `assistant.service` ahora lee la
+  **Base URL y el modelo** desde `getAIKeys()` (ajustes `ai_openai_base_url` / `ai_openai_model`), no solo del env.
+  Acción del usuario: en Integraciones → OpenAI, Base URL = `https://opencode.ai/zen/v1`, Modelo = `deepseek-v4-flash`.
+- **FIX prod — `Unknown column 'o.priority'`:** causa = **MySQL no soporta `ADD COLUMN IF NOT EXISTS`**
+  (es de MariaDB), así que esa migración fallaba silenciosa. `getAreaDisplay` ahora es resiliente: intenta con
+  `priority`, y si falta la columna la crea con `ADD COLUMN` plano (MySQL) y reintenta sin ella. Cocina/bar
+  vuelven a funcionar.
+- **Pedidos del chat de tienda ahora son REALES:** `agent.tools.toolRegistrarPedido` inserta en
+  `storefront_orders` + `storefront_order_items` (parsea el texto de items, casa con productos, calcula total,
+  status 'pendiente') además de notificar → aparecen en el Centro de Pedidos. (Reservas ya insertaban en
+  `rb_reservations`; leads siguen como notificación.)
+- **Venta POS por chat:** acción `registrar_venta` en el Modo Chat → `salesService.create` (descuenta stock,
+  factura), con confirmación.
+
+> Pendiente menor: aplicar el loader/tema a más vistas públicas; leads del chatbot a un módulo CRM si se crea.
+
+
 ## [2026-06-16] — Loader 3D de cajas + crear producto + reflejo visual en Chat Daimuz
 
 - **Loader nuevo:** `components/box-loader.tsx` (`BoxLoader` + `FullPageLoader`, Uiverse by Admin12121,

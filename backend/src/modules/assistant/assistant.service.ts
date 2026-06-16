@@ -7,7 +7,7 @@
  * Soporta Gemini (AIza…) y Groq (gsk_…) — detecta automáticamente por prefijo de key.
  */
 import { db } from '../../config';
-import { getAIKey } from '../agent/agent.service';
+import { getAIKey, getAIKeys } from '../agent/agent.service';
 import { RowDataPacket } from 'mysql2';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
@@ -293,7 +293,8 @@ export async function runPlatformAssistant(
     return runWithOpenAICompat(apiKey, systemPrompt, tools, history, message, exec, GROQ_URL, GROQ_MODEL);
   }
   if (apiKey.startsWith('sk-')) {
-    return runWithOpenAICompat(apiKey, systemPrompt, tools, history, message, exec, OPENAI_URL, OPENAI_MODEL);
+    const k = await getAIKeys();
+    return runWithOpenAICompat(apiKey, systemPrompt, tools, history, message, exec, k.openaiBaseUrl + '/chat/completions', k.openaiModel);
   }
   if (apiKey.startsWith('AIza')) {
     return runWithGemini(apiKey, systemPrompt, tools, history, message, exec);
@@ -322,8 +323,9 @@ export async function runPublicAssistant(
   // Groq u OpenAI (ambos OpenAI-compatible)
   if (apiKey.startsWith('gsk_') || apiKey.startsWith('sk-')) {
     const isGroq = apiKey.startsWith('gsk_');
-    const url = isGroq ? GROQ_URL : OPENAI_URL;
-    const model = isGroq ? GROQ_MODEL : OPENAI_MODEL;
+    const k = isGroq ? null : await getAIKeys();
+    const url = isGroq ? GROQ_URL : (k!.openaiBaseUrl + '/chat/completions');
+    const model = isGroq ? GROQ_MODEL : k!.openaiModel;
     const messages = [
       { role: 'system', content: PUBLIC_PROMPT },
       ...history.slice(-8).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),

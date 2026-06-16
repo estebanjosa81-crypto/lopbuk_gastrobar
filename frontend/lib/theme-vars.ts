@@ -68,7 +68,10 @@ export function applyAdminAccent(hex: string | null | undefined) {
     root.style.removeProperty('--color-admin-accent')
     return
   }
-  const hsl = hexToHslString(hex)
+  // IMPORTANTE: la app usa --primary como COLOR completo (bg-primary → background-color: var(--primary)).
+  // hexToHslString devuelve solo el triplete "H S% L%", que como valor de color es inválido y deja
+  // los botones transparentes. Hay que envolverlo en hsl(...) para que sea un color válido.
+  const hsl = `hsl(${hexToHslString(hex)})`
   root.style.setProperty('--primary', hsl)
   root.style.setProperty('--ring', hsl)
   root.style.setProperty('--color-admin-accent', hex)

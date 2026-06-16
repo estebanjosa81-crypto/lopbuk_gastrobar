@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { BRAND } from '@/lib/brand'
 import { panelHref } from '@/lib/panel-sections'
 import { ChatDaimuzButton } from '@/components/chat-daimuz-button'
+import { ThemeSwitch } from '@/components/theme-switch'
 import {
   LayoutDashboard,
   Package,
@@ -185,8 +186,10 @@ export function Sidebar() {
     : 'text-green-400 bg-green-400/10 border-green-400/20'
 
   const navigate = (id: string) => {
-    setActiveSection(id)
     setSidebarOpen(false)
+    // DAIMUZ Chat abre el Modo Chat operativo a pantalla completa (no la sección vieja).
+    if (id === 'daimuz-chat') { router.push('/modo-chat'); return }
+    setActiveSection(id)
     // Mantiene la URL en sync para que cada sección sea compartible (/panel/<slug>)
     router.push(panelHref(id))
   }
@@ -386,6 +389,10 @@ export function Sidebar() {
                   <ChatDaimuzButton />
                 </div>
               )}
+              {/* Cambio de tema (claro/oscuro) con expansión dinámica */}
+              <div className="flex items-center justify-center gap-2 pb-1">
+                <ThemeSwitch size={20} />
+              </div>
               {/* User info */}
               <div className="flex items-center gap-2.5 px-1">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold">

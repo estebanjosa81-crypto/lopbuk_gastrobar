@@ -329,4 +329,25 @@ router.post('/restbar/execute', authenticate, authorize(...ROLES), async (req: A
   } catch (e: any) { bad(res, e?.message || 'No se pudo ejecutar la acción', 500); }
 });
 
+// ─────────── Resumen del negocio para el panel del Modo Chat (escritorio) ───────────
+router.get('/overview', authenticate, authorize(...ROLES), async (req: AuthRequest, res: Response) => {
+  try {
+    const tenantId = req.user!.tenantId!;
+    const q = async (sql: string): Promise<any[]> => { try { const [r] = (await pool.query(sql, [tenantId])) as any; return r as any[]; } catch { return []; } };
+    const [vh] = await q("SELECT COALESCE(SUM(total),0) s, COUNT(*) n FROM sales WHERE tenant_id=? AND status='completada' AND DATE(created_at)=CURDATE()");
+    const [vm] = await q("SELECT COALESCE(SUM(total),0) s, COUNT(*) n FROM sales WHERE tenant_id=? AND status='completada' AND YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE())");
+    const [pp] = await q("SELECT COUNT(*) n FROM storefront_orders WHERE tenant_id=? AND status IN ('pendiente','confirmado','preparando')");
+    const [sc] = await q("SELECT COUNT(*) n FROM products WHERE tenant_id=? AND stock<=reorder_point");
+    const [mt] = await q("SELECT COUNT(*) n FROM rb_tables WHERE tenant_id=? AND is_active=1");
+    const [mo] = await q("SELECT COUNT(DISTINCT table_id) n FROM rb_orders WHERE tenant_id=? AND status NOT IN ('cerrada','cancelada')");
+    ok(res, {
+      ventasHoy: Number(vh?.s || 0), ventasHoyN: Number(vh?.n || 0),
+      ventasMes: Number(vm?.s || 0), ventasMesN: Number(vm?.n || 0),
+      pedidosPendientes: Number(pp?.n || 0),
+      stockCritico: Number(sc?.n || 0),
+      mesasTotal: Number(mt?.n || 0), mesasOcupadas: Number(mo?.n || 0),
+    });
+  } catch (e: any) { bad(res, e?.message || 'Error al cargar el resumen', 500); }
+});
+
 export default router;

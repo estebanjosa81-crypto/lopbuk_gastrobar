@@ -510,10 +510,10 @@ class RestbarService {
       ? `AND oi.preparation_area IN ('cocina','ambos')`
       : `AND oi.preparation_area IN ('bar','ambos')`;
 
-    const [rows] = await db.execute<RowDataPacket[]>(
-      `SELECT
+    // Resiliente a entornos donde aún no existe la columna rb_orders.priority.
+    const buildSql = (withPriority: boolean) => `SELECT
          o.id AS order_id, o.order_number, o.notes AS order_notes,
-         o.waiter_name, o.opened_at, o.priority,
+         o.waiter_name, o.opened_at,${withPriority ? ' o.priority,' : ''}
          t.number AS table_number, t.area AS table_area,
          oi.id AS item_id, oi.menu_item_name, oi.quantity,
          oi.item_notes, oi.status AS item_status,
@@ -526,9 +526,17 @@ class RestbarService {
          AND oi.sent_to_kitchen_at IS NOT NULL
          AND o.status NOT IN ('cerrada','cancelada')
          ${areaFilter}
-       ORDER BY (o.priority = 'urgente') DESC, oi.sent_to_kitchen_at ASC, o.opened_at ASC`,
-      [tenantId]
-    );
+       ORDER BY ${withPriority ? "(o.priority = 'urgente') DESC, " : ''}oi.sent_to_kitchen_at ASC, o.opened_at ASC`;
+
+    let rows: RowDataPacket[];
+    try {
+      [rows] = await db.execute<RowDataPacket[]>(buildSql(true), [tenantId]);
+    } catch (e: any) {
+      if (e?.code === 'ER_BAD_FIELD_ERROR') {
+        try { await db.execute("ALTER TABLE rb_orders ADD COLUMN priority ENUM('normal','urgente') NOT NULL DEFAULT 'normal'"); } catch { /* ya existe o sin permisos */ }
+        [rows] = await db.execute<RowDataPacket[]>(buildSql(false), [tenantId]);
+      } else { throw e; }
+    }
 
     // Agrupar por comanda
     const orderMap = new Map<string, any>();

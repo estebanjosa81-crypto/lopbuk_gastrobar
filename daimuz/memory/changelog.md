@@ -5,6 +5,33 @@
 ---
 
 
+## [2026-06-16] — Tema 2: reservas que guardan, pedidos sin falla silenciosa, "Ordenar Ahora" + QR de mesa administrable
+
+- **Reservas Tema 2 (guardar + confirmar + WhatsApp):** `theme2-reserve-flow.tsx` ahora hace `POST
+  /restbar/reservations/public-quick` (endpoint nuevo en `reservations.routes.ts`) que **guarda la reserva**
+  (auto-asigna mesa si hay, o crea con `table_id NULL` y número `R-####` vía secuencia transaccional) y
+  **notifica al comercio**. Tras guardar, pantalla de éxito "¡Reserva exitosa! Te llamaremos para confirmar"
+  con N° de reserva + botón **opcional** de WhatsApp (con todo el formulario). Antes solo abría WhatsApp.
+- **Pedidos Tema 2 — falla silenciosa corregida:** `theme2-order-flow.registerOrder()` ahora chequea
+  `res.ok`/`success`, devuelve éxito y muestra el error en UI; `submitOrder` **no abre WhatsApp si el guardado
+  falla** (ej. stock 409). Verificado que el pedido SÍ se guarda en `storefront_orders` (+ items + notificación)
+  con el `tenantId` correcto (`/storefront/products` devuelve `p.tenant_id as tenantId`, sin disparar fallback).
+- **"Ordenar Ahora" en Favoritos:** abre el flujo de pedido con el producto **ya en el carrito**
+  (`initialProductId` → efecto que lo agrega una vez al cargar productos).
+- **Botón "todas las tiendas":** en móvil estaba centrado abajo (invasivo) → movido a la derecha; escritorio
+  sigue como pestaña al borde derecho.
+- **QR de mesa ADMINISTRABLE (antes solo generaba):** dos endpoints auth nuevos en `restbar-qr.routes.ts`:
+  `GET /tables/:id/session` (sesión activa + invitados + **consumo de cada persona**, parseando la etiqueta
+  `[nombre]` del `item_notes`; lo no asignado va a "Sin asignar / mesa") y `POST /tables/:id/session/close`
+  (invalida el QR sin cerrar la comanda). `table-qr-button.tsx` reescrito como panel: QR, lista de quién está
+  en la mesa con su consumo desglosado, total, **compartir** (copiar/WhatsApp/share nativo), **regenerar** y
+  **eliminar**. API: `getTableQrSession` / `closeTableQrSession`.
+
+> Pendientes Tema 2: restyle minimalista del carrito, animación holo "en camino" al activar ubicación,
+> tarjeta de ticket de éxito y tarjeta premium (Uiverse). El consumo por persona requiere que el cliente
+> entre con su nombre al escanear. Todo esto necesita **commit + push + Deploy en Komodo** para verse en prod.
+
+
 ## [2026-06-16] — Fix IA: agente respeta Base URL (OpenCode) + selector de modelo + checklist deploy
 
 - **FIX raíz de los 500:** `agent.service.callOpenAI` tenía `api.openai.com` hardcodeado → el chatbot de

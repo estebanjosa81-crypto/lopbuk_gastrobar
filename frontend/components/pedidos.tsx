@@ -259,6 +259,32 @@ export function Pedidos() {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value)
 
+  // Mensaje de confirmación al cliente por WhatsApp, según el estado del pedido.
+  const confirmWhatsApp = (order: Order) => {
+    const phone = order.customerPhone.replace(/\D/g, '')
+    const statusLine: Record<string, string> = {
+      pendiente: 'Recibimos tu pedido y lo estamos confirmando. ✅',
+      confirmado: '¡Tu pedido fue confirmado! Ya lo estamos preparando. 👨‍🍳',
+      preparando: 'Tu pedido se está preparando. 👨‍🍳',
+      enviado: '¡Tu pedido va en camino! 🛵',
+      entregado: '¡Tu pedido fue entregado! Gracias por tu compra. 🙌',
+      cancelado: 'Lamentamos informarte que tu pedido fue cancelado. Escríbenos si tienes dudas.',
+    }
+    const lines = [
+      `¡Hola ${order.customerName}! 👋`,
+      statusLine[order.status] || 'Te escribimos sobre tu pedido.',
+      '',
+      `*Pedido #${order.orderNumber}*`,
+      ...order.items.map(it => `• ${it.quantity}× ${it.productName} — ${formatCurrency(it.totalPrice)}`),
+      '',
+      `*Total: ${formatCurrency(order.total)}*`,
+      order.address ? `Entrega: ${order.address}` : '',
+      order.paymentMethod ? `Pago: ${order.paymentMethod}` : '',
+    ].filter(Boolean)
+    const text = encodeURIComponent(lines.join('\n'))
+    window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+  }
+
   const formatDate = (date: string) => {
     const d = new Date(date)
     return d.toLocaleDateString('es-CO', {
@@ -829,16 +855,10 @@ export function Pedidos() {
                           Cancelar pedido
                         </Button>
                       )}
-                      <a
-                        href={`https://wa.me/${order.customerPhone.replace(/\D/g, '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button size="sm" variant="outline">
-                          <Phone className="h-4 w-4 mr-2" />
-                          WhatsApp
-                        </Button>
-                      </a>
+                      <Button size="sm" variant="outline" onClick={() => confirmWhatsApp(order)}>
+                        <Phone className="h-4 w-4 mr-2" />
+                        Confirmar por WhatsApp
+                      </Button>
                     </div>
                   </div>
                 )}

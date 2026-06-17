@@ -5,6 +5,7 @@ import {
   X, ChevronRight, ChevronLeft, Search, MapPin, Clock, Plus, Minus,
   ShoppingBag, MessageCircle, Store, Trash2,
 } from 'lucide-react'
+import { Theme2OrderSuccess, type OrderSuccessData } from '@/components/theme2/theme2-order-success'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 const ASSET_BASE = API_URL.replace(/\/api$/, '')
@@ -249,10 +250,11 @@ export function Theme2OrderFlow({
   const paymentLabel: Record<string, string> = { efectivo: 'Efectivo', transferencia: 'Transferencia', tarjeta: 'Tarjeta' }
   const [submitting, setSubmitting] = useState(false)
   const [orderError, setOrderError] = useState('')
+  const [success, setSuccess] = useState<OrderSuccessData | null>(null)
 
   // Registra el pedido en la base de datos del comercio (además del WhatsApp).
-  // Devuelve true solo si el pedido quedó guardado; setea orderError si falla.
-  const registerOrder = async (): Promise<boolean> => {
+  // Devuelve { ok, orderNumber, total } — ok=false setea orderError.
+  const registerOrder = async (): Promise<{ ok: boolean; orderNumber?: string; total?: number }> => {
     const tenantId = cart.map(i => i.product.tenantId).find(Boolean) || undefined
     const notesParts = [
       `Entrega: ${mode === 'domicilio' ? 'Domicilio' : 'Recoger en sede'}`,
@@ -285,12 +287,12 @@ export function Theme2OrderFlow({
       const j = await r.json().catch(() => null)
       if (!r.ok || !j?.success) {
         setOrderError(j?.error || 'No se pudo registrar el pedido. Intenta de nuevo.')
-        return false
+        return { ok: false }
       }
-      return true
+      return { ok: true, orderNumber: j.data?.orderNumber, total: Number(j.data?.total) || cartTotal }
     } catch {
       setOrderError('No se pudo conectar. Revisa tu internet e intenta de nuevo.')
-      return false
+      return { ok: false }
     }
   }
 
@@ -323,13 +325,38 @@ export function Theme2OrderFlow({
     else window.open(`https://wa.me/?text=${msg}`, '_blank')
   }
 
-  // Envía: registra el pedido en BD y abre WhatsApp
+  // Resetea el checkout tras un pedido exitoso (evita reenvíos / duplicados).
+  const resetCheckout = () => {
+    setCart([]); setShowCart(false)
+    setCoWhats(''); setCoWhatsConfirm(''); setCoName('')
+    setForOther(false); setOtherName(''); setOtherPhone('')
+    setAddress(''); setMapUrl(''); setShowMapField(false); setPayment('')
+    setOrderError('')
+  }
+
+  // Envía: registra el pedido en BD → muestra el éxito (holo + ticket) → abre WhatsApp.
   const submitOrder = async () => {
     if (missing.length > 0 || cart.length === 0 || submitting) return
     setSubmitting(true)
     setOrderError('')
-    const ok = await registerOrder()
-    if (ok) sendWhatsApp()
+    // Snapshot ANTES de vaciar el carrito (para el ticket).
+    const snapshotItems = cart.map(i => ({ name: i.product.name, qty: i.qty, lineTotal: i.unit * i.qty }))
+    const snapshotMode = mode
+    const snapshotName = coName.trim()
+    const snapshotSede = sede?.name ?? null
+    const res = await registerOrder()
+    if (res.ok) {
+      sendWhatsApp()
+      setSuccess({
+        orderNumber: res.orderNumber,
+        total: res.total ?? cartTotal,
+        items: snapshotItems,
+        mode: snapshotMode,
+        customerName: snapshotName,
+        sedeName: snapshotSede,
+      })
+      resetCheckout()
+    }
     setSubmitting(false)
   }
 
@@ -594,19 +621,20 @@ export function Theme2OrderFlow({
               {cart.length === 0 ? (
                 <p className="text-center text-white/40 py-16 text-sm">Tu carrito está vacío.</p>
               ) : cart.map(i => (
-                <div key={i.key} className="flex gap-3 rounded-xl bg-[#161616] border border-white/[0.06] p-3">
-                  <div className="flex flex-col items-center justify-between bg-white/5 rounded-lg px-1.5 py-1">
-                    <button onClick={() => changeCartQty(i.key, 1)} className="text-white/60 hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
-                    <span className="text-sm font-bold">{i.qty}</span>
-                    <button onClick={() => changeCartQty(i.key, -1)} className="text-white/60 hover:text-white"><Minus className="w-3.5 h-3.5" /></button>
+                <div key={i.key} className="py-3 border-b border-white/[0.05]">
+                  <div className="flex justify-between gap-3">
+                    <p className="text-sm font-semibold text-white/90 leading-snug">{i.product.name}</p>
+                    <span className="text-sm font-bold text-white shrink-0">{COP(i.unit * i.qty)}</span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex justify-between gap-2">
-                      <p className="text-sm font-bold truncate">{i.product.name}</p>
-                      <span className="text-sm font-bold text-cyan-400 shrink-0">{COP(i.unit * i.qty)}</span>
+                  {i.mods.length > 0 && <p className="text-[11px] text-cyan-300/70 mt-1">{i.mods.map(m => m.optionName).join(', ')}</p>}
+                  {i.notes && <p className="text-[11px] text-white/35 mt-0.5 italic">{i.notes}</p>}
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="inline-flex items-center rounded-full border border-white/10">
+                      <button onClick={() => changeCartQty(i.key, -1)} aria-label="Quitar uno" className="w-7 h-7 flex items-center justify-center text-white/60 hover:text-white"><Minus className="w-3.5 h-3.5" /></button>
+                      <span className="w-6 text-center text-sm font-bold">{i.qty}</span>
+                      <button onClick={() => changeCartQty(i.key, 1)} aria-label="Agregar uno" className="w-7 h-7 flex items-center justify-center text-white/60 hover:text-white"><Plus className="w-3.5 h-3.5" /></button>
                     </div>
-                    {i.mods.length > 0 && <p className="text-[11px] text-cyan-300/70 mt-0.5">{i.mods.map(m => m.optionName).join(', ')}</p>}
-                    {i.notes && <p className="text-[11px] text-white/40 mt-0.5">{i.notes}</p>}
+                    <span className="text-[11px] text-white/30">{COP(i.unit)} c/u</span>
                   </div>
                 </div>
               ))}
@@ -724,6 +752,16 @@ export function Theme2OrderFlow({
             )}
           </div>
         </div>
+      )}
+
+      {/* ════ ÉXITO: holo "en camino" + ticket ════ */}
+      {success && (
+        <Theme2OrderSuccess
+          data={success}
+          brand={info.name}
+          onClose={() => { setSuccess(null); onClose() }}
+          onNewOrder={() => setSuccess(null)}
+        />
       )}
     </div>
   )

@@ -34,6 +34,18 @@
 - **`agent.service.ts`**: `getAIKeys()` devuelve las 3 keys + provider default. `processAgentMessage()` usa routing explícito por provider (Gemini → function calling, OpenAI/Groq → chat directo).
 - **Entorno**: `.env` creado con la OpenAI key provista. `.env.example` actualizado con `OPENAI_API_KEY`, `GROQ_API_KEY`, `AI_DEFAULT_PROVIDER`. Docker-compose dev + production incluyen las nuevas vars.
 
+## ✅ Implementado: Tema 2 (reservas/pedidos) + QR de mesa administrable (2026-06-16)
+
+- **Reservas Tema 2** ahora **guardan** en `rb_reservations` (visible en el panel) vía `POST
+  /restbar/reservations/public-quick`, con pantalla de éxito + botón opcional de WhatsApp.
+- **Pedidos Tema 2** ya no fallan en silencio: si el guardado en `storefront_orders` falla, se muestra el error
+  y NO se abre WhatsApp. Confirmado que el pedido se guarda con el `tenantId` correcto.
+- **"Ordenar Ahora" (Favoritos)** abre el flujo con el producto ya en el carrito.
+- **QR de mesa = panel de administración** (no solo generar): ver quién está en la mesa y el **consumo de cada
+  persona** (parseado de la etiqueta `[nombre]` en `item_notes`), total, compartir (copiar/WhatsApp/share),
+  regenerar y eliminar. Endpoints auth `GET/POST /restbar-qr/tables/:id/session(/close)`.
+- ⚠️ Todo esto está en código pero **falta Deploy en Komodo** para verse en producción.
+
 ## ✅ Implementado: Colorimetría de marca por IA + fixes (2026-06-14)
 
 **Arquitectura de colorimetría (2 niveles):**

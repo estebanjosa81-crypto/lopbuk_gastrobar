@@ -215,22 +215,27 @@ export function Theme2Storefront({ slug }: { slug: string }) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {favorites.map(p => (
-              <div key={p.id} className="group rounded-2xl overflow-hidden bg-[#141414] border border-white/[0.06] hover:border-cyan-400/40 transition-colors flex flex-col">
-                <div className="relative aspect-[4/3] bg-[#0e0e0e] overflow-hidden">
-                  {p.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={abs(p.imageUrl)} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center"><Store className="w-8 h-8 text-white/10" /></div>
-                  )}
-                  <span className="absolute top-2.5 right-2.5 bg-black/70 text-white text-xs font-bold px-2.5 py-1 rounded-full">{COP(p.salePrice)}</span>
-                </div>
-                <div className="p-4 flex flex-col gap-2 flex-1">
-                  <h3 className="font-bold text-cyan-400">{p.name}</h3>
-                  {p.description && <p className="text-xs text-white/45 line-clamp-2 flex-1">{p.description}</p>}
-                  <button onClick={() => goOrderProduct(String(p.id))} className="mt-2 inline-flex items-center justify-center gap-2 w-full rounded-lg border border-white/10 bg-white/[0.03] py-2.5 text-xs font-semibold text-white/80 hover:bg-white/[0.07] hover:text-white transition-colors">
-                    Ordenar Ahora <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+              <div key={p.id} className="group relative rounded-2xl p-[1.5px] bg-gradient-to-br from-cyan-400/50 via-white/10 to-fuchsia-500/40 hover:from-cyan-300/70 hover:to-fuchsia-400/60 transition-colors">
+                <div className="relative rounded-[15px] overflow-hidden bg-[#141414] flex flex-col h-full">
+                  {/* Brillo premium al pasar el cursor */}
+                  <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 z-10 rotate-12 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-10 group-hover:translate-x-[420%] transition-transform duration-700 ease-out" />
+                  <div className="relative aspect-[4/3] bg-[#0e0e0e] overflow-hidden">
+                    {p.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={abs(p.imageUrl)} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center"><Store className="w-8 h-8 text-white/10" /></div>
+                    )}
+                    <span className="absolute top-2.5 left-2.5 inline-flex items-center gap-1 bg-black/70 text-amber-300 text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur">★ Premium</span>
+                    <span className="absolute top-2.5 right-2.5 bg-black/70 text-white text-xs font-bold px-2.5 py-1 rounded-full backdrop-blur">{COP(p.salePrice)}</span>
+                  </div>
+                  <div className="p-4 flex flex-col gap-2 flex-1">
+                    <h3 className="font-bold text-cyan-400">{p.name}</h3>
+                    {p.description && <p className="text-xs text-white/45 line-clamp-2 flex-1">{p.description}</p>}
+                    <button onClick={() => goOrderProduct(String(p.id))} className="mt-2 inline-flex items-center justify-center gap-2 w-full rounded-lg border border-white/10 bg-white/[0.03] py-2.5 text-xs font-semibold text-white/80 hover:bg-white/[0.07] hover:text-white transition-colors">
+                      Ordenar Ahora <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

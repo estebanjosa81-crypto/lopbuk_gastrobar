@@ -4,6 +4,22 @@
 
 ## Sprint activo: Junio 2026
 
+### ✅ Completado [2026-06-16]: Tema 2 (reservas/pedidos) + QR de mesa administrable
+
+| Tarea | Estado | Descripción |
+|---|---|---|
+| Reservas Tema 2 que guardan | ✅ Completo | `POST /restbar/reservations/public-quick` + pantalla de éxito + WhatsApp opcional |
+| Pedidos sin falla silenciosa | ✅ Completo | `registerOrder` valida `res.ok`; no abre WhatsApp si falla; error en UI |
+| "Ordenar Ahora" en Favoritos | ✅ Completo | `initialProductId` → producto ya en el carrito al abrir el flujo |
+| Botón "todas las tiendas" a la derecha | ✅ Completo | Móvil: pill a la derecha (antes centrado); escritorio: pestaña borde derecho |
+| QR de mesa administrable | ✅ Completo | GET sesión (invitados + consumo c/u) + close; panel con compartir/regenerar/eliminar |
+
+**Archivos clave:**
+- Backend: `restbar-qr.routes.ts` (GET/POST `/tables/:id/session(/close)`), `restbar/reservations.routes.ts` (`/public-quick`)
+- Frontend: `theme2/theme2-reserve-flow.tsx`, `theme2/theme2-order-flow.tsx`, `theme2/theme2-storefront.tsx`, `restbar/table-qr-button.tsx`, `landing-page.tsx`, `lib/api.ts`
+
+**Pendiente Tema 2:** restyle carrito minimalista, animación holo "en camino" al activar ubicación, tarjeta de ticket de éxito y tarjeta premium (Uiverse). **Falta Deploy en Komodo** para ver todo en prod.
+
 ### ✅ Completado [2026-06-14]: Colorimetría de marca por IA + fixes
 
 | Tarea | Estado | Descripción |

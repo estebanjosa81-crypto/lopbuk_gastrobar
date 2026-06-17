@@ -245,7 +245,7 @@ export function HomeHeroCarousel({
   if (valid.length === 0) return null
 
   const go = (dir: number) => setIndex(i => (i + dir + valid.length) % valid.length)
-  const heightClass = isMobile ? 'h-[44vw] max-h-[260px] min-h-[170px]' : 'h-[clamp(260px,38vw,460px)]'
+  const activeSlide = valid[index] || valid[0]
 
   return (
     <section
@@ -254,7 +254,16 @@ export function HomeHeroCarousel({
       onMouseLeave={() => setPaused(false)}
       aria-label="Carrusel principal"
     >
-      <div className={`relative w-full overflow-hidden bg-gray-100 sm:bg-black ${heightClass} rounded-xl`}>
+      {/* Móvil: la altura del contenedor = altura natural de la imagen (sin franjas arriba/abajo).
+          Desktop: altura fija a sangre (object-cover). */}
+      <div className="relative w-full overflow-hidden bg-gray-100 sm:bg-black rounded-xl sm:h-[clamp(260px,38vw,460px)]">
+        {activeSlide && activeSlide.type !== 'video' ? (
+          // Sizer invisible solo en móvil: define la altura exacta de la imagen activa.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={activeSlide.url} alt="" aria-hidden="true" className="block w-full h-auto sm:hidden invisible select-none pointer-events-none" />
+        ) : (
+          <div className="w-full aspect-video sm:hidden" />
+        )}
         {valid.map((slide, i) => {
           const active = i === index
           // En móvil el contenedor ENVUELVE la imagen (object-contain, no la corta), como el tema 1
@@ -714,14 +723,21 @@ export function MarketplaceHomeGovCo({
         </div>
       </nav>
 
-      {/* ══ Banner de alerta — marco animado (Uiverse) ══ */}
+      {/* ══ Banner de bienvenida ══ */}
       {alertOpen && (
-        <div className="relative w-full flex justify-center py-2.5">
-          <DaimuzWelcomeFrame
-            text1={heroTitle || `Bienvenido a ${BRAND.name}`}
-            text2="descubre los comercios locales y sus productos"
-          />
-          <button onClick={() => setAlertOpen(false)} className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 rounded" aria-label="Cerrar"><X className="w-4 h-4" /></button>
+        <div className="relative w-full flex justify-center py-2.5 px-10">
+          {/* Desktop: marco animado (Uiverse). Móvil: banner limpio sin recorte de texto. */}
+          <div className="hidden sm:block">
+            <DaimuzWelcomeFrame
+              text1={heroTitle || `Bienvenido a ${BRAND.name}`}
+              text2="descubre los comercios locales y sus productos"
+            />
+          </div>
+          <div className="sm:hidden w-full max-w-sm text-center rounded-xl border border-gray-200 bg-white/80 backdrop-blur px-4 py-2">
+            <p className="text-sm font-extrabold leading-tight" style={{ color: GREEN_DARK }}>{heroTitle || `Bienvenido a ${BRAND.name}`}</p>
+            <p className="text-[11px] text-gray-500 leading-snug mt-0.5">Descubre los comercios locales y sus productos</p>
+          </div>
+          <button onClick={() => setAlertOpen(false)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 rounded" aria-label="Cerrar"><X className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -1005,6 +1021,54 @@ export function MarketplaceHomeGovCo({
               </div>
             </aside>
           </div>
+
+          {/* ══ Únete a DAIMUZ — propuesta de valor para los 3 públicos ══ */}
+          <section className="rounded-2xl border border-gray-200 overflow-hidden bg-white">
+            <div className="px-5 sm:px-8 pt-6 pb-1 text-center">
+              <p className="text-[10px] uppercase tracking-[0.3em] font-semibold" style={{ color: GREEN }}>Haz parte de la comunidad</p>
+              <h2 className="text-2xl sm:text-3xl font-extrabold mt-1" style={{ color: GREEN_DARK }}>Únete a {BRAND.name}</h2>
+              <p className="text-sm text-gray-500 mt-1 max-w-xl mx-auto">Una sola plataforma, tres formas de ganar: compra local, vende más o gana promocionando.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 sm:p-8">
+              {/* Cliente */}
+              <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col">
+                <span className="w-12 h-12 rounded-xl flex items-center justify-center mb-3" style={{ background: '#EAF3DE', color: GREEN }}><ShoppingBag className="w-6 h-6" /></span>
+                <h3 className="font-bold text-gray-900">Soy cliente</h3>
+                <p className="text-sm text-gray-500 mt-1 flex-1">Descubre comercios y productos de tu ciudad, pide a domicilio y aprovecha ofertas exclusivas.</p>
+                <ul className="text-[12px] text-gray-600 space-y-1 my-3">
+                  <li className="flex gap-2"><span style={{ color: GREEN }}>✓</span> Ofertas y novedades cada día</li>
+                  <li className="flex gap-2"><span style={{ color: GREEN }}>✓</span> Pide por WhatsApp o domicilio</li>
+                  <li className="flex gap-2"><span style={{ color: GREEN }}>✓</span> Acumula puntos de fidelidad</li>
+                </ul>
+                <button onClick={() => { onSelectBusinessType('all'); setTab('comercios'); setTimeout(scrollToGrid, 50) }} className="mt-auto w-full py-2.5 rounded-lg text-sm font-semibold border transition-colors hover:bg-[#EAF3DE]" style={{ borderColor: GREEN, color: GREEN }}>Explorar comercios</button>
+              </div>
+              {/* Comerciante — destacada */}
+              <div className="rounded-xl p-5 flex flex-col text-white relative overflow-hidden" style={{ background: `linear-gradient(150deg, ${GREEN_DARK}, ${GREEN})` }}>
+                <span className="absolute top-3 right-3 text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: GOLD, color: GOLD_TEXT }}>MÁS POPULAR</span>
+                <span className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-white/15"><Store className="w-6 h-6" /></span>
+                <h3 className="font-bold">Tengo un comercio</h3>
+                <p className="text-sm text-white/80 mt-1 flex-1">Publica tu tienda, recibe pedidos online y gestiona ventas, inventario y domicilios desde un solo panel.</p>
+                <ul className="text-[12px] text-white/90 space-y-1 my-3">
+                  <li className="flex gap-2">✓ Tienda y catálogo online</li>
+                  <li className="flex gap-2">✓ Pedidos, POS e inventario</li>
+                  <li className="flex gap-2">✓ Promotores que te traen clientes</li>
+                </ul>
+                <button onClick={onGoToLogin} className="mt-auto w-full py-2.5 rounded-lg text-sm font-bold text-gray-900" style={{ background: GOLD }}>Registrar mi comercio</button>
+              </div>
+              {/* Promotor */}
+              <div className="rounded-xl border border-gray-200 bg-white p-5 flex flex-col">
+                <span className="w-12 h-12 rounded-xl flex items-center justify-center mb-3" style={{ background: '#FFF4D6', color: '#B8860B' }}><TrendingUp className="w-6 h-6" /></span>
+                <h3 className="font-bold text-gray-900">Quiero ser promotor</h3>
+                <p className="text-sm text-gray-500 mt-1 flex-1">Promociona comercios y eventos en tus redes y gana comisiones por cada venta o por paquetes de contenido.</p>
+                <ul className="text-[12px] text-gray-600 space-y-1 my-3">
+                  <li className="flex gap-2"><span style={{ color: GREEN }}>✓</span> Comisión por cada venta atribuida</li>
+                  <li className="flex gap-2"><span style={{ color: GREEN }}>✓</span> Pago inmediato por paquetes</li>
+                  <li className="flex gap-2"><span style={{ color: GREEN }}>✓</span> Niveles, misiones y ranking</li>
+                </ul>
+                <button onClick={onGoToLogin} className="mt-auto w-full py-2.5 rounded-lg text-sm font-semibold border transition-colors hover:bg-[#EAF3DE]" style={{ borderColor: GREEN, color: GREEN }}>Ser promotor</button>
+              </div>
+            </div>
+          </section>
         </div>
       </main>
 

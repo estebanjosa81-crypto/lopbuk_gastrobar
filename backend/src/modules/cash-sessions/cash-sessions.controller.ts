@@ -58,7 +58,12 @@ export class CashSessionsController {
         req.user!.tenantId!,
         req.user!.userId,
         req.body.userName || 'Usuario',
-        req.body.openingAmount
+        req.body.openingAmount,
+        {
+          shiftType: req.body.shiftType,
+          shiftLabel: req.body.shiftLabel,
+          employees: Array.isArray(req.body.employees) ? req.body.employees : [],
+        }
       );
 
       res.status(201).json({
@@ -69,6 +74,38 @@ export class CashSessionsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  // ── Empleados del turno ──
+  async getEmployees(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      res.json({ success: true, data: await cashSessionsService.getShiftEmployees(req.params.id) });
+    } catch (error) { next(error); }
+  }
+
+  async addEmployee(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const emp = await cashSessionsService.addShiftEmployee(req.user!.tenantId!, req.params.id, {
+        userId: req.body.userId, name: req.body.name, role: req.body.role,
+      });
+      res.status(201).json({ success: true, data: emp });
+    } catch (error) { next(error); }
+  }
+
+  async updateEmployee(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const emp = await cashSessionsService.updateShiftEmployee(req.user!.tenantId!, req.params.empId, {
+        role: req.body.role, status: req.body.status, bajaReason: req.body.bajaReason,
+      });
+      res.json({ success: true, data: emp });
+    } catch (error) { next(error); }
+  }
+
+  async getDailySummary(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await cashSessionsService.getDailySummary(req.user!.tenantId!, req.query.date as string);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
   }
 
   async addMovement(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
@@ -127,7 +164,8 @@ export class CashSessionsController {
         req.user!.userId,
         req.body.userName || 'Admin',
         req.body.actualCash,
-        req.body.observations
+        req.body.observations,
+        Array.isArray(req.body.bonuses) ? req.body.bonuses : undefined
       );
 
       res.json({

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/lib/auth-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,8 +35,33 @@ import {
   Settings,
   Save,
   AlertCircle,
+  Share2,
+  Copy,
+  Check,
+  Download,
+  QrCode,
+  ExternalLink,
+  Link2,
+  MessageCircle,
+  Phone,
+  Mail,
+  Trash2,
+  PlusCircle,
+  GripVertical,
+  Pencil,
+  Shield,
+  Code2,
+  FileCode,
+  Upload,
+  Globe2,
+  Clock,
+  PackageCheck,
 } from 'lucide-react'
+import { QRCodeSVG } from 'qrcode.react'
 import { StoreCustomization } from '@/components/store-customization'
+import { StoreCardConfig } from '@/components/store-card-config'
+import { StoreBuilder } from '@/components/StoreBuilder'
+import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
 
 interface StoreProduct {
   id: string
@@ -54,9 +80,23 @@ interface StoreProduct {
   deliveryType: 'domicilio' | 'envio' | 'ambos' | null
   isNewLaunch: boolean
   launchDate: string | null
+  // Pre-orden
+  isPreorder: boolean
+  preorderWindowEnd: string | null
+  preorderShipStart: string | null
+  preorderShipEnd: string | null
+  preorderBadgeText: string | null
 }
 
-type ActiveTab = 'catalog' | 'new-launches' | 'order-bump'
+type ActiveTab = 'catalog' | 'new-launches' | 'order-bump' | 'share' | 'contact' | 'age-gate' | 'html-sections' | 'card'
+
+interface CustomSection {
+  id: number
+  name: string
+  slug: string
+  isActive: boolean
+  createdAt: string
+}
 
 interface OrderBumpConfig {
   isEnabled: boolean
@@ -77,6 +117,9 @@ interface BumpProduct {
 }
 
 export function Tienda() {
+  const { user } = useAuthStore()
+  const isEmpresarial = user?.tenantPlan === 'empresarial' || user?.role === 'superadmin'
+
   const [products, setProducts] = useState<StoreProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -88,6 +131,7 @@ export function Tienda() {
   const [stats, setStats] = useState({ total: 0, published: 0, unpublished: 0, offers: 0, delivery: 0, newLaunches: 0 })
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [showCustomization, setShowCustomization] = useState(false)
+  const [showBuilder, setShowBuilder] = useState(false)
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog')
 
   // Order Bump state
@@ -100,12 +144,66 @@ export function Tienda() {
   const [bumpSaved, setBumpSaved] = useState(false)
   const [bumpError, setBumpError] = useState<string | null>(null)
 
+  // Share / QR state
+  const [copiedLink, setCopiedLink] = useState(false)
+  const [copiedSlug, setCopiedSlug] = useState(false)
+  const qrRef = useRef<HTMLDivElement>(null)
+  const contactQrRef = useRef<HTMLDivElement>(null)
+
+  // Contact page state
+  const [contactEnabled, setContactEnabled] = useState(false)
+  const [contactTitle, setContactTitle] = useState('')
+  const [contactDescription, setContactDescription] = useState('')
+  const [contactImage, setContactImage] = useState('')
+  const [contactLinks, setContactLinks] = useState<{ label: string; url: string; image?: string }[]>([])
+  const [contactLinkTheme, setContactLinkTheme] = useState<'theme1' | 'theme2'>('theme1')
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [editingLabelIndex, setEditingLabelIndex] = useState<number | null>(null)
+  const [socialInstagram, setSocialInstagram] = useState('')
+  const [socialFacebook, setSocialFacebook] = useState('')
+  const [socialTiktok, setSocialTiktok] = useState('')
+  const [socialWhatsapp, setSocialWhatsapp] = useState('')
+  const [socialX, setSocialX] = useState('')
+  const [socialSnapchat, setSocialSnapchat] = useState('')
+  const [contactProductIds, setContactProductIds] = useState<string[]>([])
+  const [loadingContact, setLoadingContact] = useState(false)
+  const [savingContact, setSavingContact] = useState(false)
+  const [contactSaved, setContactSaved] = useState(false)
+  const [contactError, setContactError] = useState<string | null>(null)
+  const [copiedContactLink, setCopiedContactLink] = useState(false)
+
+  // Age gate state
+  const [ageGateEnabled, setAgeGateEnabled] = useState(false)
+  const [ageGateDescription, setAgeGateDescription] = useState('')
+  const [loadingAgeGate, setLoadingAgeGate] = useState(false)
+  const [savingAgeGate, setSavingAgeGate] = useState(false)
+  const [ageGateSaved, setAgeGateSaved] = useState(false)
+  const [ageGateError, setAgeGateError] = useState<string | null>(null)
+
+  // Custom HTML Sections state
+  const [sections, setSections] = useState<CustomSection[]>([])
+  const [loadingSections, setLoadingSections] = useState(false)
+  const [sectionForm, setSectionForm] = useState<{ id: number | null; name: string; htmlContent: string; isActive: boolean } | null>(null)
+  const [savingSection, setSavingSection] = useState(false)
+  const [sectionError, setSectionError] = useState<string | null>(null)
+  const [copiedSectionLink, setCopiedSectionLink] = useState<number | null>(null)
+  const sectionFileRef = useRef<HTMLInputElement>(null)
+
   // Offer modal state
   const [offerModal, setOfferModal] = useState<{ open: boolean; product: StoreProduct | null }>({ open: false, product: null })
   const [offerPrice, setOfferPrice] = useState('')
   const [offerLabel, setOfferLabel] = useState('')
   const [offerEnd, setOfferEnd] = useState('')
   const [savingOffer, setSavingOffer] = useState(false)
+
+  // Pre-order modal state
+  const [preorderModal, setPreorderModal] = useState<{ open: boolean; product: StoreProduct | null }>({ open: false, product: null })
+  const [preorderActive, setPreorderActive] = useState(false)
+  const [preorderWindowEnd, setPreorderWindowEnd] = useState('')
+  const [preorderShipStart, setPreorderShipStart] = useState('')
+  const [preorderShipEnd, setPreorderShipEnd] = useState('')
+  const [preorderBadgeText, setPreorderBadgeText] = useState('Pre-orden')
+  const [savingPreorder, setSavingPreorder] = useState(false)
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
@@ -151,6 +249,173 @@ export function Tienda() {
       setLoadingBump(false)
     }
   }, [])
+
+  const fetchContactConfig = useCallback(async () => {
+    setLoadingContact(true)
+    try {
+      const result = await api.getStoreCustomization()
+      if (result.success && result.data?.storeInfo) {
+        const si = result.data.storeInfo
+        setContactEnabled(!!si.contactPageEnabled)
+        setContactTitle(si.contactPageTitle || '')
+        setContactDescription(si.contactPageDescription || '')
+        setContactImage(si.contactPageImage || '')
+        try {
+          setContactLinks(si.contactPageLinks ? JSON.parse(si.contactPageLinks) : [])
+        } catch { setContactLinks([]) }
+        setContactLinkTheme((si as any).contactPageLinkTheme === 'theme2' ? 'theme2' : 'theme1')
+        setSocialInstagram(si.socialInstagram || '')
+        setSocialFacebook(si.socialFacebook || '')
+        setSocialTiktok(si.socialTiktok || '')
+        setSocialWhatsapp(si.socialWhatsapp || '')
+        setSocialX((si as any).socialX || '')
+        setSocialSnapchat((si as any).socialSnapchat || '')
+        try {
+          setContactProductIds(si.contactPageProducts ? JSON.parse(si.contactPageProducts) : [])
+        } catch { setContactProductIds([]) }
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingContact(false)
+    }
+  }, [])
+
+  const handleSaveContact = async () => {
+    setSavingContact(true)
+    setContactError(null)
+    try {
+      const result = await api.updateContactPage({
+        contactPageEnabled: contactEnabled,
+        contactPageTitle: contactTitle,
+        contactPageDescription: contactDescription,
+        contactPageImage: contactImage,
+        contactPageLinks: contactLinks,
+        contactPageProducts: contactProductIds,
+        contactPageLinkTheme: contactLinkTheme,
+        socialInstagram,
+        socialFacebook,
+        socialTiktok,
+        socialWhatsapp,
+        socialX,
+        socialSnapchat,
+      })
+      if (result.success) {
+        setContactSaved(true)
+        setTimeout(() => setContactSaved(false), 3000)
+      } else {
+        setContactError(result.error || 'Error al guardar')
+      }
+    } catch {
+      setContactError('Error de conexión al guardar')
+    } finally {
+      setSavingContact(false)
+    }
+  }
+
+  const fetchAgeGateConfig = useCallback(async () => {
+    setLoadingAgeGate(true)
+    try {
+      const result = await api.getStoreCustomization()
+      if (result.success && result.data?.storeInfo) {
+        const si = result.data.storeInfo as any
+        setAgeGateEnabled(!!si.ageGateEnabled)
+        setAgeGateDescription(si.ageGateDescription || '')
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingAgeGate(false)
+    }
+  }, [])
+
+  const handleSaveAgeGate = async () => {
+    setSavingAgeGate(true)
+    setAgeGateError(null)
+    try {
+      const result = await api.updateAgeGate({ ageGateEnabled, ageGateDescription })
+      if (result.success) {
+        setAgeGateSaved(true)
+        setTimeout(() => setAgeGateSaved(false), 3000)
+      } else {
+        setAgeGateError(result.error || 'Error al guardar')
+      }
+    } catch {
+      setAgeGateError('Error de conexión al guardar')
+    } finally {
+      setSavingAgeGate(false)
+    }
+  }
+
+  const fetchSections = useCallback(async () => {
+    setLoadingSections(true)
+    try {
+      const result = await api.listCustomSections()
+      if (result.success && result.data) {
+        setSections(result.data.map((s: any) => ({ ...s, isActive: !!s.isActive })))
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingSections(false)
+    }
+  }, [])
+
+  const handleSaveSection = async () => {
+    if (!sectionForm) return
+    setSavingSection(true)
+    setSectionError(null)
+    try {
+      let result
+      if (sectionForm.id) {
+        result = await api.updateCustomSection(sectionForm.id, {
+          name: sectionForm.name,
+          htmlContent: sectionForm.htmlContent,
+          isActive: sectionForm.isActive,
+        })
+      } else {
+        result = await api.createCustomSection({
+          name: sectionForm.name,
+          htmlContent: sectionForm.htmlContent,
+          isActive: sectionForm.isActive,
+        })
+      }
+      if (result.success) {
+        setSectionForm(null)
+        fetchSections()
+      } else {
+        setSectionError(result.error || 'Error al guardar')
+      }
+    } catch {
+      setSectionError('Error de conexión')
+    } finally {
+      setSavingSection(false)
+    }
+  }
+
+  const handleToggleSection = async (section: CustomSection) => {
+    const newActive = !section.isActive
+    setSections(prev => prev.map(s => s.id === section.id ? { ...s, isActive: newActive } : s))
+    try {
+      await api.toggleCustomSection(section.id, newActive)
+    } catch {
+      setSections(prev => prev.map(s => s.id === section.id ? { ...s, isActive: section.isActive } : s))
+    }
+  }
+
+  const handleDeleteSection = async (id: number) => {
+    if (!confirm('¿Eliminar esta sección?')) return
+    try {
+      await api.deleteCustomSection(id)
+      setSections(prev => prev.filter(s => s.id !== id))
+    } catch { /* ignore */ }
+  }
+
+  const handleSectionFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const content = ev.target?.result as string
+      setSectionForm(prev => prev ? { ...prev, htmlContent: content } : prev)
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
 
   const handleSaveBumpConfig = async () => {
     setSavingBump(true)
@@ -276,6 +541,55 @@ export function Tienda() {
     setOfferPrice(product.isOnOffer && product.offerPrice ? String(product.offerPrice) : '')
     setOfferLabel(product.offerLabel || '')
     setOfferEnd(product.offerEnd ? product.offerEnd.slice(0, 16) : '')
+  }
+
+  const openPreorderModal = (product: StoreProduct) => {
+    setPreorderModal({ open: true, product })
+    setPreorderActive(product.isPreorder)
+    setPreorderWindowEnd(product.preorderWindowEnd ? product.preorderWindowEnd.slice(0, 16) : '')
+    setPreorderShipStart(product.preorderShipStart || '')
+    setPreorderShipEnd(product.preorderShipEnd || '')
+    setPreorderBadgeText(product.preorderBadgeText || 'Pre-orden')
+  }
+
+  const handleSavePreorder = async () => {
+    if (!preorderModal.product) return
+    setSavingPreorder(true)
+    // datetime-local returns "YYYY-MM-DDTHH:mm" (no seconds); isISO8601 requires seconds
+    const toISO = (v: string): string | null => {
+      if (!v) return null
+      return v.length === 16 ? `${v}:00` : v
+    }
+    try {
+      const result = await api.updateProductPreorder(preorderModal.product.id, {
+        isPreorder: preorderActive,
+        preorderWindowEnd: toISO(preorderWindowEnd),
+        preorderShipStart: preorderShipStart || null,
+        preorderShipEnd: preorderShipEnd || null,
+        preorderBadgeText: preorderBadgeText || 'Pre-orden',
+      })
+      if (result.success) {
+        setProducts(prev => prev.map(p =>
+          p.id === preorderModal.product!.id
+            ? {
+                ...p,
+                isPreorder: preorderActive,
+                preorderWindowEnd: preorderWindowEnd || null,
+                preorderShipStart: preorderShipStart || null,
+                preorderShipEnd: preorderShipEnd || null,
+                preorderBadgeText: preorderBadgeText || 'Pre-orden',
+              }
+            : p
+        ))
+        setPreorderModal({ open: false, product: null })
+      } else {
+        setErrorMsg(result.error || 'Error al guardar pre-orden')
+      }
+    } catch {
+      setErrorMsg('Error de conexión al guardar pre-orden')
+    } finally {
+      setSavingPreorder(false)
+    }
   }
 
   const handleSaveOffer = async () => {
@@ -474,6 +788,11 @@ export function Tienda() {
                 <Truck className="h-3 w-3 mr-1" /> Domicilio
               </Badge>
             )}
+            {product.isPreorder && (
+              <Badge className="text-xs bg-amber-500 hover:bg-amber-600 text-white">
+                <PackageCheck className="h-3 w-3 mr-1" /> Pre-orden
+              </Badge>
+            )}
           </div>
 
           {/* Discount badge */}
@@ -599,6 +918,21 @@ export function Tienda() {
               <Sparkles className="h-4 w-4" />
               {inNewLaunchTab && <span className="ml-1">{isNew ? 'Quitar' : 'Agregar'}</span>}
             </Button>
+
+            {/* Pre-orden button */}
+            <Button
+              variant={product.isPreorder ? 'default' : 'outline'}
+              size="sm"
+              className={product.isPreorder
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                : 'border-amber-300 text-amber-600 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20'
+              }
+              disabled={isToggling}
+              onClick={() => openPreorderModal(product)}
+              title="Configurar pre-orden"
+            >
+              <PackageCheck className="h-4 w-4" />
+            </Button>
           </div>
           {isOffer && product.offerLabel && (
             <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
@@ -610,8 +944,30 @@ export function Tienda() {
     )
   }
 
+  if (!isEmpresarial) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center p-8">
+        <div className="rounded-full bg-amber-400/10 p-5">
+          <Store className="h-10 w-10 text-amber-400" />
+        </div>
+        <h2 className="text-xl font-bold">Plan empresarial requerido</h2>
+        <p className="text-muted-foreground max-w-sm">
+          El módulo Tienda está disponible únicamente en el plan empresarial. Actualiza tu plan para publicar productos, gestionar pedidos, crear cupones y personalizar tu página.
+        </p>
+      </div>
+    )
+  }
+
+  // Guardado fijo por pestaña de configuración (barra sticky siempre visible)
+  const tiendaStickyByTab: Partial<Record<ActiveTab, { fn: () => void; busy: boolean; label: string }>> = {
+    contact: { fn: handleSaveContact, busy: savingContact, label: 'Guardar página de contacto' },
+    'age-gate': { fn: handleSaveAgeGate, busy: savingAgeGate, label: 'Guardar verificación de edad' },
+    'order-bump': { fn: handleSaveBumpConfig, busy: savingBump, label: 'Guardar order bump' },
+  }
+  const tiendaActiveSticky = tiendaStickyByTab[activeTab]
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -627,6 +983,10 @@ export function Tienda() {
           <Button variant="outline" size="sm" onClick={() => setShowCustomization(true)}>
             <Layout className="h-4 w-4 mr-2" />
             Personalizar Tienda
+          </Button>
+          <Button size="sm" onClick={() => setShowBuilder(true)} className="bg-gradient-to-r from-indigo-500 to-violet-600 text-white hover:from-indigo-600 hover:to-violet-700 border-0">
+            <Sparkles className="h-4 w-4 mr-2" />
+            Editor Visual
           </Button>
           <Button variant="outline" size="sm" onClick={fetchProducts} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -768,7 +1128,80 @@ export function Tienda() {
             <Badge className="ml-1 text-xs bg-amber-500 hover:bg-amber-600 text-white">ON</Badge>
           )}
         </button>
+        <button
+          onClick={() => setActiveTab('share')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'share'
+              ? 'border-green-500 text-green-600'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Share2 className="h-4 w-4" />
+          Compartir
+        </button>
+        <button
+          onClick={() => { setActiveTab('contact'); fetchContactConfig() }}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'contact'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <MessageCircle className="h-4 w-4" />
+          Contacto
+          {contactEnabled && (
+            <Badge className="ml-1 text-xs bg-blue-500 hover:bg-blue-600 text-white">ON</Badge>
+          )}
+        </button>
+        <button
+          onClick={() => { setActiveTab('age-gate'); fetchAgeGateConfig() }}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'age-gate'
+              ? 'border-rose-500 text-rose-600'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Shield className="h-4 w-4" />
+          Verificación +18
+          {ageGateEnabled && (
+            <Badge className="ml-1 text-xs bg-rose-500 hover:bg-rose-600 text-white">ON</Badge>
+          )}
+        </button>
+        <button
+          onClick={() => { setActiveTab('html-sections'); fetchSections() }}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'html-sections'
+              ? 'border-violet-500 text-violet-600'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Code2 className="h-4 w-4" />
+          Secciones HTML
+          {sections.some(s => s.isActive) && (
+            <Badge className="ml-1 text-xs bg-violet-500 hover:bg-violet-600 text-white">
+              {sections.filter(s => s.isActive).length}
+            </Badge>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('card')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'card'
+              ? 'border-emerald-500 text-emerald-600'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Store className="h-4 w-4" />
+          Tarjeta
+        </button>
       </div>
+
+      {/* ========== TARJETA DEL COMERCIO TAB ========== */}
+      {activeTab === 'card' && (
+        <div className="py-2">
+          <StoreCardConfig />
+        </div>
+      )}
 
       {/* ========== CATALOG TAB ========== */}
       {activeTab === 'catalog' && (
@@ -1202,6 +1635,1020 @@ export function Tienda() {
         </div>
       )}
 
+      {/* ========== SHARE TAB ========== */}
+      {activeTab === 'share' && (() => {
+        const slug = user?.tenantSlug
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+        const catalogUrl = slug ? `${baseUrl}/?store=${slug}` : null
+
+        const copyLink = async () => {
+          if (!catalogUrl) return
+          await navigator.clipboard.writeText(catalogUrl)
+          setCopiedLink(true)
+          setTimeout(() => setCopiedLink(false), 2500)
+        }
+
+        const copySlug = async () => {
+          if (!slug) return
+          await navigator.clipboard.writeText(slug)
+          setCopiedSlug(true)
+          setTimeout(() => setCopiedSlug(false), 2500)
+        }
+
+        const downloadQR = () => {
+          const svg = qrRef.current?.querySelector('svg')
+          if (!svg) return
+          const serializer = new XMLSerializer()
+          const svgStr = serializer.serializeToString(svg)
+          const canvas = document.createElement('canvas')
+          const size = 512
+          canvas.width = size
+          canvas.height = size
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return
+          const img = new Image()
+          img.onload = () => {
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(0, 0, size, size)
+            ctx.drawImage(img, 0, 0, size, size)
+            const link = document.createElement('a')
+            link.download = `qr-catalogo-${slug || 'tienda'}.png`
+            link.href = canvas.toDataURL('image/png')
+            link.click()
+          }
+          img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)))
+        }
+
+        return (
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Header */}
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Share2 className="h-5 w-5 text-green-600" />
+                Comparte tu catálogo
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Genera un link o QR para que tus clientes accedan directamente a tu tienda.
+              </p>
+            </div>
+
+            {!slug ? (
+              <Card>
+                <CardContent className="p-6 text-center space-y-2">
+                  <AlertCircle className="h-8 w-8 text-amber-500 mx-auto" />
+                  <p className="text-sm font-medium">Tu tienda no tiene un identificador (slug) configurado.</p>
+                  <p className="text-xs text-muted-foreground">Contacta al administrador para activar tu página pública.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                {/* QR Card */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <QrCode className="h-4 w-4" />
+                      Código QR del catálogo
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col sm:flex-row items-center gap-6">
+                    {/* QR */}
+                    <div ref={qrRef} className="p-4 bg-white border rounded-xl shadow-sm flex-shrink-0">
+                      <QRCodeSVG
+                        value={catalogUrl!}
+                        size={180}
+                        bgColor="#ffffff"
+                        fgColor="#000000"
+                        level="H"
+                        includeMargin={false}
+                        imageSettings={{
+                          src: '/daimuz-isotipo.png',
+                          height: 32,
+                          width: 32,
+                          excavate: true,
+                        }}
+                      />
+                    </div>
+                    {/* Actions */}
+                    <div className="flex-1 space-y-3 w-full">
+                      <p className="text-sm text-muted-foreground">
+                        Imprime o comparte este QR para que tus clientes escaneen y abran tu tienda directamente desde su celular.
+                      </p>
+                      <Button variant="default" className="w-full sm:w-auto gap-2" onClick={downloadQR}>
+                        <Download className="h-4 w-4" />
+                        Descargar QR (PNG)
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Link Card */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Link2 className="h-4 w-4" />
+                      Link directo al catálogo
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {/* URL completa */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">URL completa</label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 rounded-md border bg-muted/40 px-3 py-2 text-sm font-mono truncate select-all">
+                          {catalogUrl}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="shrink-0 h-9 w-9"
+                          onClick={copyLink}
+                          title="Copiar link"
+                        >
+                          {copiedLink ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                        <a
+                          href={catalogUrl!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button variant="outline" size="icon" className="shrink-0 h-9 w-9" title="Abrir en nueva pestaña">
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Slug */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Identificador de tienda (slug)</label>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 rounded-md border bg-muted/40 px-3 py-2 text-sm font-mono">
+                          {slug}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          className="shrink-0 h-9 w-9"
+                          onClick={copySlug}
+                          title="Copiar slug"
+                        >
+                          {copiedSlug ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Puedes compartir solo el slug para usar en redes sociales o stickers.
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Share tips */}
+                <Card className="border-dashed">
+                  <CardContent className="p-4 space-y-2">
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <Globe className="h-4 w-4 text-blue-500" />
+                      Sugerencias para compartir
+                    </p>
+                    <ul className="text-xs text-muted-foreground space-y-1 pl-6 list-disc">
+                      <li>Imprime el QR y colócalo en tu local, empaque o tarjeta de presentación.</li>
+                      <li>Comparte el link en WhatsApp, Instagram o Facebook.</li>
+                      <li>Agrega el QR a tu menú o catálogo físico.</li>
+                      <li>Úsalo en historias de Instagram con enlace directo.</li>
+                    </ul>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* ========== CONTACT TAB ========== */}
+      {activeTab === 'contact' && (
+        <div className="max-w-2xl mx-auto space-y-6">
+          {/* Header */}
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-blue-600" />
+              Página de Contacto
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Configura la información de contacto que verán tus clientes en la tienda.
+            </p>
+          </div>
+
+          {loadingContact ? (
+            <Card>
+              <CardContent className="p-6 flex items-center justify-center">
+                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Enable toggle */}
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Activar página de contacto</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Muestra una sección de contacto visible a tus clientes
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setContactEnabled(prev => !prev)}
+                      className="flex items-center gap-2 transition-colors"
+                    >
+                      {contactEnabled
+                        ? <ToggleRight className="h-8 w-8 text-blue-500" />
+                        : <ToggleLeft className="h-8 w-8 text-muted-foreground" />
+                      }
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Fields */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    Contenido de la página
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Título</label>
+                    <Input
+                      placeholder="Ej: Contáctanos"
+                      value={contactTitle}
+                      onChange={e => setContactTitle(e.target.value)}
+                      maxLength={255}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Descripción</label>
+                    <textarea
+                      placeholder="Escribe una descripción para la sección de contacto..."
+                      value={contactDescription}
+                      onChange={e => setContactDescription(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                    />
+                  </div>
+                  {/* Social links */}
+                  <div className="space-y-3 pt-1">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Redes sociales</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { icon: '📸', label: 'Instagram', value: socialInstagram, set: setSocialInstagram, placeholder: 'https://instagram.com/tuusuario' },
+                        { icon: '🎵', label: 'TikTok', value: socialTiktok, set: setSocialTiktok, placeholder: 'https://tiktok.com/@tuusuario' },
+                        { icon: '📘', label: 'Facebook', value: socialFacebook, set: setSocialFacebook, placeholder: 'https://facebook.com/tupagina' },
+                        { icon: '💬', label: 'WhatsApp', value: socialWhatsapp, set: setSocialWhatsapp, placeholder: 'https://wa.me/573001234567' },
+                        { icon: '𝕏', label: 'X (Twitter)', value: socialX, set: setSocialX, placeholder: 'https://x.com/tuusuario' },
+                        { icon: '👻', label: 'Snapchat', value: socialSnapchat, set: setSocialSnapchat, placeholder: 'https://snapchat.com/add/tuusuario' },
+                      ].map(({ icon, label, value, set, placeholder }) => (
+                        <div key={label} className="flex items-center gap-2">
+                          <span className="text-base w-6 text-center shrink-0">{icon}</span>
+                          <Input
+                            placeholder={placeholder}
+                            value={value}
+                            onChange={e => set(e.target.value)}
+                            className="flex-1 text-sm"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Imagen de portada</label>
+                    <CloudinaryUpload
+                      value={contactImage}
+                      onChange={setContactImage}
+                      previewClassName="h-24 w-full object-cover rounded-lg border"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Link theme selector */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    Tema de presentación de links
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Elige cómo se verán los links en tu página pública.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Theme 1 */}
+                    <button
+                      type="button"
+                      onClick={() => setContactLinkTheme('theme1')}
+                      className={`relative rounded-xl border-2 p-3 text-left transition-all ${
+                        contactLinkTheme === 'theme1' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-input hover:border-gray-300'
+                      }`}
+                    >
+                      {contactLinkTheme === 'theme1' && (
+                        <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                          <Check className="h-2.5 w-2.5 text-white" />
+                        </span>
+                      )}
+                      {/* Mini preview Theme 1 */}
+                      <div className="w-full rounded-lg bg-white border border-gray-200 space-y-1.5 p-2 mb-2">
+                        {['Link 1', 'Link 2', 'Link 3'].map(l => (
+                          <div key={l} className="w-full rounded-lg border border-gray-200 bg-white py-1 text-center text-[9px] text-gray-600 font-semibold uppercase">
+                            {l}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs font-semibold text-gray-700">Básico</p>
+                      <p className="text-[10px] text-muted-foreground leading-tight">Botones simples, limpio y minimalista</p>
+                    </button>
+
+                    {/* Theme 2 */}
+                    <button
+                      type="button"
+                      onClick={() => setContactLinkTheme('theme2')}
+                      className={`relative rounded-xl border-2 p-3 text-left transition-all ${
+                        contactLinkTheme === 'theme2' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-input hover:border-gray-300'
+                      }`}
+                    >
+                      {contactLinkTheme === 'theme2' && (
+                        <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center">
+                          <Check className="h-2.5 w-2.5 text-white" />
+                        </span>
+                      )}
+                      {/* Mini preview Theme 2 */}
+                      <div className="w-full rounded-lg bg-black space-y-1.5 p-2 mb-2">
+                        {['Link 1', 'Link 2', 'Link 3'].map(l => (
+                          <div key={l} className="w-full rounded-lg bg-gray-700 py-2 text-center text-[9px] text-white font-semibold uppercase relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/60" />
+                            <span className="relative">{l}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs font-semibold text-gray-700">Con imágenes</p>
+                      <p className="text-[10px] text-muted-foreground leading-tight">Tarjetas con foto, oscuro y profesional</p>
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Custom links */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Phone className="h-4 w-4" />
+                    Canales de contacto personalizados
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {contactLinks.map((link, i) => (
+                    <div
+                      key={i}
+                      draggable
+                      onDragStart={() => setDragIndex(i)}
+                      onDragOver={e => { e.preventDefault(); }}
+                      onDrop={e => {
+                        e.preventDefault()
+                        if (dragIndex === null || dragIndex === i) return
+                        const updated = [...contactLinks]
+                        const [moved] = updated.splice(dragIndex, 1)
+                        updated.splice(i, 0, moved)
+                        setContactLinks(updated)
+                        setDragIndex(null)
+                      }}
+                      onDragEnd={() => setDragIndex(null)}
+                      className={`rounded-xl border transition-all ${
+                        dragIndex === i
+                          ? 'opacity-40 border-dashed border-blue-400'
+                          : 'border-input bg-card hover:border-gray-300'
+                      }`}
+                    >
+                      {/* Header row: drag handle + label editable + delete */}
+                      <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab active:cursor-grabbing shrink-0" />
+                        {editingLabelIndex === i ? (
+                          <Input
+                            autoFocus
+                            className="h-7 text-sm font-medium flex-1 px-2"
+                            placeholder="Nombre del canal (ej: WhatsApp)"
+                            value={link.label}
+                            onChange={e => {
+                              const updated = [...contactLinks]
+                              updated[i] = { ...updated[i], label: e.target.value }
+                              setContactLinks(updated)
+                            }}
+                            onBlur={() => setEditingLabelIndex(null)}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setEditingLabelIndex(null) }}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="flex-1 text-left flex items-center gap-1.5 group"
+                            onClick={() => setEditingLabelIndex(i)}
+                          >
+                            <span className={`text-sm font-medium truncate ${link.label ? '' : 'text-muted-foreground italic'}`}>
+                              {link.label || 'Sin nombre'}
+                            </span>
+                            <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                          </button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => setContactLinks(prev => prev.filter((_, j) => j !== i))}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      {/* URL + optional image */}
+                      <div className="px-3 pb-3 space-y-2 pt-1">
+                        <Input
+                          placeholder="URL o número (ej: https://wa.me/...)"
+                          value={link.url}
+                          onChange={e => {
+                            const updated = [...contactLinks]
+                            updated[i] = { ...updated[i], url: e.target.value }
+                            setContactLinks(updated)
+                          }}
+                          className="text-sm"
+                        />
+                        {contactLinkTheme === 'theme2' && (
+                          <div className="space-y-1">
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Imagen de fondo</p>
+                            <CloudinaryUpload
+                              value={link.image || ''}
+                              onChange={val => {
+                                const updated = [...contactLinks]
+                                updated[i] = { ...updated[i], image: val }
+                                setContactLinks(updated)
+                              }}
+                              previewClassName="h-20 w-full object-cover rounded-lg border"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-2 mt-1"
+                    onClick={() => setContactLinks(prev => [...prev, { label: '', url: '' }])}
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                    Agregar canal
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Productos para Shop */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <ShoppingBag className="h-4 w-4 text-blue-500" />
+                    Productos en Shop
+                    <Badge variant="secondary" className="ml-auto">
+                      {contactProductIds.length} seleccionados
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Elige qué productos publicados aparecen en la pestaña Shop de tu página de links. Si no seleccionas ninguno, se mostrarán todos los publicados.
+                  </p>
+                  {products.filter(p => p.publishedInStore).length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground text-sm">
+                      <Package className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                      No tienes productos publicados
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                      {products.filter(p => p.publishedInStore).map(p => {
+                        const isSelected = contactProductIds.includes(p.id)
+                        return (
+                          <label
+                            key={p.id}
+                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                              isSelected ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'border-input hover:bg-muted'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setContactProductIds(prev =>
+                                  isSelected ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                                )
+                              }}
+                              className="accent-blue-500 h-4 w-4 flex-shrink-0"
+                            />
+                            {p.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={p.imageUrl} alt={p.name} className="h-10 w-10 object-cover rounded-lg flex-shrink-0" />
+                            ) : (
+                              <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                                <Package className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{p.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {p.category} · {new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(p.salePrice)}
+                              </p>
+                            </div>
+                            {isSelected && <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {contactProductIds.length > 0 && (
+                    <button
+                      onClick={() => setContactProductIds([])}
+                      className="mt-2 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      Limpiar selección (mostrar todos)
+                    </button>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Share — URL + QR de la página de links */}
+              {(() => {
+                const slug = user?.tenantSlug
+                if (!slug) return null
+                const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+                const linksUrl = `${baseUrl}/links/${slug}`
+
+                const copyLink = async () => {
+                  await navigator.clipboard.writeText(linksUrl)
+                  setCopiedContactLink(true)
+                  setTimeout(() => setCopiedContactLink(false), 2500)
+                }
+
+                const downloadQR = () => {
+                  const svg = contactQrRef.current?.querySelector('svg')
+                  if (!svg) return
+                  const svgStr = new XMLSerializer().serializeToString(svg)
+                  const canvas = document.createElement('canvas')
+                  canvas.width = 512; canvas.height = 512
+                  const ctx = canvas.getContext('2d')
+                  if (!ctx) return
+                  const img = new Image()
+                  img.onload = () => {
+                    ctx.fillStyle = '#ffffff'
+                    ctx.fillRect(0, 0, 512, 512)
+                    ctx.drawImage(img, 0, 0, 512, 512)
+                    const a = document.createElement('a')
+                    a.download = `links-${slug}.png`
+                    a.href = canvas.toDataURL('image/png')
+                    a.click()
+                  }
+                  img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)))
+                }
+
+                return (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Share2 className="h-4 w-4 text-blue-500" />
+                        Compartir página de links
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* URL */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 rounded-md border bg-muted/40 px-3 py-2 text-sm font-mono truncate select-all">
+                          {linksUrl}
+                        </div>
+                        <Button variant="outline" size="icon" className="shrink-0 h-9 w-9" onClick={copyLink} title="Copiar link">
+                          {copiedContactLink ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                        <a href={linksUrl} target="_blank" rel="noopener noreferrer">
+                          <Button variant="outline" size="icon" className="shrink-0 h-9 w-9" title="Abrir">
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        </a>
+                      </div>
+                      {/* QR */}
+                      <div className="flex flex-col sm:flex-row items-center gap-4">
+                        <div ref={contactQrRef} className="p-3 bg-white border rounded-xl shadow-sm shrink-0">
+                          <QRCodeSVG value={linksUrl} size={140} bgColor="#ffffff" fgColor="#000000" level="H" includeMargin={false}
+                            imageSettings={{ src: '/daimuz-isotipo.png', height: 24, width: 24, excavate: true }} />
+                        </div>
+                        <div className="space-y-2 w-full">
+                          <p className="text-xs text-muted-foreground">Comparte este QR para que tus clientes accedan a tus links directamente.</p>
+                          <Button variant="outline" size="sm" className="w-full gap-2" onClick={downloadQR}>
+                            <Download className="h-4 w-4" />
+                            Descargar QR
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })()}
+
+              {/* Save */}
+              {contactError && (
+                <p className="text-sm text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" />{contactError}
+                </p>
+              )}
+              <Button
+                className="w-full gap-2"
+                onClick={handleSaveContact}
+                disabled={savingContact}
+              >
+                {savingContact
+                  ? <RefreshCw className="h-4 w-4 animate-spin" />
+                  : contactSaved
+                  ? <Check className="h-4 w-4 text-green-400" />
+                  : <Save className="h-4 w-4" />
+                }
+                {savingContact ? 'Guardando...' : contactSaved ? '¡Guardado!' : 'Guardar configuración'}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ========== AGE GATE TAB ========== */}
+      {activeTab === 'age-gate' && (
+        <div className="max-w-2xl mx-auto space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Shield className="h-5 w-5 text-rose-600" />
+              Verificación de edad +18
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Activa un modal de verificación de mayoría de edad que el cliente debe aceptar antes de entrar a tu tienda.
+            </p>
+          </div>
+
+          {loadingAgeGate ? (
+            <Card>
+              <CardContent className="p-6 flex items-center justify-center">
+                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Enable toggle */}
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Activar verificación +18</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        El cliente deberá confirmar que es mayor de edad antes de ver tu tienda
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setAgeGateEnabled(prev => !prev)}
+                      className="flex items-center gap-2 transition-colors"
+                    >
+                      {ageGateEnabled
+                        ? <ToggleRight className="h-8 w-8 text-rose-500" />
+                        : <ToggleLeft className="h-8 w-8 text-muted-foreground" />
+                      }
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Description editor */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Settings className="h-4 w-4" />
+                    Mensaje de verificación
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Descripción / Aviso legal
+                    </label>
+                    <textarea
+                      placeholder="Ej: Este sitio contiene contenido exclusivo para mayores de 18 años. Al ingresar confirmas que eres mayor de edad y aceptas nuestros términos y condiciones."
+                      value={ageGateDescription}
+                      onChange={e => setAgeGateDescription(e.target.value)}
+                      rows={5}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Este texto aparecerá en el modal que verán tus clientes al entrar a la tienda.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Preview hint */}
+              {ageGateEnabled && (
+                <Card className="border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-900">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="h-4 w-4 text-rose-600 mt-0.5 shrink-0" />
+                      <div className="text-sm text-rose-700 dark:text-rose-400 space-y-1">
+                        <p className="font-medium">Verificación activa</p>
+                        <p className="text-xs">
+                          Los visitantes verán un modal de confirmación al entrar a tu tienda. La verificación se guarda por sesión de navegador.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Save */}
+              {ageGateError && (
+                <p className="text-sm text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" />{ageGateError}
+                </p>
+              )}
+              <Button
+                className="w-full gap-2"
+                onClick={handleSaveAgeGate}
+                disabled={savingAgeGate}
+              >
+                {savingAgeGate
+                  ? <RefreshCw className="h-4 w-4 animate-spin" />
+                  : ageGateSaved
+                  ? <Check className="h-4 w-4 text-green-400" />
+                  : <Save className="h-4 w-4" />
+                }
+                {savingAgeGate ? 'Guardando...' : ageGateSaved ? '¡Guardado!' : 'Guardar configuración'}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ========== HTML SECTIONS TAB ========== */}
+      {activeTab === 'html-sections' && (
+        <div className="space-y-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Code2 className="h-5 w-5 text-violet-600" />
+                Secciones HTML personalizadas
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Crea secciones con código HTML propio. Obtén un link para compartirlas o actívalas directamente en tu tienda.
+              </p>
+            </div>
+            {!sectionForm && (
+              <Button
+                onClick={() => { setSectionForm({ id: null, name: '', htmlContent: '', isActive: false }); setSectionError(null) }}
+                className="gap-2 bg-violet-600 hover:bg-violet-700 text-white shrink-0"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Nueva sección
+              </Button>
+            )}
+          </div>
+
+          {/* ── Form: create / edit ── */}
+          {sectionForm && (
+            <Card className="border-violet-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FileCode className="h-4 w-4 text-violet-600" />
+                  {sectionForm.id ? 'Editar sección' : 'Nueva sección'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Name */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Nombre de la sección</label>
+                  <Input
+                    placeholder="Ej: Promo Black Friday, Banner Navidad..."
+                    value={sectionForm.name}
+                    onChange={e => setSectionForm(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                  />
+                </div>
+
+                {/* HTML editor */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Código HTML</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">o sube un archivo .html</span>
+                      <input
+                        ref={sectionFileRef}
+                        type="file"
+                        accept=".html,.htm"
+                        className="hidden"
+                        onChange={handleSectionFileUpload}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 h-7 text-xs"
+                        onClick={() => sectionFileRef.current?.click()}
+                      >
+                        <Upload className="h-3 w-3" />
+                        Subir archivo
+                      </Button>
+                    </div>
+                  </div>
+                  <textarea
+                    placeholder={'<!DOCTYPE html>\n<html>\n<head><title>Mi sección</title></head>\n<body>\n  <!-- Tu contenido aquí -->\n</body>\n</html>'}
+                    value={sectionForm.htmlContent}
+                    onChange={e => setSectionForm(prev => prev ? { ...prev, htmlContent: e.target.value } : prev)}
+                    rows={14}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
+                    spellCheck={false}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Puedes usar HTML, CSS y JavaScript. El contenido se renderiza en un iframe sandboxed.
+                  </p>
+                </div>
+
+                {/* Active toggle */}
+                <div className="flex items-center justify-between p-3 rounded-lg border border-input bg-muted/30">
+                  <div>
+                    <p className="text-sm font-medium">Activar en mi tienda</p>
+                    <p className="text-xs text-muted-foreground">La sección aparecerá al final de tu página de tienda</p>
+                  </div>
+                  <button
+                    onClick={() => setSectionForm(prev => prev ? { ...prev, isActive: !prev.isActive } : prev)}
+                    className="transition-colors"
+                  >
+                    {sectionForm.isActive
+                      ? <ToggleRight className="h-8 w-8 text-violet-500" />
+                      : <ToggleLeft className="h-8 w-8 text-muted-foreground" />
+                    }
+                  </button>
+                </div>
+
+                {sectionError && (
+                  <p className="text-sm text-red-500 flex items-center gap-1.5">
+                    <AlertCircle className="h-4 w-4 shrink-0" />{sectionError}
+                  </p>
+                )}
+
+                {!savingSection && (!sectionForm.name.trim() || !sectionForm.htmlContent.trim()) && (
+                  <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    Para guardar, completa: {[
+                      !sectionForm.name.trim() ? 'Nombre de la sección' : null,
+                      !sectionForm.htmlContent.trim() ? 'Código HTML' : null,
+                    ].filter(Boolean).join(' y ')}.
+                  </p>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    className="flex-1 gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                    onClick={handleSaveSection}
+                    disabled={savingSection || !sectionForm.name.trim() || !sectionForm.htmlContent.trim()}
+                  >
+                    {savingSection ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    {savingSection ? 'Guardando...' : 'Guardar sección'}
+                  </Button>
+                  <Button variant="outline" onClick={() => { setSectionForm(null); setSectionError(null) }}>
+                    Cancelar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── List of existing sections ── */}
+          {loadingSections ? (
+            <Card>
+              <CardContent className="p-6 flex items-center justify-center">
+                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+              </CardContent>
+            </Card>
+          ) : sections.length === 0 && !sectionForm ? (
+            <Card className="border-dashed">
+              <CardContent className="p-10 text-center">
+                <FileCode className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">Aún no tienes secciones HTML.</p>
+                <p className="text-xs text-muted-foreground mt-1">Crea una para empezar.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {sections.map(section => {
+                const publicUrl = typeof window !== 'undefined'
+                  ? `${window.location.origin}/s/${user?.tenantSlug || ''}/${section.slug}`
+                  : `/s/${user?.tenantSlug || ''}/${section.slug}`
+                return (
+                  <Card key={section.id} className={`transition-all ${section.isActive ? 'border-violet-200' : ''}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${section.isActive ? 'bg-violet-500' : 'bg-muted-foreground/30'}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium truncate">{section.name}</p>
+                            {section.isActive && (
+                              <Badge className="text-[10px] bg-violet-500 text-white">Activa en tienda</Badge>
+                            )}
+                          </div>
+                          {/* Shareable link */}
+                          <div className="mt-2 flex items-center gap-2">
+                            <div className="flex-1 flex items-center gap-1.5 bg-muted rounded px-2 py-1 min-w-0">
+                              <Globe2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <span className="text-xs text-muted-foreground font-mono truncate">{publicUrl}</span>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1 text-xs shrink-0"
+                              onClick={() => {
+                                navigator.clipboard.writeText(publicUrl)
+                                setCopiedSectionLink(section.id)
+                                setTimeout(() => setCopiedSectionLink(null), 2000)
+                              }}
+                            >
+                              {copiedSectionLink === section.id
+                                ? <><Check className="h-3 w-3 text-green-500" /> Copiado</>
+                                : <><Copy className="h-3 w-3" /> Copiar</>
+                              }
+                            </Button>
+                            <a
+                              href={publicUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-input bg-background hover:bg-accent transition-colors"
+                              title="Abrir link"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            title={section.isActive ? 'Desactivar en tienda' : 'Activar en tienda'}
+                            onClick={() => handleToggleSection(section)}
+                            className="transition-colors"
+                          >
+                            {section.isActive
+                              ? <ToggleRight className="h-7 w-7 text-violet-500" />
+                              : <ToggleLeft className="h-7 w-7 text-muted-foreground" />
+                            }
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            title="Editar"
+                            onClick={async () => {
+                              // Fetch full html_content for editing
+                              const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+                              const token = localStorage.getItem('auth_token') || ''
+                              const res = await fetch(`${API_URL}/storefront/custom-sections`, {
+                                headers: { Authorization: `Bearer ${token}` }
+                              })
+                              const json = await res.json()
+                              // We need the htmlContent — fetch individual section via public endpoint using tenantSlug
+                              const tenantSlug = user?.tenantSlug || ''
+                              const pubRes = await fetch(`${API_URL}/storefront/custom-sections/public/${tenantSlug}/${section.slug}`)
+                              const pubJson = await pubRes.json()
+                              setSectionForm({
+                                id: section.id,
+                                name: section.name,
+                                htmlContent: pubJson.success ? pubJson.data.htmlContent : '',
+                                isActive: section.isActive,
+                              })
+                              setSectionError(null)
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            title="Eliminar"
+                            onClick={() => handleDeleteSection(section.id)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ========== OFFER MODAL ========== */}
       {offerModal.open && offerModal.product && (
         <>
@@ -1301,6 +2748,145 @@ export function Tienda() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ── Pre-orden Modal ── */}
+      {preorderModal.open && preorderModal.product && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setPreorderModal({ open: false, product: null })} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-background rounded-xl shadow-2xl w-full max-w-md border border-border overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-border">
+                <div>
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                    <PackageCheck className="h-5 w-5 text-amber-500" />
+                    Configurar Pre-orden
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-xs">{preorderModal.product.name}</p>
+                </div>
+                <button
+                  onClick={() => setPreorderModal({ open: false, product: null })}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh]">
+                {/* Toggle on/off */}
+                <div
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${preorderActive ? 'border-amber-400 bg-amber-500/10' : 'border-border bg-muted/30'}`}
+                  onClick={() => setPreorderActive(v => !v)}
+                >
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${preorderActive ? 'bg-amber-500' : 'bg-gray-300'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${preorderActive ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{preorderActive ? 'Pre-orden activada' : 'Pre-orden desactivada'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {preorderActive ? 'El producto aparece en tienda aunque tenga stock 0' : 'Activa para vender antes del stock disponible'}
+                    </p>
+                  </div>
+                </div>
+
+                {preorderActive && (
+                  <>
+                    {/* Badge text */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground">Texto del badge <span className="text-muted-foreground font-normal">(máx. 60 caracteres)</span></label>
+                      <input
+                        type="text"
+                        value={preorderBadgeText}
+                        onChange={e => setPreorderBadgeText(e.target.value.slice(0, 60))}
+                        placeholder="Pre-orden"
+                        className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <span className={`inline-block text-[11px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide bg-amber-500 text-white`}>
+                          {preorderBadgeText || 'Pre-orden'}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">vista previa del badge</span>
+                      </div>
+                    </div>
+
+                    {/* Window end */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        Cierre de pre-orden <span className="text-muted-foreground font-normal">(opcional)</span>
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={preorderWindowEnd}
+                        onChange={e => setPreorderWindowEnd(e.target.value)}
+                        className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <p className="text-[11px] text-muted-foreground">Fecha/hora en que se cierra la pre-orden. Deja vacío para mantenerla abierta indefinidamente.</p>
+                    </div>
+
+                    {/* Ship range */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                        <Truck className="h-3.5 w-3.5 text-muted-foreground" />
+                        Rango de envío estimado <span className="text-muted-foreground font-normal">(opcional)</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground">Desde</p>
+                          <input
+                            type="date"
+                            value={preorderShipStart}
+                            onChange={e => setPreorderShipStart(e.target.value)}
+                            className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground">Hasta</p>
+                          <input
+                            type="date"
+                            value={preorderShipEnd}
+                            onChange={e => setPreorderShipEnd(e.target.value)}
+                            className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Se muestra al cliente en la tienda y en el checkout.</p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="flex gap-2 justify-end p-5 border-t border-border">
+                <Button variant="outline" size="sm" onClick={() => setPreorderModal({ open: false, product: null })}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-amber-500 hover:bg-amber-600 text-white gap-1.5"
+                  onClick={handleSavePreorder}
+                  disabled={savingPreorder}
+                >
+                  {savingPreorder ? <RefreshCw className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+                  {savingPreorder ? 'Guardando...' : (preorderActive ? 'Activar Pre-orden' : 'Desactivar Pre-orden')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {showBuilder && <StoreBuilder onClose={() => setShowBuilder(false)} />}
+
+      {/* ===== Barra de guardado fija (pestañas de configuración) ===== */}
+      {tiendaActiveSticky && (
+        <div className="sticky bottom-3 z-30 mt-6 flex items-center justify-end gap-3 rounded-xl border border-border bg-background/95 backdrop-blur px-4 py-3 shadow-lg">
+          <span className="text-xs text-muted-foreground mr-auto hidden sm:block">Cambios sin guardar</span>
+          <Button onClick={tiendaActiveSticky.fn} disabled={tiendaActiveSticky.busy} className="gap-2">
+            <Save className="h-4 w-4" />
+            {tiendaActiveSticky.busy ? 'Guardando...' : tiendaActiveSticky.label}
+          </Button>
+        </div>
       )}
     </div>
   )

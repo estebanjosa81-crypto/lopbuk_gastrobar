@@ -75,6 +75,47 @@ export class TenantsController {
     }
   }
 
+  async activateTrial(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const days = Number(req.body?.days) || 7;
+      const tenant = await tenantsService.activateTrial(req.params.id, days);
+      res.json({
+        success: true,
+        data: tenant,
+        message: `Período de prueba de ${days} días activado con plan empresarial`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deactivateTrial(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const revertPlan = (req.body?.revertPlan as string) || 'basico';
+      const tenant = await tenantsService.deactivateTrial(req.params.id, revertPlan);
+      res.json({
+        success: true,
+        data: tenant,
+        message: 'Período de prueba desactivado',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async destroy(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await tenantsService.destroy(req.params.id);
+      res.json({
+        success: true,
+        data: result,
+        message: `Comercio "${result.name}" eliminado definitivamente`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getStats(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const stats = await tenantsService.getStats();
@@ -102,6 +143,69 @@ export class TenantsController {
       const { key, value } = req.body;
       await tenantsService.updatePlatformSetting(key, value);
       res.json({ success: true, message: 'Configuración actualizada' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getBusinessTypes(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const types = await tenantsService.getBusinessTypes();
+      res.json({ success: true, data: types });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createBusinessType(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const types = await tenantsService.createBusinessType(req.body.name);
+      res.json({ success: true, data: types, message: 'Categoría creada' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteBusinessType(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const types = await tenantsService.deleteBusinessType(req.params.name);
+      res.json({ success: true, data: types, message: 'Categoría eliminada' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getModules(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await tenantsService.getModules(req.params.id);
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateModules(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await tenantsService.updateModules(req.params.id, req.body.modules);
+      res.json({ success: true, data, message: 'Módulos actualizados' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getMarketplaceCards(_req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const data = await tenantsService.getMarketplaceCards();
+      res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateMarketplaceCard(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      await tenantsService.updateMarketplaceCard(req.params.id, req.body);
+      res.json({ success: true, message: 'Tarjeta actualizada' });
     } catch (error) {
       next(error);
     }

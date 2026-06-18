@@ -610,6 +610,38 @@ export class ProductsService {
     }
   }
 
+  async bulkDelete(ids: string[], tenantId?: string): Promise<{ deleted: number; skipped: number }> {
+    const list = Array.from(new Set((ids || []).filter(Boolean)));
+    if (list.length === 0) return { deleted: 0, skipped: 0 };
+    const placeholders = list.map(() => '?').join(',');
+    const tenantClause = tenantId ? ' AND tenant_id = ?' : '';
+    try {
+      const [result] = await db.execute<ResultSetHeader>(
+        `DELETE FROM products WHERE id IN (${placeholders})${tenantClause}`,
+        tenantId ? [...list, tenantId] : [...list]
+      );
+      return { deleted: result.affectedRows, skipped: list.length - result.affectedRows };
+    } catch (error: any) {
+      // Si alguno tiene ventas asociadas, el IN falla en bloque → borra uno a uno saltando esos.
+      if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+        let deleted = 0, skipped = 0;
+        for (const id of list) {
+          try {
+            const [r] = await db.execute<ResultSetHeader>(
+              `DELETE FROM products WHERE id = ?${tenantClause}`,
+              tenantId ? [id, tenantId] : [id]
+            );
+            if (r.affectedRows > 0) deleted++; else skipped++;
+          } catch (e: any) {
+            if (e.code === 'ER_ROW_IS_REFERENCED_2') skipped++; else throw e;
+          }
+        }
+        return { deleted, skipped };
+      }
+      throw error;
+    }
+  }
+
   async updateStock(id: string, quantity: number): Promise<Product> {
     const product = await this.findById(id);
 
@@ -662,6 +694,37 @@ export class ProductsService {
       const batchSkuSet = new Set<string>();
       const batchBarcodeSet = new Set<string>();
 
+      // Pre-fetch categorías del tenant para resolver/crear automáticamente
+      const [catRows] = await connection.execute(
+        'SELECT id, name FROM categories WHERE tenant_id = ?',
+        [tenantId]
+      ) as [RowDataPacket[], any];
+      const catById = new Set<string>(catRows.map((c: any) => String(c.id)));
+      const catByName = new Map<string, string>(
+        catRows.map((c: any) => [String(c.name).toLowerCase().trim(), String(c.id)])
+      );
+      const slugify = (s: string) =>
+        String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || uuidv4().slice(0, 8);
+
+      // Resuelve el valor de categoría (id o nombre) a un id; crea la categoría si no existe.
+      const resolveCategory = async (value: string): Promise<string> => {
+        const raw = String(value).trim();
+        if (catById.has(raw)) return raw;
+        const lower = raw.toLowerCase();
+        if (catByName.has(lower)) return catByName.get(lower)!;
+        // Crear nueva categoría
+        let id = slugify(raw);
+        if (catById.has(id)) return id; // el slug ya existe → reutilizar
+        await connection.execute(
+          'INSERT INTO categories (id, tenant_id, name) VALUES (?, ?, ?)',
+          [id, tenantId, raw]
+        );
+        catById.add(id);
+        catByName.set(lower, id);
+        return id;
+      };
+
       for (let i = 0; i < products.length; i++) {
         const data = products[i];
         const rowNum = i + 2; // row 1 = header
@@ -669,6 +732,9 @@ export class ProductsService {
           if (!data.name || !data.sku || !data.category) {
             throw new Error('Faltan campos requeridos (name, sku, category)');
           }
+
+          // Resuelve la categoría (id o nombre); la crea automáticamente si no existe
+          data.category = await resolveCategory(data.category);
 
           if (skuSet.has(data.sku) || batchSkuSet.has(data.sku)) {
             throw new Error(`SKU "${data.sku}" duplicado`);
@@ -826,6 +892,46 @@ export class ProductsService {
     ].map(escape).join(','));
 
     return [headers.join(','), ...csvRows].join('\r\n');
+  }
+
+  async updatePreorder(
+    productId: string,
+    tenantId: string,
+    data: {
+      isPreorder: boolean;
+      preorderWindowEnd: string | null;
+      preorderShipStart: string | null;
+      preorderShipEnd: string | null;
+      preorderBadgeText: string;
+      preorderPolicyText: string | null;
+    }
+  ) {
+    const [result] = await db.execute(
+      `UPDATE products SET
+        is_preorder = ?,
+        preorder_window_end = ?,
+        preorder_ship_start = ?,
+        preorder_ship_end = ?,
+        preorder_badge_text = ?,
+        preorder_policy_text = ?
+      WHERE id = ? AND tenant_id = ?`,
+      [
+        data.isPreorder ? 1 : 0,
+        data.preorderWindowEnd || null,
+        data.preorderShipStart || null,
+        data.preorderShipEnd || null,
+        data.preorderBadgeText || 'Pre-orden',
+        data.preorderPolicyText || null,
+        productId,
+        tenantId,
+      ]
+    ) as any;
+
+    if ((result as ResultSetHeader).affectedRows === 0) {
+      throw new AppError('Producto no encontrado', 404);
+    }
+
+    return this.findById(productId, tenantId);
   }
 }
 

@@ -35,8 +35,16 @@ import {
   MessageCircle,
   Bell,
   Package,
+  ShoppingCart,
+  ToggleLeft,
+  Search,
+  Smartphone,
+  Wifi,
+  WifiOff,
+  QrCode,
 } from 'lucide-react'
 import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
+import { LogoThemeGenerator } from '@/components/logo-theme-generator'
 import { departamentosMunicipios } from '@/constants'
 
 interface Banner {
@@ -92,6 +100,7 @@ interface StoreExtendedInfo {
   allowContraentrega: boolean
   showInfoModule: boolean
   infoModuleDescription: string
+  metaPixelId: string
 }
 
 interface AnnouncementBar {
@@ -100,6 +109,7 @@ interface AnnouncementBar {
   bgColor: string
   textColor: string
   isActive: boolean
+  scrollSpeed: number
 }
 
 interface Drop {
@@ -114,7 +124,7 @@ interface Drop {
   products?: Array<{ productId: string; customDiscount: number | null; name: string; imageUrl: string | null; salePrice: number }>
 }
 
-type Tab = 'banners' | 'categories' | 'featured' | 'info' | 'announcement' | 'drops' | 'chatbot'
+type Tab = 'banners' | 'categories' | 'featured' | 'info' | 'announcement' | 'drops' | 'chatbot' | 'carrito'
 
 export function StoreCustomization({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>('banners')
@@ -127,12 +137,14 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
   const [categories, setCategories] = useState<CategoryItem[]>([])
   const [featuredProducts, setFeaturedProducts] = useState<FeaturedProduct[]>([])
   const [publishedProducts, setPublishedProducts] = useState<PublishedProduct[]>([])
+  // Señal que se incrementa al subir un logo nuevo → dispara la auto-colorimetría
+  const [logoAutoSignal, setLogoAutoSignal] = useState(0)
   const [storeInfo, setStoreInfo] = useState<StoreExtendedInfo>({
     logoUrl: '', schedule: '', locationMapUrl: '', termsContent: '', privacyContent: '', shippingTerms: '',
     paymentMethods: '', socialInstagram: '', socialFacebook: '',
     socialTiktok: '', socialWhatsapp: '',
     department: '', municipality: '', productCardStyle: 'style1',
-    allowContraentrega: true, showInfoModule: false, infoModuleDescription: '',
+    allowContraentrega: true, showInfoModule: false, infoModuleDescription: '', metaPixelId: '',
   })
 
   // Chatbot config
@@ -151,12 +163,41 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
   const [isSavingChatbot, setIsSavingChatbot] = useState(false)
   const [chatbotMsg, setChatbotMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
 
+  // WhatsApp state
+  const [waStatus, setWaStatus] = useState<{
+    connected: boolean; state: string;
+    whatsappNumber: string | null; evolutionInstance: string | null
+  }>({ connected: false, state: 'not_configured', whatsappNumber: null, evolutionInstance: null })
+  const [waQr, setWaQr] = useState<string | null>(null)
+  const [waLoading, setWaLoading] = useState(false)
+  const [waMsg, setWaMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
+  const [waPhone, setWaPhone] = useState('')
+
+  // Cart settings
+  const [cartMinPurchase, setCartMinPurchase] = useState(0)
+  const [cartDeliveryFee, setCartDeliveryFee] = useState(0)
+  const [isSavingCartSettings, setIsSavingCartSettings] = useState(false)
+  const [cartSettingsMsg, setCartSettingsMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
+
+  // Order bump
+  const [orderBumpConfig, setOrderBumpConfig] = useState({
+    isEnabled: false,
+    mode: 'auto' as 'auto' | 'manual',
+    title: '¿También te puede interesar?',
+    maxItems: 3,
+    productIds: [] as string[],
+  })
+  const [orderBumpPublishedProducts, setOrderBumpPublishedProducts] = useState<PublishedProduct[]>([])
+  const [orderBumpSearch, setOrderBumpSearch] = useState('')
+  const [isSavingOrderBump, setIsSavingOrderBump] = useState(false)
+  const [orderBumpMsg, setOrderBumpMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
+
   // Banner form
   const [bannerForm, setBannerForm] = useState<Banner>({ position: 'hero1', imageUrl: '', videoUrl: '', title: '', subtitle: '', linkUrl: '' })
   const [editingBannerId, setEditingBannerId] = useState<number | null>(null)
 
   // Announcement bar
-  const [announcement, setAnnouncement] = useState<AnnouncementBar>({ text: '', linkUrl: '', bgColor: '#f59e0b', textColor: '#000000', isActive: false })
+  const [announcement, setAnnouncement] = useState<AnnouncementBar>({ text: '', linkUrl: '', bgColor: '#f59e0b', textColor: '#000000', isActive: false, scrollSpeed: 3 })
 
   // Drops
   const [drops, setDrops] = useState<Drop[]>([])
@@ -191,11 +232,19 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             bgColor: result.data.announcementBar.bgColor || '#f59e0b',
             textColor: result.data.announcementBar.textColor || '#000000',
             isActive: !!result.data.announcementBar.isActive,
+            scrollSpeed: result.data.announcementBar.scrollSpeed ?? 3,
           })
         }
         if (result.data.drops) {
           setDrops(result.data.drops)
         }
+        if (result.data.cartMinPurchase !== undefined) {
+          setCartMinPurchase(Number(result.data.cartMinPurchase) || 0)
+        }
+        if (result.data.cartDeliveryFee !== undefined) {
+          setCartDeliveryFee(Number(result.data.cartDeliveryFee) || 0)
+        }
+
         if (result.data.storeInfo) {
           setStoreInfo({
             logoUrl: result.data.storeInfo.logoUrl || '',
@@ -215,6 +264,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             allowContraentrega: result.data.storeInfo.allowContraentrega !== false,
             showInfoModule: !!result.data.storeInfo.showInfoModule,
             infoModuleDescription: result.data.storeInfo.infoModuleDescription || '',
+            metaPixelId: result.data.storeInfo.metaPixelId || '',
           })
         }
       }
@@ -242,6 +292,31 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
         })
       }
     } catch { /* chatbot table may not exist yet */ }
+
+    // Load WhatsApp status
+    try {
+      const waResult = await api.getWhatsAppStatus()
+      if (waResult.success && waResult.data) {
+        setWaStatus(waResult.data)
+        setWaPhone(waResult.data.whatsappNumber || '')
+      }
+    } catch { /* evolution api not configured */ }
+
+    // Load cart settings and order bump
+    try {
+      const bumpResult = await api.getOrderBumpConfig()
+      if (bumpResult.success && bumpResult.data) {
+        const { config, publishedProducts: bumpPubs } = bumpResult.data
+        setOrderBumpConfig({
+          isEnabled: !!config.isEnabled,
+          mode: config.mode || 'auto',
+          title: config.title || '¿También te puede interesar?',
+          maxItems: config.maxItems || 3,
+          productIds: config.productIds || [],
+        })
+        setOrderBumpPublishedProducts(bumpPubs || [])
+      }
+    } catch { /* ignore */ }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
@@ -267,6 +342,56 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     }
     setIsSavingChatbot(false)
     setTimeout(() => setChatbotMsg(null), 4000)
+  }
+
+  // ========== WHATSAPP HANDLERS ==========
+  const handleConnectWhatsApp = async () => {
+    setWaLoading(true)
+    setWaMsg(null)
+    try {
+      const result = await api.connectWhatsApp({ whatsappNumber: waPhone || undefined })
+      if (result.success) {
+        setWaQr(result.data?.qrcode || null)
+        setWaMsg({ type: 'ok', text: 'Escanea el QR con WhatsApp para conectar' })
+        // Poll status after 20 seconds
+        setTimeout(async () => {
+          try {
+            const st = await api.getWhatsAppStatus()
+            if (st.success) setWaStatus(st.data)
+          } catch {}
+        }, 20000)
+      } else {
+        setWaMsg({ type: 'error', text: result.error || 'Error al iniciar conexión' })
+      }
+    } catch {
+      setWaMsg({ type: 'error', text: 'Error de conexión con el servidor' })
+    }
+    setWaLoading(false)
+    setTimeout(() => setWaMsg(null), 6000)
+  }
+
+  const handleDisconnectWhatsApp = async () => {
+    setWaLoading(true)
+    try {
+      const result = await api.disconnectWhatsApp()
+      if (result.success) {
+        setWaStatus({ connected: false, state: 'not_configured', whatsappNumber: null, evolutionInstance: null })
+        setWaQr(null)
+        setWaPhone('')
+        setWaMsg({ type: 'ok', text: 'WhatsApp desconectado correctamente' })
+      }
+    } catch {}
+    setWaLoading(false)
+    setTimeout(() => setWaMsg(null), 3000)
+  }
+
+  const handleRefreshQR = async () => {
+    setWaLoading(true)
+    try {
+      const result = await api.getWhatsAppQR()
+      if (result.success) setWaQr(result.data?.qrcode || null)
+    } catch {}
+    setWaLoading(false)
   }
 
   // ========== BANNER HANDLERS ==========
@@ -330,7 +455,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     const newHidden = !cat.hiddenInStore
     setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, hiddenInStore: newHidden } : c))
     try {
-      await api.toggleCategoryVisibility(cat.id, newHidden)
+      await api.toggleStorefrontCategoryVisibility(cat.id, newHidden)
       showMsg('success', newHidden ? 'Categoría oculta del Hero 2' : 'Categoría visible en el Hero 2')
     } catch {
       setCategories(prev => prev.map(c => c.id === cat.id ? { ...c, hiddenInStore: cat.hiddenInStore } : c))
@@ -457,6 +582,50 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     return { label: 'Activo', color: 'bg-green-500' }
   }
 
+  // ========== CART SETTINGS HANDLERS ==========
+  const handleSaveCartSettings = async () => {
+    setIsSavingCartSettings(true)
+    try {
+      const result = await api.updateCartSettings({ cartMinPurchase, cartDeliveryFee })
+      if (result.success) {
+        setCartSettingsMsg({ type: 'ok', text: 'Configuración de domicilio guardada' })
+      } else {
+        setCartSettingsMsg({ type: 'error', text: result.error || 'Error al guardar' })
+      }
+    } catch {
+      setCartSettingsMsg({ type: 'error', text: 'Error de conexión' })
+    } finally {
+      setIsSavingCartSettings(false)
+      setTimeout(() => setCartSettingsMsg(null), 3000)
+    }
+  }
+
+  const handleSaveOrderBump = async () => {
+    setIsSavingOrderBump(true)
+    try {
+      const result = await api.updateOrderBumpConfig(orderBumpConfig)
+      if (result.success) {
+        setOrderBumpMsg({ type: 'ok', text: 'Order Bump guardado' })
+      } else {
+        setOrderBumpMsg({ type: 'error', text: result.error || 'Error al guardar' })
+      }
+    } catch {
+      setOrderBumpMsg({ type: 'error', text: 'Error de conexión' })
+    } finally {
+      setIsSavingOrderBump(false)
+      setTimeout(() => setOrderBumpMsg(null), 3000)
+    }
+  }
+
+  const toggleOrderBumpProduct = (productId: string) => {
+    setOrderBumpConfig(prev => ({
+      ...prev,
+      productIds: prev.productIds.includes(productId)
+        ? prev.productIds.filter(id => id !== productId)
+        : [...prev.productIds, productId],
+    }))
+  }
+
   // ========== STORE INFO HANDLERS ==========
   const handleSaveStoreInfo = async () => {
     setSaving(true)
@@ -485,6 +654,7 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     { key: 'drops', label: 'Drops', icon: <Zap className="h-4 w-4" /> },
     { key: 'info', label: 'Info Tienda', icon: <Info className="h-4 w-4" /> },
     { key: 'chatbot', label: 'Chatbot IA', icon: <Bot className="h-4 w-4" /> },
+    { key: 'carrito', label: 'Carrito', icon: <ShoppingCart className="h-4 w-4" /> },
   ]
 
   const featuredIds = new Set(featuredProducts.map(f => f.productId))
@@ -498,8 +668,18 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
     )
   }
 
+  // Guardado fijo por pestaña (barra sticky siempre visible)
+  const stickySaveByTab: Partial<Record<Tab, { fn: () => void; busy: boolean; label: string }>> = {
+    banners: { fn: handleSaveBanner, busy: saving, label: editingBannerId ? 'Actualizar banner' : 'Guardar banner' },
+    announcement: { fn: handleSaveAnnouncement, busy: saving, label: 'Guardar barra de anuncio' },
+    info: { fn: handleSaveStoreInfo, busy: saving, label: 'Guardar información' },
+    chatbot: { fn: handleSaveChatbot, busy: isSavingChatbot, label: 'Guardar chatbot' },
+    carrito: { fn: handleSaveCartSettings, busy: isSavingCartSettings, label: 'Guardar carrito' },
+  }
+  const activeSticky = stickySaveByTab[activeTab]
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -956,12 +1136,46 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
                   </div>
                 </div>
               </div>
+              <div>
+                <label className="text-sm font-medium mb-2 block">
+                  Velocidad del desplazamiento
+                  <span className="ml-2 text-muted-foreground font-normal">
+                    {['', 'Muy lento', 'Lento', 'Normal', 'Rápido', 'Muy rápido'][announcement.scrollSpeed]}
+                  </span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground shrink-0">Lento</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={announcement.scrollSpeed}
+                    onChange={e => setAnnouncement(prev => ({ ...prev, scrollSpeed: Number(e.target.value) }))}
+                    className="flex-1 h-2 accent-primary cursor-pointer"
+                  />
+                  <span className="text-xs text-muted-foreground shrink-0">Rápido</span>
+                </div>
+                <div className="flex justify-between mt-1">
+                  {[1,2,3,4,5].map(v => (
+                    <span key={v} className={`text-xs ${announcement.scrollSpeed === v ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>|</span>
+                  ))}
+                </div>
+              </div>
               {announcement.text && (
                 <div>
                   <label className="text-sm font-medium mb-2 block">Vista previa:</label>
                   <div className="rounded-lg overflow-hidden">
-                    <div className="py-2 px-4 text-center text-sm font-medium" style={{ backgroundColor: announcement.bgColor, color: announcement.textColor }}>
-                      {announcement.text}
+                    <style>{`@keyframes preview-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }`}</style>
+                    <div className="py-2 overflow-hidden text-sm font-medium" style={{ backgroundColor: announcement.bgColor, color: announcement.textColor }}>
+                      <div
+                        className="flex whitespace-nowrap"
+                        style={{ animation: `preview-marquee ${[0, 90, 50, 30, 15, 7][announcement.scrollSpeed]}s linear infinite` }}
+                      >
+                        {[...Array(8)].map((_, i) => (
+                          <span key={i} className="inline-block mx-10 shrink-0">{announcement.text}</span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1223,12 +1437,19 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
               <CloudinaryUpload
                 label="Logo de la tienda"
                 value={storeInfo.logoUrl}
-                onChange={url => setStoreInfo(prev => ({ ...prev, logoUrl: url }))}
+                onChange={url => {
+                  setStoreInfo(prev => ({ ...prev, logoUrl: url }))
+                  // Solo dispara la auto-colorimetría con una URL subida (no al limpiar)
+                  if (url && !url.startsWith('/')) setLogoAutoSignal(s => s + 1)
+                }}
                 previewClassName="max-h-20 w-auto object-contain rounded"
                 accept="image/*"
               />
             </CardContent>
           </Card>
+
+          {/* Tema automático desde el logo (IA) */}
+          <LogoThemeGenerator logoUrl={storeInfo.logoUrl} autoApplySignal={logoAutoSignal} />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Schedule & Location */}
@@ -1532,6 +1753,32 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             </CardContent>
           </Card>
 
+          {/* Meta Pixel */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ExternalLink className="h-4 w-4" />
+                Meta Pixel (Facebook Ads)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Ingresa tu ID de píxel de Meta para rastrear eventos como visitas, compras y clics en WhatsApp en tu tienda online.
+              </p>
+              <div>
+                <label className="text-sm font-medium mb-1 block">ID del Pixel de Meta</label>
+                <Input
+                  placeholder="Ej: 1234567890123456"
+                  value={storeInfo.metaPixelId}
+                  onChange={e => setStoreInfo(prev => ({ ...prev, metaPixelId: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Encuéntralo en Administrador de eventos → Fuentes de datos → Pixel en Meta Business Suite.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={handleSaveStoreInfo} disabled={saving} className="w-full sm:w-auto">
               <Save className="h-4 w-4 mr-2" />
@@ -1713,6 +1960,115 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
             </CardContent>
           </Card>
 
+          {/* ── WhatsApp Connection ── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Smartphone className="h-4 w-4 text-green-600" />
+                Agente en WhatsApp
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Status badge */}
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium border ${
+                waStatus.connected
+                  ? 'bg-green-500/10 text-green-700 border-green-500/20'
+                  : waStatus.state === 'connecting'
+                    ? 'bg-amber-500/10 text-amber-700 border-amber-500/20'
+                    : 'bg-muted text-muted-foreground border-border'
+              }`}>
+                {waStatus.connected
+                  ? <Wifi className="h-3.5 w-3.5" />
+                  : waStatus.state === 'connecting'
+                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    : <WifiOff className="h-3.5 w-3.5" />}
+                {waStatus.connected
+                  ? `Conectado${waStatus.whatsappNumber ? ` · ${waStatus.whatsappNumber}` : ''}`
+                  : waStatus.state === 'connecting'
+                    ? 'Conectando…'
+                    : 'Sin conectar'}
+              </div>
+
+              {/* Phone input (only when not connected) */}
+              {!waStatus.connected && (
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Número de WhatsApp del negocio</label>
+                  <Input
+                    placeholder="+57 300 000 0000"
+                    value={waPhone}
+                    onChange={e => setWaPhone(e.target.value)}
+                    className="max-w-xs"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">El número que vas a vincular (opcional, solo para referencia)</p>
+                </div>
+              )}
+
+              {/* QR code */}
+              {waQr && !waStatus.connected && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <QrCode className="h-4 w-4" />
+                    Escanea este QR con WhatsApp
+                  </p>
+                  <div className="border rounded-lg p-3 w-fit bg-white">
+                    <img src={waQr} alt="QR WhatsApp" className="w-52 h-52 object-contain" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    WhatsApp → Dispositivos vinculados → Vincular dispositivo → Escanear QR
+                  </p>
+                  <Button variant="outline" size="sm" onClick={handleRefreshQR} disabled={waLoading} className="gap-2">
+                    <RefreshCw className={`h-3.5 w-3.5 ${waLoading ? 'animate-spin' : ''}`} />
+                    Actualizar QR
+                  </Button>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 flex-wrap">
+                {!waStatus.connected ? (
+                  <Button
+                    onClick={handleConnectWhatsApp}
+                    disabled={waLoading}
+                    variant="outline"
+                    className="gap-2 border-green-500/40 hover:bg-green-500/10 text-green-700"
+                  >
+                    {waLoading
+                      ? <RefreshCw className="h-4 w-4 animate-spin" />
+                      : <Smartphone className="h-4 w-4" />}
+                    Conectar WhatsApp
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleDisconnectWhatsApp}
+                    disabled={waLoading}
+                    variant="outline"
+                    className="gap-2 border-red-500/30 hover:bg-red-500/10 text-red-600"
+                  >
+                    {waLoading
+                      ? <RefreshCw className="h-4 w-4 animate-spin" />
+                      : <WifiOff className="h-4 w-4" />}
+                    Desconectar
+                  </Button>
+                )}
+              </div>
+
+              {waMsg && (
+                <p className={`text-sm font-medium flex items-center gap-1.5 ${waMsg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+                  {waMsg.type === 'ok' ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                  {waMsg.text}
+                </p>
+              )}
+
+              <div className="bg-muted/40 rounded-md p-3 text-xs text-muted-foreground space-y-1.5">
+                <p className="font-medium text-foreground/70">¿Cómo funciona?</p>
+                <p>1. Clic en <strong>Conectar WhatsApp</strong> — aparece un QR</p>
+                <p>2. En tu celular: WhatsApp → Dispositivos vinculados → Vincular → Escanear</p>
+                <p>3. El agente IA empieza a responder mensajes automáticamente</p>
+                <p className="pt-1 text-amber-600/80">Requiere <strong>Evolution API</strong> instalado en el servidor. Consulta la guía de configuración.</p>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex items-center gap-3 flex-wrap">
             <Button onClick={handleSaveChatbot} disabled={isSavingChatbot} className="w-full sm:w-auto gap-2">
               {isSavingChatbot ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -1725,6 +2081,282 @@ export function StoreCustomization({ onBack }: { onBack: () => void }) {
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════
+          TAB: CARRITO
+      ══════════════════════════════════════════════════════════ */}
+      {activeTab === 'carrito' && (
+        <div className="space-y-6">
+
+          {/* ── Sección 1: Mínimo de compra ── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5 text-primary" />
+                Mínimo de Compra para Domicilio con Flota
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Cuando el carrito del cliente supere este monto, la barra de progreso se llenará y aparecerá{' '}
+                <strong>"¡Domicilio con flota incluido!"</strong> con el botón en verde. Pon <strong>0</strong> para desactivar la barra completamente.
+              </p>
+
+              <div className="flex items-end gap-4">
+                <div className="flex-1 space-y-2">
+                  <label className="text-sm font-medium">Monto mínimo (COP)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1000}
+                    value={cartMinPurchase}
+                    onChange={e => setCartMinPurchase(Math.max(0, parseInt(e.target.value) || 0))}
+                    placeholder="Ej: 80000"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="pb-1">
+                  <span className="text-sm font-semibold text-primary">
+                    {cartMinPurchase > 0 ? formatCurrency(cartMinPurchase) : 'Desactivado'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium">Tarifa de domicilio (COP)</label>
+                <p className="text-xs text-muted-foreground">Se cobra cuando el pedido no alcanza el mínimo. Pon <strong>0</strong> para no cobrar tarifa.</p>
+                <input
+                  type="number"
+                  min={0}
+                  step={500}
+                  value={cartDeliveryFee}
+                  onChange={e => setCartDeliveryFee(Math.max(0, parseInt(e.target.value) || 0))}
+                  placeholder="Ej: 5000"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+
+              {cartMinPurchase > 0 && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <p className="text-xs text-emerald-700">
+                    Al alcanzar <strong>{formatCurrency(cartMinPurchase)}</strong> se desbloqueará el domicilio gratis.
+                    {cartDeliveryFee > 0 && <> Por debajo del mínimo se aplicará una tarifa de <strong>{formatCurrency(cartDeliveryFee)}</strong>.</>}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <Button onClick={handleSaveCartSettings} disabled={isSavingCartSettings} className="gap-2">
+                  {isSavingCartSettings ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Guardar Configuración
+                </Button>
+                {cartSettingsMsg && (
+                  <span className={`text-sm font-medium flex items-center gap-1 ${cartSettingsMsg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+                    {cartSettingsMsg.type === 'ok' ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                    {cartSettingsMsg.text}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ── Sección 2: Order Bump ── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-primary" />
+                Order Bump — Productos Sugeridos en Checkout
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <p className="text-sm text-muted-foreground">
+                Muestra productos adicionales al cliente justo antes de confirmar su pedido para aumentar el ticket promedio.
+              </p>
+
+              {/* Toggle activo */}
+              <div className={`flex items-center justify-between p-3 border rounded-lg ${orderBumpConfig.isEnabled ? 'bg-primary/5 border-primary/20' : 'bg-muted/30'}`}>
+                <div>
+                  <p className="text-sm font-medium">Activar Order Bump</p>
+                  <p className="text-xs text-muted-foreground">Muestra sugerencias al cliente en el checkout</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOrderBumpConfig(p => ({ ...p, isEnabled: !p.isEnabled }))}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${orderBumpConfig.isEnabled ? 'bg-primary' : 'bg-gray-300'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${orderBumpConfig.isEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {orderBumpConfig.isEnabled && (
+                <div className="space-y-4">
+                  {/* Título de la sección */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Título de la sección</label>
+                    <input
+                      type="text"
+                      value={orderBumpConfig.title}
+                      onChange={e => setOrderBumpConfig(p => ({ ...p, title: e.target.value }))}
+                      placeholder="¿También te puede interesar?"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                  </div>
+
+                  {/* Modo */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Modo de selección</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['auto', 'manual'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setOrderBumpConfig(p => ({ ...p, mode }))}
+                          className={`p-3 rounded-lg border text-sm font-medium text-center transition-colors ${orderBumpConfig.mode === mode ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-muted-foreground/50'}`}
+                        >
+                          {mode === 'auto' ? '🤖 Automático' : '✋ Manual'}
+                          <p className="text-xs font-normal text-muted-foreground mt-1">
+                            {mode === 'auto' ? 'Productos de otras categorías del carrito' : 'Tú eliges qué mostrar'}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Máximo de ítems */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Máximo de productos a mostrar ({orderBumpConfig.maxItems})</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={6}
+                      value={orderBumpConfig.maxItems}
+                      onChange={e => setOrderBumpConfig(p => ({ ...p, maxItems: parseInt(e.target.value) }))}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span>
+                    </div>
+                  </div>
+
+                  {/* Selector de productos (solo en modo manual) */}
+                  {orderBumpConfig.mode === 'manual' && (
+                    <div className="space-y-3">
+                      <label className="text-sm font-medium">
+                        Productos seleccionados ({orderBumpConfig.productIds.length}/{orderBumpConfig.maxItems})
+                      </label>
+
+                      {/* Buscador */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <input
+                          type="text"
+                          value={orderBumpSearch}
+                          onChange={e => setOrderBumpSearch(e.target.value)}
+                          placeholder="Buscar producto..."
+                          className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                      </div>
+
+                      {/* Lista de productos */}
+                      <div className="border rounded-lg divide-y max-h-72 overflow-y-auto">
+                        {orderBumpPublishedProducts
+                          .filter(p =>
+                            !orderBumpSearch ||
+                            p.name.toLowerCase().includes(orderBumpSearch.toLowerCase()) ||
+                            p.category.toLowerCase().includes(orderBumpSearch.toLowerCase())
+                          )
+                          .map(product => {
+                            const selected = orderBumpConfig.productIds.includes(product.id)
+                            const limitReached = !selected && orderBumpConfig.productIds.length >= orderBumpConfig.maxItems
+                            return (
+                              <div
+                                key={product.id}
+                                className={`flex items-center gap-3 p-3 transition-colors ${selected ? 'bg-primary/5' : limitReached ? 'opacity-40' : 'hover:bg-muted/50'}`}
+                              >
+                                <div className="w-10 h-10 rounded border overflow-hidden flex-shrink-0 bg-muted">
+                                  {product.imageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <Package className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate">{product.name}</p>
+                                  <p className="text-xs text-muted-foreground">{product.category} · {formatCurrency(product.salePrice)}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={limitReached}
+                                  onClick={() => toggleOrderBumpProduct(product.id)}
+                                  className={`h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${selected ? 'bg-primary text-primary-foreground' : 'border border-input hover:bg-muted'}`}
+                                >
+                                  {selected ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                                </button>
+                              </div>
+                            )
+                          })}
+                        {orderBumpPublishedProducts.length === 0 && (
+                          <div className="p-6 text-center text-sm text-muted-foreground">
+                            No hay productos publicados en la tienda
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Chips de seleccionados */}
+                      {orderBumpConfig.productIds.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {orderBumpConfig.productIds.map(id => {
+                            const p = orderBumpPublishedProducts.find(x => x.id === id)
+                            if (!p) return null
+                            return (
+                              <span key={id} className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-medium px-2.5 py-1 rounded-full">
+                                {p.name}
+                                <button type="button" onClick={() => toggleOrderBumpProduct(id)} className="hover:text-destructive transition-colors">
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 flex-wrap pt-2 border-t">
+                <Button onClick={handleSaveOrderBump} disabled={isSavingOrderBump} className="gap-2">
+                  {isSavingOrderBump ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Guardar Order Bump
+                </Button>
+                {orderBumpMsg && (
+                  <span className={`text-sm font-medium flex items-center gap-1 ${orderBumpMsg.type === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+                    {orderBumpMsg.type === 'ok' ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                    {orderBumpMsg.text}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+        </div>
+      )}
+
+      {/* ===== Barra de guardado fija (siempre visible) ===== */}
+      {activeSticky && (
+        <div className="sticky bottom-3 z-30 mt-6 flex items-center justify-end gap-3 rounded-xl border border-border bg-background/95 backdrop-blur px-4 py-3 shadow-lg">
+          <span className="text-xs text-muted-foreground mr-auto hidden sm:block">
+            Sección: {tabs.find(t => t.key === activeTab)?.label}
+          </span>
+          <Button onClick={activeSticky.fn} disabled={activeSticky.busy} className="gap-2">
+            <Save className="h-4 w-4" />
+            {activeSticky.busy ? 'Guardando...' : activeSticky.label}
+          </Button>
         </div>
       )}
     </div>

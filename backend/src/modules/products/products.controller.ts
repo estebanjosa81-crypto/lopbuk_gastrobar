@@ -137,6 +137,21 @@ export class ProductsController {
     }
   }
 
+  async bulkDelete(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const { ids } = req.body;
+      const result = await productsService.bulkDelete(ids, tenantId);
+      res.json({
+        success: true,
+        data: result,
+        message: `${result.deleted} producto(s) eliminado(s)${result.skipped ? ` · ${result.skipped} omitido(s) (tienen ventas asociadas)` : ''}`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async bulkCreate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const tenantId = req.user!.tenantId!;
@@ -214,6 +229,37 @@ export class ProductsController {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="inventario_${date}.csv"`);
       res.send('\uFEFF' + csv); // BOM para que Excel abra con tildes correctas
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updatePreorder(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const {
+        isPreorder,
+        preorderWindowEnd = null,
+        preorderShipStart = null,
+        preorderShipEnd = null,
+        preorderBadgeText = 'Pre-orden',
+        preorderPolicyText = null,
+      } = req.body;
+
+      const product = await productsService.updatePreorder(req.params.id, tenantId, {
+        isPreorder,
+        preorderWindowEnd,
+        preorderShipStart,
+        preorderShipEnd,
+        preorderBadgeText,
+        preorderPolicyText,
+      });
+
+      res.json({
+        success: true,
+        data: product,
+        message: isPreorder ? 'Pre-orden activada' : 'Pre-orden desactivada',
+      });
     } catch (error) {
       next(error);
     }

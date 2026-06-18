@@ -40,6 +40,26 @@ import {
   Legend
 } from 'recharts'
 
+function AssistantConnectedBanner() {
+  const [on, setOn] = useState(false)
+  useEffect(() => { api.getPlatformAssistant().then(r => { if (r.success && r.data?.enabled) setOn(true) }) }, [])
+  if (!on) return null
+  return (
+    <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center text-xl">✨</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+          <p className="font-semibold text-sm">Asistente conectado a tu negocio</p>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          El asistente de la plataforma recomienda tus productos a los usuarios según sus objetivos y situación. Mantén tu catálogo publicado y con stock para aparecer.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function Dashboard() {
   const { products, sales, fetchProducts, fetchSales, categories, fetchCategories, navigateToInvoices } = useStore()
   const [accountsReceivable, setAccountsReceivable] = useState(0)
@@ -198,9 +218,32 @@ export function Dashboard() {
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
     const today = new Date()
 
+    const localTrend = () => {
+      const map = new Map<string, { total: number; count: number; fiadoTotal: number; fiadoCount: number }>()
+      for (const sale of completedSales) {
+        const dateKey = sale.createdAt?.split('T')[0]
+        if (!dateKey) continue
+        const bucket = map.get(dateKey) || { total: 0, count: 0, fiadoTotal: 0, fiadoCount: 0 }
+        if (sale.paymentMethod === 'fiado') {
+          bucket.fiadoTotal += sale.total
+          bucket.fiadoCount += 1
+        } else {
+          bucket.total += sale.total
+          bucket.count += 1
+        }
+        map.set(dateKey, bucket)
+      }
+      return Array.from(map.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, data]) => ({ date, ...data }))
+    }
+
+    // Fall back to local sales when the backend trend is empty.
+    const trendRows = backendTrend.length > 0 ? backendTrend : localTrend()
+
     // Build a lookup map from backend trend data
     const trendMap = new Map<string, { total: number; count: number; fiadoTotal: number; fiadoCount: number }>()
-    for (const row of backendTrend) {
+    for (const row of trendRows) {
       const dateKey = typeof row.date === 'string' ? row.date.split('T')[0] : String(row.date)
       trendMap.set(dateKey, { total: row.total, count: row.count, fiadoTotal: row.fiadoTotal || 0, fiadoCount: row.fiadoCount || 0 })
     }
@@ -208,10 +251,10 @@ export function Dashboard() {
     // Determine number of days to show
     let numDays: number
     if (trendRange === 0) {
-      if (backendTrend.length === 0) {
+      if (trendRows.length === 0) {
         numDays = 30
       } else {
-        const oldest = backendTrend[0].date
+        const oldest = trendRows[0].date
         const oldestDateStr = typeof oldest === 'string' ? oldest.split('T')[0] : String(oldest)
         const oldestDate = new Date(oldestDateStr + 'T00:00:00')
         numDays = Math.max(Math.ceil((today.getTime() - oldestDate.getTime()) / (1000 * 60 * 60 * 24)) + 1, 1)
@@ -238,7 +281,7 @@ export function Dashboard() {
       })
     }
     return result
-  }, [backendTrend, trendRange])
+  }, [backendTrend, completedSales, trendRange])
 
   const todaySales = (salesTrendData[salesTrendData.length - 1]?.ventas || 0) + (salesTrendData[salesTrendData.length - 1]?.fiados || 0)
   const yesterdaySales = (salesTrendData[salesTrendData.length - 2]?.ventas || 0) + (salesTrendData[salesTrendData.length - 2]?.fiados || 0)
@@ -268,6 +311,7 @@ export function Dashboard() {
   
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
+      <AssistantConnectedBanner />
       {/* ========== HERO: Sales Trend Line (Shopify-style) ========== */}
       <Card className="border-border bg-card overflow-hidden">
         <div className="p-4 sm:p-6 pb-0">

@@ -13,6 +13,7 @@ interface AppState {
   addProduct: (product: Record<string, any>) => Promise<{ success: boolean; error?: string }>
   updateProduct: (id: string, product: Partial<Product>) => Promise<{ success: boolean; error?: string }>
   deleteProduct: (id: string) => Promise<{ success: boolean; error?: string }>
+  bulkDeleteProducts: (ids: string[]) => Promise<{ success: boolean; data?: { deleted: number; skipped: number }; error?: string }>
   bulkImportProducts: (products: Record<string, any>[]) => Promise<{
     success: boolean
     data?: { totalCreated: number; totalFailed: number; errors: Array<{ row: number; sku: string; error: string }> }
@@ -42,6 +43,9 @@ interface AppState {
     customerPhone?: string
     creditDays?: number
     applyTax?: boolean
+    sedeId?: string
+    vehicleId?: string
+    totalWeightKg?: number
   }) => Promise<{ success: boolean; error?: string; data?: Sale }>
   cancelSale: (id: string, reason: string) => Promise<{ success: boolean; error?: string }>
 
@@ -60,6 +64,9 @@ interface AppState {
   sidebarOpen: boolean
   setSidebarOpen: (open: boolean) => void
   toggleSidebar: () => void
+  sidebarCollapsed: boolean
+  setSidebarCollapsed: (collapsed: boolean) => void
+  toggleSidebarCollapsed: () => void
 
   // Customer Selection for POS
   selectedCustomer: CustomerFull | null
@@ -68,8 +75,10 @@ interface AppState {
   // Categories
   categories: CategoryItem[]
   isLoadingCategories: boolean
-  fetchCategories: () => Promise<void>
-  addCategory: (data: { id: string; name: string; description?: string }) => Promise<{ success: boolean; error?: string }>
+  fetchCategories: (includeHidden?: boolean) => Promise<void>
+  addCategory: (data: { id: string; name: string; description?: string; color?: string }) => Promise<{ success: boolean; error?: string }>
+  updateCategory: (id: string, data: { name?: string; description?: string; color?: string; sortOrder?: number }) => Promise<{ success: boolean; error?: string }>
+  toggleCategoryVisibility: (id: string) => Promise<{ success: boolean; error?: string }>
   deleteCategory: (id: string) => Promise<{ success: boolean; error?: string }>
 
   // Camera preference
@@ -123,6 +132,7 @@ export const useStore = create<AppState>()(
       },
       activeSection: 'dashboard',
       sidebarOpen: false,
+      sidebarCollapsed: false,
       selectedCustomer: null,
       categories: [],
       isLoadingCategories: false,
@@ -209,6 +219,17 @@ export const useStore = create<AppState>()(
         return { success: false, error: result.error || 'Error al eliminar producto' }
       },
 
+      bulkDeleteProducts: async (ids) => {
+        const result = await api.bulkDeleteProducts(ids)
+        if (result.success) {
+          set(state => ({
+            products: state.products.filter(p => !ids.includes(p.id))
+          }))
+          return { success: true, data: result.data }
+        }
+        return { success: false, error: result.error || 'Error al eliminar productos' }
+      },
+
       // Cart Actions (se mantienen locales)
       addToCart: (product, quantity = 1) => set((state) => {
         const existingItem = state.cart.find(item => item.product.id === product.id)
@@ -258,7 +279,13 @@ export const useStore = create<AppState>()(
         set({ isLoadingSales: true })
         const result = await api.getSales({ limit: 100 })
         if (result.success && result.data) {
-          const sales = Array.isArray(result.data) ? result.data : []
+          const sales = Array.isArray(result.data)
+            ? result.data
+            : Array.isArray((result as any).sales)
+              ? (result as any).sales
+              : Array.isArray((result as any).data?.sales)
+                ? (result as any).data.sales
+                : []
           set({ sales, isLoadingSales: false })
         } else {
           set({ isLoadingSales: false })
@@ -344,14 +371,16 @@ export const useStore = create<AppState>()(
       setActiveSection: (section) => set({ activeSection: section, sidebarOpen: false }),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      toggleSidebarCollapsed: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
       // Customer Selection
       setSelectedCustomer: (customer) => set({ selectedCustomer: customer }),
 
       // Categories Actions
-      fetchCategories: async () => {
+      fetchCategories: async (includeHidden = false) => {
         set({ isLoadingCategories: true })
-        const result = await api.getCategories()
+        const result = await api.getCategories(includeHidden)
         if (result.success && result.data) {
           const categories = Array.isArray(result.data) ? result.data : []
           set({ categories, isLoadingCategories: false })
@@ -369,6 +398,30 @@ export const useStore = create<AppState>()(
           return { success: true }
         }
         return { success: false, error: result.error || 'Error al crear categoría' }
+      },
+
+      updateCategory: async (id, data) => {
+        const result = await api.updateCategory(id, data)
+        if (result.success && result.data) {
+          set(state => ({
+            categories: state.categories.map(c => c.id === id ? { ...c, ...result.data } : c)
+          }))
+          return { success: true }
+        }
+        return { success: false, error: result.error || 'Error al actualizar categoría' }
+      },
+
+      toggleCategoryVisibility: async (id) => {
+        const result = await api.toggleCategoryVisibility(id)
+        if (result.success && result.data) {
+          set(state => ({
+            categories: state.categories.map(c =>
+              c.id === id ? { ...c, isActive: result.data.isActive } : c
+            )
+          }))
+          return { success: true }
+        }
+        return { success: false, error: result.error || 'Error al cambiar visibilidad' }
       },
 
       deleteCategory: async (id) => {
@@ -426,6 +479,7 @@ export const useStore = create<AppState>()(
         storeInfo: state.storeInfo,
         activeSection: state.activeSection,
         preferredCameraDeviceId: state.preferredCameraDeviceId,
+        sidebarCollapsed: state.sidebarCollapsed,
       })
     }
   )

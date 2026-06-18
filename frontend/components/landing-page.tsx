@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
 import { Button } from '@/components/ui/button'
+import { VariantSelector, type RawVariant, type SelectedVariant } from '@/components/variant-selector'
+import { HomeHeroCarousel, HomeCategoryRail, MarketplaceHomeGovCo, type HeroSlide, type PromoCardConfig } from '@/components/home-theme2'
+import { WhatsAppFloatingWidget } from '@/components/whatsapp-floating-widget'
+import { BoxLoader } from '@/components/box-loader'
 import {
   ArrowRight,
   ChevronDown,
@@ -50,15 +54,30 @@ import {
   Phone,
   CreditCard,
   Info,
+  UtensilsCrossed,
+  Link,
+  Pencil,
+  Trash2,
+  MessageCircle,
+  PlayCircle,
+  Globe,
+  Send,
+  Music,
+  Linkedin,
 } from 'lucide-react'
+import { getCloudinaryConfig } from '@/components/ui/cloudinary-upload'
 import { CheckoutView } from '@/components/checkout/CheckoutView'
+import { MiniMap } from '@/components/MiniMap'
 import { ServiceBookingModal } from '@/components/service-booking-modal'
 import { ChatWidget } from '@/components/ChatWidget'
+import { ContactModal } from '@/components/contact-modal'
+import ConsumerRoutine from '@/components/consumer-routine'
 import { ensureAbsoluteUrl } from '@/utils/url'
 import { departamentosMunicipios } from '@/constants'
 import { useAuthStore } from '@/lib/auth-store'
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google'
 import { api } from '@/lib/api'
+import { parsePlatformPalette } from '@/lib/platform-theme'
 import type { ProductoCarrito, PedidoForm, PedidoConfirmado, CuponValidacion } from '@/types'
 
 interface LandingPageProps {
@@ -95,16 +114,98 @@ interface StorefrontProduct {
   weightUnit?: string
   warrantyMonths?: number
   dimensions?: string
+  weight?: number | null
+  hardwareWeightUnit?: string | null
   tenantId?: string
   storeName?: string
   storeSlug?: string
   availableForDelivery?: boolean | number
   deliveryType?: 'domicilio' | 'envio' | 'ambos' | null
   sedeId?: string | null
+  // Pre-orden
+  isPreorder?: boolean | number | null
+  preorderWindowEnd?: string | null
+  preorderShipStart?: string | null
+  preorderShipEnd?: string | null
+  preorderBadgeText?: string | null
+  // Variantes (talla/color/peso/material) adjuntadas por el backend
+  variants?: RawVariant[]
+  hasVariants?: boolean
+}
+
+function CustomSectionFrame({ name, html }: { name: string; html: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    setSrc(url)
+    return () => URL.revokeObjectURL(url)
+  }, [html])
+  if (!src) return null
+  return (
+    <iframe
+      src={src}
+      title={name}
+      scrolling="no"
+      style={{ width: '100%', border: 'none', display: 'block', minHeight: '100px' }}
+      onLoad={(e) => {
+        try {
+          const iframe = e.currentTarget as HTMLIFrameElement
+          const body = iframe.contentDocument?.body
+          if (body) iframe.style.height = body.scrollHeight + 'px'
+        } catch { /* cross-origin blob, ignore */ }
+      }}
+    />
+  )
+}
+
+// ── Detecta el ícono y color apropiado para un link externo ───────────────────
+function getLinkIcon(url: string, label: string): {
+  Icon: React.ElementType; color: string; bg: string
+} {
+  const u = (url || '').toLowerCase()
+  const l = (label || '').toLowerCase()
+
+  if (u.includes('wa.me') || u.includes('whatsapp') || l.includes('whatsapp'))
+    return { Icon: Phone,          color: 'text-green-400',  bg: 'bg-green-500/15' }
+  if (u.includes('instagram') || l.includes('instagram'))
+    return { Icon: Instagram,      color: 'text-pink-400',   bg: 'bg-pink-500/15' }
+  if (u.includes('facebook') || l.includes('facebook'))
+    return { Icon: Facebook,       color: 'text-blue-400',   bg: 'bg-blue-500/15' }
+  if (u.includes('tiktok') || l.includes('tiktok'))
+    return { Icon: Music,          color: 'text-white',      bg: 'bg-white/10' }
+  if (u.includes('youtube') || u.includes('youtu.be') || l.includes('youtube'))
+    return { Icon: PlayCircle,     color: 'text-red-400',    bg: 'bg-red-500/15' }
+  if (u.includes('t.me') || u.includes('telegram') || l.includes('telegram'))
+    return { Icon: Send,           color: 'text-sky-400',    bg: 'bg-sky-500/15' }
+  if (u.includes('twitter') || u.includes('x.com') || l.includes('twitter'))
+    return { Icon: MessageCircle,  color: 'text-white/70',   bg: 'bg-white/10' }
+  if (u.includes('linkedin') || l.includes('linkedin'))
+    return { Icon: Linkedin,       color: 'text-blue-300',   bg: 'bg-blue-500/15' }
+  if (u.startsWith('mailto:') || l.includes('email') || l.includes('correo'))
+    return { Icon: Mail,           color: 'text-blue-400',   bg: 'bg-blue-500/15' }
+  if (u.startsWith('tel:') || l.includes('teléfono') || l.includes('telefono') || l.includes('llamar') || l.includes('cel'))
+    return { Icon: Phone,          color: 'text-green-400',  bg: 'bg-green-500/15' }
+  return   { Icon: Globe,          color: 'text-white/60',   bg: 'bg-white/10' }
+}
+
+/** Extrae el slug de la tienda desde la URL: ruta limpia /t/<slug> o ?store=<slug>. */
+function getStoreSlugFromUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  const m = window.location.pathname.match(/^\/t\/([^/?#]+)/)
+  if (m) return decodeURIComponent(m[1])
+  return new URLSearchParams(window.location.search).get('store')
 }
 
 export function LandingPage({ onGoToLogin }: LandingPageProps) {
-  const [showCatalog, setShowCatalog] = useState(false)
+  const [showCatalog, setShowCatalog] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('preview') === 'home') return false
+      return Boolean(params.get('store') || params.get('product'))
+    }
+    return false
+  })
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => { setIsMobile(window.innerWidth < 640) }, [])
   // Theme
@@ -134,10 +235,23 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [loadingProducts, setLoadingProducts] = useState(false)
-  const [stores, setStores] = useState<{ id: string; name: string; slug: string; businessType: string | null; logoUrl: string | null; address: string | null; productCount: number }[]>([])
-  const [selectedStore, setSelectedStore] = useState<string>('all')
-  const [showStoresView, setShowStoresView] = useState(true)
+  const [stores, setStores] = useState<{ id: string; name: string; slug: string; businessType: string | null; logoUrl: string | null; address: string | null; productCount: number; coverUrl?: string | null; cardDescription?: string | null; city?: string | null; isVerified?: number | boolean; openState?: 'open' | 'closed'; nextOpenLabel?: string | null; sedeCount?: number; theme?: string }[]>([])
+  const [selectedStore, setSelectedStore] = useState<string>(() => {
+    return getStoreSlugFromUrl() || 'all'
+  })
+  const [showStoresView, setShowStoresView] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (getStoreSlugFromUrl() && params.get('preview') === 'home') return false
+      return !(getStoreSlugFromUrl() || params.get('product'))
+    }
+    return true
+  })
+  const [businessTypeFilter, setBusinessTypeFilter] = useState<string>('all')
+  const [allProducts, setAllProducts] = useState<StorefrontProduct[]>([])
+  const [loadingAllProducts, setLoadingAllProducts] = useState(false)
   const [storesWithServices, setStoresWithServices] = useState<Set<string>>(new Set())
+  const [loadingStores, setLoadingStores] = useState(true)
 
   // ====== SEDES STATE ======
   const [storeSedes, setStoreSedes] = useState<{ id: string; name: string; address?: string }[]>([])
@@ -150,11 +264,28 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
   // ====== PLATFORM BG COLOR ======
   const [platformBgColor, setPlatformBgColor] = useState('#000000')
+  // Paleta de marca de la plataforma (generada por superadmin desde el logo).
+  // Tiñe la home/marketplace cuando no se está viendo una tienda concreta.
+  const [platformThemeColors, setPlatformThemeColors] = useState<any | null>(null)
 
   // ====== PLATFORM HERO SETTINGS ======
   const [platformHeroUrl, setPlatformHeroUrl] = useState('')
   const [platformHeroTitle, setPlatformHeroTitle] = useState('')
   const [platformHeroSubtitle, setPlatformHeroSubtitle] = useState('')
+
+  // ====== HOME THEME (Tema 1 clásico / Tema 2 marketplace) ======
+  const [homeTheme, setHomeTheme] = useState<'theme1' | 'theme2'>('theme1')
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
+  const [homeHeroSlides, setHomeHeroSlides] = useState<HeroSlide[]>([])
+  const [homeHeroSplit, setHomeHeroSplit] = useState('60-40')
+  const [homeHeroRight, setHomeHeroRight] = useState('producto')
+  const [homePromoCards, setHomePromoCards] = useState<PromoCardConfig[]>([])
+  const [homeWelcomeEnabled, setHomeWelcomeEnabled] = useState(true)
+  const [homeWelcomeTitle, setHomeWelcomeTitle] = useState('')
+  const [homeWelcomeSubtitle, setHomeWelcomeSubtitle] = useState('')
+  const [platformLogo, setPlatformLogo] = useState('/daimuz-icon.png')
+  // Tema 2 solo aplica a la home del marketplace (todas las tiendas), no dentro de una tienda
+  const isHomeTheme2 = homeTheme === 'theme2' && showStoresView && selectedStore === 'all'
 
   // ====== STORE CONFIG STATE (Hero Sections) ======
   const [storeConfig, setStoreConfig] = useState<{
@@ -169,9 +300,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       termsContent: string | null; privacyContent: string | null; shippingTerms: string | null
       paymentMethods: string | null; socialInstagram: string | null; socialFacebook: string | null
       socialTiktok: string | null; socialWhatsapp: string | null; productCardStyle?: string | null
+      metaPixelId?: string | null
       showInfoModule?: boolean | null; infoModuleDescription?: string | null
+      contactPageEnabled?: boolean | number | null
+      contactPageTitle?: string | null; contactPageDescription?: string | null
+      contactPageImage?: string | null; contactPageLinks?: string | null
+      ageGateEnabled?: boolean | number | null; ageGateDescription?: string | null
     } | null
-    announcementBar: { text: string; linkUrl: string | null; bgColor: string; textColor: string; isActive: boolean } | null
+    announcementBar: { text: string; linkUrl: string | null; bgColor: string; textColor: string; isActive: boolean; scrollSpeed?: number } | null
     activeDrop: {
       id: number; name: string; description: string | null; bannerUrl: string | null
       globalDiscount: number; startsAt: string; endsAt: string
@@ -179,22 +315,39 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     } | null
     bgColor?: string
     platformBgColor?: string
+    publicMenuEnabled?: boolean
+    customSections?: Array<{ id: number; name: string; slug: string; htmlContent?: string }>
+    cartMinPurchase?: number
+    cartDeliveryFee?: number
+    themeColors?: { theme_type?: 'light' | 'dark'; colors?: Record<string, string> } | null
   } | null>(null)
 
   // ====== PRODUCT DETAIL MODAL STATE ======
   const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null)
   const [showProductModal, setShowProductModal] = useState(false)
   const [productQuantity, setProductQuantity] = useState(1)
+  // Variante elegida en el modal (talla/color/peso). null = sin elegir o sin variantes.
+  const [selectedVariant, setSelectedVariant] = useState<SelectedVariant | null>(null)
+  // Modificadores del producto en el modal (compartidos con el Tema 2)
+  const [t1Mods, setT1Mods] = useState<any[]>([])
+  const [t1ModsLoading, setT1ModsLoading] = useState(false)
+  const [t1Sel, setT1Sel] = useState<Record<string, Set<string>>>({})
   const [activeImageIdx, setActiveImageIdx] = useState(0)
+  const [viewersCount, setViewersCount] = useState(0)
+  const viewersIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [ctaVisible, setCtaVisible] = useState(false)
+  const ctaRef = useRef<HTMLDivElement>(null)
 
   // ====== PRODUCT REVIEWS STATE ======
   const [productReviews, setProductReviews] = useState<any[]>([])
   const [reviewsLoading, setReviewsLoading] = useState(false)
   const [showReviewForm, setShowReviewForm] = useState(false)
-  const [reviewForm, setReviewForm] = useState({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '' })
+  const [reviewForm, setReviewForm] = useState({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '', imageUrl1: '' })
+  const [reviewImageUploading, setReviewImageUploading] = useState(false)
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [reviewSuccess, setReviewSuccess] = useState(false)
   const [reviewError, setReviewError] = useState('')
+  const [helpfulVotes, setHelpfulVotes] = useState<Set<string>>(new Set())
 
   // ====== DECANT STATE ======
   const [showDecantModal, setShowDecantModal] = useState(false)
@@ -228,6 +381,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   // ====== CART STATE ======
   const [carrito, setCarrito] = useState<ProductoCarrito[]>([])
   const [showCart, setShowCart] = useState(false)
+  const [showRutina, setShowRutina] = useState(false)
   const [showCheckout, setShowCheckout] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showDrop, setShowDrop] = useState(false)
@@ -253,8 +407,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [platformFeatured, setPlatformFeatured] = useState<StorefrontProduct[]>([])
   const [globalSearchQuery, setGlobalSearchQuery] = useState('')
   const [globalSearchResults, setGlobalSearchResults] = useState<StorefrontProduct[]>([])
+  const [globalSearchStores, setGlobalSearchStores] = useState<typeof stores>([])
   const [loadingGlobalSearch, setLoadingGlobalSearch] = useState(false)
+  const [searchInitialProducts, setSearchInitialProducts] = useState<StorefrontProduct[]>([])
   const globalSearchInputRef = useRef<HTMLInputElement>(null)
+  const globalSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const globalSearchAbortRef = useRef<AbortController | null>(null)
   const [showDesktopSearch, setShowDesktopSearch] = useState(false)
   const desktopSearchInputRef = useRef<HTMLInputElement>(null)
   const carouselCategoriesRef = useRef<HTMLDivElement>(null)
@@ -280,18 +438,73 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
   const [legalModal, setLegalModal] = useState<{ title: string; content: string } | null>(null)
 
+  // Age gate state
+  const [showAgeGate, setShowAgeGate] = useState(false)
+
   useEffect(() => {
     // Read localStorage only after mount to avoid SSR hydration mismatch
     const saved = localStorage.getItem('clientMunicipality') || null
     setClientMunicipality(saved)
     const skipped = sessionStorage.getItem('locationSkipped') === '1'
     setLocationSkipped(skipped)
-    // Show location modal only once per session if location not set
-    if (!saved && !skipped) {
-      const timer = setTimeout(() => setShowLocationModal(true), 800)
-      return () => clearTimeout(timer)
+    // Location modal is shown only when a specific store has domicilio items (see FETCH PRODUCTS)
+  }, [])
+
+  // Abre la tienda indicada en la URL: ruta limpia /t/<slug> o ?store=<slug>
+  // (compatibilidad con QR/enlaces antiguos). El parámetro `preview` (interno
+  // del editor) se limpia para no ensuciar el enlace.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const storeSlug = getStoreSlugFromUrl()
+    if (storeSlug) {
+      const previewHome = params.get('preview') === 'home'
+      setSelectedStore(storeSlug)
+      setShowCatalog(!previewHome)
+      setShowStoresView(false)
+      if (params.has('preview')) {
+        params.delete('preview')
+        const qs = params.toString()
+        window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`)
+      }
     }
   }, [])
+
+  // Sincroniza la tienda seleccionada con una ruta limpia /t/<slug> para poder
+  // compartir el enlace directo a cada tienda. Al volver a "todas" → "/".
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    // No tocar la URL en el preview del editor visual (iframe con ?store=...&preview)
+    if (new URLSearchParams(window.location.search).has('preview')) return
+
+    const onStorePath = /^\/t\//.test(window.location.pathname)
+    if (selectedStore && selectedStore !== 'all') {
+      const target = `/t/${encodeURIComponent(selectedStore)}`
+      if (window.location.pathname !== target) {
+        window.history.replaceState({}, '', target)
+      }
+    } else if (onStorePath) {
+      window.history.replaceState({}, '', '/')
+    }
+  }, [selectedStore])
+
+  // Meta Pixel — inicializar cuando se cargue el storeConfig con pixelId
+  useEffect(() => {
+    const pixelId = storeConfig?.storeInfo?.metaPixelId
+    if (!pixelId || typeof window === 'undefined') return
+    const w = window as any
+    if (w.fbq) return
+    const n: any = (w.fbq = function (...args: any[]) {
+      n.callMethod ? n.callMethod.apply(n, args) : n.queue.push(args)
+    })
+    if (!w._fbq) w._fbq = n
+    n.push = n; n.loaded = true; n.version = '2.0'; n.queue = []
+    const s = document.createElement('script')
+    s.async = true
+    s.src = 'https://connect.facebook.net/en_US/fbevents.js'
+    document.head.appendChild(s)
+    w.fbq('init', pixelId)
+    w.fbq('track', 'PageView')
+  }, [storeConfig?.storeInfo?.metaPixelId])
 
   // Handle MercadoPago return URL (?mp=success|failure|pending&order=<id>)
   useEffect(() => {
@@ -306,6 +519,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
     if (mp === 'success') {
       setMpReturnMsg({ type: 'success', text: '¡Pago exitoso! Tu pedido fue confirmado. Pronto recibirás novedades.' })
+      // Pixel: Purchase event
+      const fbq = (window as any).fbq
+      if (typeof fbq === 'function') fbq('track', 'Purchase', { value: 1, currency: 'COP', content_name: 'Pedido completado' })
     } else if (mp === 'failure') {
       setMpReturnMsg({ type: 'failure', text: 'El pago no fue completado. Tu pedido fue cancelado.' })
       // Cancel the pending order so it doesn't appear in merchant dashboard
@@ -379,12 +595,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   }
 
   const toggleFavorite = (productId: number) => {
-    if (!authUser?.id) return
+    const key = authUser?.id ? `storeFavorites_${authUser.id}` : 'storeFavorites_guest'
     setFavorites(prev => {
       const next = new Set(prev)
       if (next.has(productId)) next.delete(productId)
       else next.add(productId)
-      localStorage.setItem(`storeFavorites_${authUser.id}`, JSON.stringify([...next]))
+      localStorage.setItem(key, JSON.stringify([...next]))
       return next
     })
   }
@@ -400,7 +616,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         setFavorites(saved ? new Set(JSON.parse(saved)) : new Set())
       } catch { setFavorites(new Set()) }
     } else {
-      setFavorites(new Set())
+      try {
+        const saved = localStorage.getItem('storeFavorites_guest')
+        setFavorites(saved ? new Set(JSON.parse(saved)) : new Set())
+      } catch { setFavorites(new Set()) }
     }
   }, [authUser?.id])
 
@@ -414,17 +633,19 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [clientLoginError, setClientLoginError] = useState('')
   const [clientLoginLoading, setClientLoginLoading] = useState(false)
   const clientGoogleBtnRef = useRef<HTMLDivElement>(null)
-  const [clientGoogleBtnWidth, setClientGoogleBtnWidth] = useState(340)
+  const [clientGoogleBtnWidth, setClientGoogleBtnWidth] = useState(320)
   useEffect(() => {
-    const el = clientGoogleBtnRef.current
-    if (!el) return
-    const ro = new ResizeObserver(entries => {
-      const w = Math.floor(entries[0].contentRect.width)
+    if (!showClientLogin) return
+    const measure = () => {
+      const el = clientGoogleBtnRef.current
+      if (!el) return
+      const w = Math.floor(el.getBoundingClientRect().width)
       if (w > 0) setClientGoogleBtnWidth(Math.min(w, 400))
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+    }
+    const timer = setTimeout(measure, 50)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showClientLogin])
 
   const handleClientLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -488,8 +709,20 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     phone: '', cedula: '', department: '', municipality: '', address: '', neighborhood: '',
   })
   const [savingProfile, setSavingProfile] = useState(false)
+  const [profileSaveError, setProfileSaveError] = useState('')
   const [profileLat, setProfileLat] = useState<number | null>(null)
   const [profileLng, setProfileLng] = useState<number | null>(null)
+
+  // ====== SAVED ADDRESSES ======
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([])
+  const [loadingAddresses, setLoadingAddresses] = useState(false)
+  const [showAddressForm, setShowAddressForm] = useState(false)
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null)
+  const [addressForm, setAddressForm] = useState({ label: '', department: '', municipality: '', address: '', neighborhood: '' })
+  const [addressFormLat, setAddressFormLat] = useState<number | null>(null)
+  const [addressFormLng, setAddressFormLng] = useState<number | null>(null)
+  const [savingAddress, setSavingAddress] = useState(false)
+  const [addressFormError, setAddressFormError] = useState('')
 
   // ====== DELIVERY ORDER STATE ======
   const [showDeliveryLoginAlert, setShowDeliveryLoginAlert] = useState(false)
@@ -511,9 +744,36 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [deliveryLat, setDeliveryLat] = useState<number | null>(null)
   const [deliveryLng, setDeliveryLng] = useState<number | null>(null)
 
+  // Convert any weight unit to kg for fleet assignment
+  const toKgClient = (weight: number | null | undefined, unit: string | null | undefined): number => {
+    if (!weight) return 0
+    switch (unit) {
+      case 'ton': return weight * 1000
+      case 'lb':  return weight * 0.453592
+      case 'g':   return weight / 1000
+      default:    return weight // kg or unknown → kg
+    }
+  }
+
   // ====== CART FUNCTIONS ======
   const totalCarrito = carrito.reduce((sum, item) => sum + item.precio * item.cantidad, 0)
   const totalItems = carrito.reduce((sum, item) => sum + item.cantidad, 0)
+
+  // Peso total del carrito (ferretería)
+  const totalPesoKg = carrito.reduce((sum, item) => sum + (item.weightKg || 0) * item.cantidad, 0)
+
+  // ── MÍNIMO DE COMPRA PARA DOMICILIO CON FLOTA ──────────────────────────────
+  // Configurable desde el módulo Tienda → pestaña Carrito
+  const DELIVERY_FREE_MIN = storeConfig?.cartMinPurchase || 0
+  const DELIVERY_FEE = storeConfig?.cartDeliveryFee || 0
+  const deliveryProgress = (DELIVERY_FREE_MIN > 0 && carrito.length > 0) ? Math.min(100, (totalCarrito / DELIVERY_FREE_MIN) * 100) : 0
+  const deliveryUnlocked = DELIVERY_FREE_MIN > 0 && totalCarrito >= DELIVERY_FREE_MIN
+  const deliveryRemaining = Math.max(0, DELIVERY_FREE_MIN - totalCarrito)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // Mínimo de compra para activar domicilio con flota
+  const [showFlotaDeliveryModal, setShowFlotaDeliveryModal] = useState(false)
+  const [flotaDeliveryShown, setFlotaDeliveryShown] = useState(false)
 
   // ====== COUPON STATE ======
   const [cuponCodigo, setCuponCodigo] = useState('')
@@ -631,30 +891,108 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   }
 
   // ====== GLOBAL SEARCH (cross-store) ======
-  const handleGlobalSearch = async (query: string) => {
+  const handleGlobalSearch = (query: string) => {
     setGlobalSearchQuery(query)
     if (!query.trim()) {
       setGlobalSearchResults([])
+      setGlobalSearchStores([])
+      setLoadingGlobalSearch(false)
+      if (globalSearchDebounceRef.current) clearTimeout(globalSearchDebounceRef.current)
+      if (globalSearchAbortRef.current) globalSearchAbortRef.current.abort()
       return
     }
-    setLoadingGlobalSearch(true)
-    try {
-      const res = await fetch(`${API_URL}/storefront/products?limit=200&store=all`)
-      const json = await res.json()
-      if (json.success && json.data?.products) {
-        const filtered = json.data.products.filter((p: StorefrontProduct) =>
-          p.name.toLowerCase().includes(query.toLowerCase()) ||
-          p.brand?.toLowerCase().includes(query.toLowerCase()) ||
-          p.category?.toLowerCase().includes(query.toLowerCase())
+    const q = query.toLowerCase()
+
+    // Immediate client-side filter from already-loaded data
+    if (stores.length > 0) {
+      setGlobalSearchStores(
+        stores.filter(s =>
+          s.name?.toLowerCase().includes(q) ||
+          s.businessType?.toLowerCase().includes(q) ||
+          s.slug?.toLowerCase().includes(q)
         )
-        setGlobalSearchResults(filtered)
-      }
-    } catch (e) {
-      console.error('Error searching products:', e)
-    } finally {
-      setLoadingGlobalSearch(false)
+      )
     }
+    if (searchInitialProducts.length > 0) {
+      setGlobalSearchResults(
+        searchInitialProducts.filter(p =>
+          p.name.toLowerCase().includes(q) ||
+          p.brand?.toLowerCase().includes(q) ||
+          p.category?.toLowerCase().includes(q)
+        )
+      )
+    }
+
+    // Debounced API search
+    if (globalSearchDebounceRef.current) clearTimeout(globalSearchDebounceRef.current)
+    globalSearchDebounceRef.current = setTimeout(async () => {
+      if (globalSearchAbortRef.current) globalSearchAbortRef.current.abort()
+      const controller = new AbortController()
+      globalSearchAbortRef.current = controller
+      setLoadingGlobalSearch(true)
+      try {
+        const [storesRes, productsRes] = await Promise.all([
+          fetch(`${API_URL}/storefront/stores`, { signal: controller.signal }),
+          fetch(`${API_URL}/storefront/products?limit=50&store=all&search=${encodeURIComponent(query.trim())}`, { signal: controller.signal }),
+        ])
+        const storesJson = await storesRes.json()
+        const productsJson = await productsRes.json()
+
+        if (storesJson.success && storesJson.data) {
+          setGlobalSearchStores(
+            storesJson.data.filter((s: any) =>
+              s.name?.toLowerCase().includes(q) ||
+              s.businessType?.toLowerCase().includes(q) ||
+              s.slug?.toLowerCase().includes(q)
+            )
+          )
+        }
+        if (productsJson.success && productsJson.data?.products) {
+          setGlobalSearchResults(productsJson.data.products)
+        }
+      } catch (e: any) {
+        if (e?.name !== 'AbortError') console.error('Error buscando:', e)
+      } finally {
+        setLoadingGlobalSearch(false)
+      }
+    }, 300)
   }
+
+  // ====== FETCH ALL PRODUCTS (for stores view and catalog all-stores view) ======
+  useEffect(() => {
+    if ((!showStoresView && !showCatalog) || selectedStore !== 'all') return
+    const load = async () => {
+      setLoadingAllProducts(true)
+      try {
+        const res = await fetch(`${API_URL}/storefront/products?limit=200&store=all`)
+        const json = await res.json()
+        if (json.success && json.data?.products) {
+          setAllProducts(json.data.products)
+          // Also populate categories from all products
+          const cats = Array.from(new Set(json.data.products.map((p: any) => p.category).filter(Boolean))) as string[]
+          setCategories(cats)
+        }
+      } catch (e) { console.error(e) }
+      finally { setLoadingAllProducts(false) }
+    }
+    load()
+  }, [showStoresView, showCatalog, selectedStore, API_URL])
+
+  // ====== FETCH INITIAL SEARCH SUGGESTIONS ======
+  useEffect(() => {
+    if (mobileActiveTab !== 'buscar') return
+    if (searchInitialProducts.length > 0) return
+    const fetchInitial = async () => {
+      try {
+        const res = await fetch(`${API_URL}/storefront/products?limit=50&store=all`)
+        const json = await res.json()
+        if (json.success && json.data?.products) {
+          setSearchInitialProducts(json.data.products)
+        }
+      } catch (e) { console.error('Error cargando sugerencias:', e) }
+    }
+    fetchInitial()
+  }, [mobileActiveTab, API_URL, searchInitialProducts.length])
 
   // ====== FETCH PRODUCTS ======
   useEffect(() => {
@@ -672,6 +1010,18 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         const json = await res.json()
         if (json.success && json.data?.products) {
           setProducts(json.data.products)
+          // Show location modal only if the current store has at least one active domicilio item
+          // and the user hasn't set their location yet and hasn't skipped
+          if (selectedStore !== 'all') {
+            const hasDomicilio = json.data.products.some(
+              (p: any) => p.deliveryType === 'domicilio' || p.deliveryType === 'ambos'
+            )
+            const savedMun = localStorage.getItem('clientMunicipality')
+            const wasSkipped = sessionStorage.getItem('locationSkipped') === '1'
+            if (hasDomicilio && !savedMun && !wasSkipped) {
+              setShowLocationModal(true)
+            }
+          }
         }
       } catch (e) {
         console.error('Error fetching storefront products:', e)
@@ -718,11 +1068,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
   // ====== FETCH STORES ======
   useEffect(() => {
+    let cancelled = false
     const fetchStores = async () => {
+      setLoadingStores(true)
       try {
         // Always fetch all active stores (no municipality filter) — products are filtered separately
         const res = await fetch(`${API_URL}/storefront/stores`)
         const json = await res.json()
+        if (cancelled) return
         if (json.success && json.data) {
           setStores(json.data)
           // Only auto-select when there's truly a single store on the entire platform
@@ -730,24 +1083,28 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             setSelectedStore(json.data[0].slug)
             setShowStoresView(false)
           }
-          // Check which stores have published services (parallel)
-          const results = await Promise.allSettled(
+          // Check which stores have published services (non-blocking — runs after stores are shown)
+          Promise.allSettled(
             json.data.map((s: { slug: string }) =>
               fetch(`${API_URL}/services/public?store=${s.slug}`)
                 .then(r => r.json())
                 .then(j => j.success && j.data?.length > 0 ? s.slug : null)
                 .catch(() => null)
             )
-          )
-          const slugsWithServices = new Set<string>(
-            results
-              .map(r => r.status === 'fulfilled' ? r.value : null)
-              .filter((v): v is string => !!v)
-          )
-          setStoresWithServices(slugsWithServices)
+          ).then(results => {
+            if (cancelled) return
+            const slugsWithServices = new Set<string>(
+              results
+                .map(r => r.status === 'fulfilled' ? r.value : null)
+                .filter((v): v is string => !!v)
+            )
+            setStoresWithServices(slugsWithServices)
+          })
         }
       } catch (e) {
         console.error('Error fetching stores:', e)
+      } finally {
+        if (!cancelled) setLoadingStores(false)
       }
     }
     fetchStores()
@@ -757,13 +1114,38 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       try {
         const res = await fetch(`${API_URL}/storefront/platform-settings`)
         const json = await res.json()
+        if (cancelled) return
         if (json.success && json.data) {
           if (json.data.bg_color) setPlatformBgColor(json.data.bg_color)
           if (json.data.hero_image_url) setPlatformHeroUrl(json.data.hero_image_url)
           if (json.data.hero_title) setPlatformHeroTitle(json.data.hero_title)
           if (json.data.hero_subtitle) setPlatformHeroSubtitle(json.data.hero_subtitle)
+          if (json.data.home_theme === 'theme2' || json.data.home_theme === 'theme1') {
+            setHomeTheme(json.data.home_theme)
+          }
+          if (json.data.home_hero_slides) {
+            try {
+              const parsed = JSON.parse(json.data.home_hero_slides)
+              if (Array.isArray(parsed)) setHomeHeroSlides(parsed as HeroSlide[])
+            } catch { /* JSON inválido, se ignora */ }
+          }
+          if (json.data.home_hero_split) setHomeHeroSplit(json.data.home_hero_split)
+          if (json.data.home_hero_right) setHomeHeroRight(json.data.home_hero_right)
+          if (json.data.home_welcome_enabled !== undefined) setHomeWelcomeEnabled(json.data.home_welcome_enabled !== 'false')
+          if (json.data.home_welcome_title !== undefined) setHomeWelcomeTitle(json.data.home_welcome_title)
+          if (json.data.home_welcome_subtitle !== undefined) setHomeWelcomeSubtitle(json.data.home_welcome_subtitle)
+          if (json.data.platform_logo) setPlatformLogo(json.data.platform_logo)
+          const platformPalette = parsePlatformPalette(json.data.platform_theme_colors)
+          if (platformPalette) setPlatformThemeColors(platformPalette.colors)
+          if (json.data.home_promo_cards) {
+            try {
+              const parsed = JSON.parse(json.data.home_promo_cards)
+              if (Array.isArray(parsed)) setHomePromoCards(parsed as PromoCardConfig[])
+            } catch { /* JSON inválido, se ignora */ }
+          }
         }
       } catch {}
+      finally { if (!cancelled) setSettingsLoaded(true) }
     }
     fetchPlatformSettings()
 
@@ -772,11 +1154,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       try {
         const res = await fetch(`${API_URL}/storefront/platform-featured`)
         const json = await res.json()
+        if (cancelled) return
         if (json.success && json.data) setPlatformFeatured(json.data)
       } catch {}
     }
     fetchPlatformFeatured()
-  }, [clientMunicipality])
+
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ====== FETCH OFFERS ======
   useEffect(() => {
@@ -842,6 +1228,17 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     fetchChatbotStatus()
   }, [selectedStore])
 
+  // ====== FLOTA DELIVERY MODAL: Mostrar cuando el carrito tiene items con peso ======
+  useEffect(() => {
+    if (totalPesoKg > 0 && !flotaDeliveryShown && !showCheckout && carrito.length > 0) {
+      setShowFlotaDeliveryModal(true)
+    }
+    if (totalPesoKg === 0) {
+      setShowFlotaDeliveryModal(false)
+      setFlotaDeliveryShown(false)
+    }
+  }, [totalPesoKg]) // eslint-disable-line
+
   // ====== DROP POPUP LOGIC ======
   useEffect(() => {
     if (storeConfig?.activeDrop) {
@@ -857,6 +1254,17 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       setShowDropPopup(false)
     }
   }, [storeConfig?.activeDrop])
+
+  // ====== AGE GATE LOGIC ======
+  useEffect(() => {
+    if (!storeConfig?.storeInfo?.ageGateEnabled || selectedStore === 'all') {
+      setShowAgeGate(false)
+      return
+    }
+    const key = `age_verified_${selectedStore}`
+    const verified = sessionStorage.getItem(key) === '1'
+    if (!verified) setShowAgeGate(true)
+  }, [storeConfig?.storeInfo?.ageGateEnabled, selectedStore])
 
   // ====== COUNTDOWN HELPER ======
   const [countdownText, setCountdownText] = useState('')
@@ -948,22 +1356,135 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             let resumeTimer: ReturnType<typeof setTimeout>
             let rafId: number
 
-            const onTouchStart: EventListener = () => { paused = true; clearTimeout(resumeTimer) }
-            const onTouchEnd: EventListener = () => { resumeTimer = setTimeout(() => { paused = false }, 2000) }
-            const onMouseEnter: EventListener = () => {
+            // ── drag / momentum state (shared by mouse & touch) ────────────
+            let isDragging     = false
+            let dragStartX     = 0
+            let dragStartPos   = 0
+            let dragVelX       = 0
+            let dragLastX      = 0
+            let dragLastTime   = 0
+            let momentumRaf    = 0
+
+            let touchStartX    = 0
+            let touchStartPos  = 0
+            let touchVelX      = 0
+            let touchLastX     = 0
+            let touchLastTime  = 0
+            let touchIsHoriz   = false
+            let touchDecided   = false
+
+            // horizontal pan-y allows the browser to still scroll the page
+            // vertically while we handle horizontal drags ourselves
+            el.style.touchAction = 'pan-y'
+            el.style.cursor = 'grab'
+
+            const normPos = (p: number) => ((p % oneSetWidth) + oneSetWidth) % oneSetWidth
+
+            const applyMomentum = (vel: number) => {
+              cancelAnimationFrame(momentumRaf)
+              let v = vel
+              const step = () => {
+                if (Math.abs(v) < 0.35) {
+                  resumeTimer = setTimeout(() => { paused = false }, 1000)
+                  return
+                }
+                pos = normPos(pos + v)
+                el.style.transform = `translateX(${-pos}px)`
+                v *= 0.93
+                momentumRaf = requestAnimationFrame(step)
+              }
+              momentumRaf = requestAnimationFrame(step)
+            }
+
+            // ── MOUSE ──────────────────────────────────────────────────────
+            const onMouseDown: EventListener = (ev) => {
+              const e = ev as MouseEvent
+              isDragging = true
+              dragStartX = e.pageX
+              dragStartPos = pos
+              dragVelX = 0
+              dragLastX = e.pageX
+              dragLastTime = Date.now()
               paused = true
               clearTimeout(resumeTimer)
+              cancelAnimationFrame(momentumRaf)
+              el.style.cursor = 'grabbing'
+              el.style.userSelect = 'none'
+            }
+            const onMouseMoveGlobal = (e: MouseEvent) => {
+              if (!isDragging) return
+              const now = Date.now()
+              const dt = Math.max(now - dragLastTime, 1)
+              dragVelX = (dragLastX - e.pageX) / dt * 16
+              dragLastX = e.pageX
+              dragLastTime = now
+              pos = normPos(dragStartPos - (e.pageX - dragStartX))
+              el.style.transform = `translateX(${-pos}px)`
+            }
+            const onMouseUpGlobal = () => {
+              if (!isDragging) return
+              isDragging = false
+              el.style.cursor = 'grab'
+              el.style.userSelect = ''
+              applyMomentum(dragVelX)
+            }
+            const onMouseEnter: EventListener = () => {
+              if (!isDragging) { paused = true; clearTimeout(resumeTimer) }
               // Snap out of clone zone so user always interacts with original items
               if (pos > safeZoneEnd) {
                 pos = safeZoneEnd
                 el.style.transform = `translateX(${-pos}px)`
               }
             }
-            const onMouseLeave: EventListener = () => { resumeTimer = setTimeout(() => { paused = false }, 600) }
-            el.addEventListener('touchstart', onTouchStart, { passive: true })
-            el.addEventListener('touchend', onTouchEnd, { passive: true })
+            const onMouseLeave: EventListener = () => {
+              if (!isDragging) resumeTimer = setTimeout(() => { paused = false }, 600)
+            }
+
+            // ── TOUCH ──────────────────────────────────────────────────────
+            const onTouchStart: EventListener = (ev) => {
+              const e = ev as TouchEvent
+              touchStartX    = e.touches[0].pageX
+              touchStartPos  = pos
+              touchVelX      = 0
+              touchLastX     = touchStartX
+              touchLastTime  = Date.now()
+              touchDecided   = false
+              touchIsHoriz   = false
+              paused = true
+              clearTimeout(resumeTimer)
+              cancelAnimationFrame(momentumRaf)
+            }
+            const onTouchMove: EventListener = (ev) => {
+              const e = ev as TouchEvent
+              const t = e.touches[0]
+              const dx = t.pageX - touchStartX
+              if (!touchDecided) {
+                const dy = Math.abs(((e.touches[0] as any).clientY ?? 0) - ((e.touches[0] as any).startY ?? 0))
+                touchIsHoriz = Math.abs(dx) > 6
+                touchDecided = true
+              }
+              if (!touchIsHoriz) return
+              const now = Date.now()
+              const dt = Math.max(now - touchLastTime, 1)
+              touchVelX  = (touchLastX - t.pageX) / dt * 16
+              touchLastX = t.pageX
+              touchLastTime = now
+              pos = normPos(touchStartPos - dx)
+              el.style.transform = `translateX(${-pos}px)`
+            }
+            const onTouchEnd: EventListener = () => {
+              if (!touchIsHoriz) { resumeTimer = setTimeout(() => { paused = false }, 2000); return }
+              applyMomentum(touchVelX)
+            }
+
+            el.addEventListener('mousedown', onMouseDown)
             el.addEventListener('mouseenter', onMouseEnter)
             el.addEventListener('mouseleave', onMouseLeave)
+            el.addEventListener('touchstart', onTouchStart, { passive: true })
+            el.addEventListener('touchmove',  onTouchMove,  { passive: true })
+            el.addEventListener('touchend',   onTouchEnd,   { passive: true })
+            window.addEventListener('mousemove', onMouseMoveGlobal)
+            window.addEventListener('mouseup',   onMouseUpGlobal)
 
             const tick = (now: number) => {
               const dt = lastTime !== null ? (now - lastTime) / 1000 : 0
@@ -979,15 +1500,22 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
             cleanups.push(() => {
               cancelAnimationFrame(rafId)
+              cancelAnimationFrame(momentumRaf)
               clearTimeout(resumeTimer)
-              el.removeEventListener('touchstart', onTouchStart)
-              el.removeEventListener('touchend', onTouchEnd)
+              el.removeEventListener('mousedown',  onMouseDown)
               el.removeEventListener('mouseenter', onMouseEnter)
               el.removeEventListener('mouseleave', onMouseLeave)
+              el.removeEventListener('touchstart', onTouchStart)
+              el.removeEventListener('touchmove',  onTouchMove)
+              el.removeEventListener('touchend',   onTouchEnd)
+              window.removeEventListener('mousemove', onMouseMoveGlobal)
+              window.removeEventListener('mouseup',   onMouseUpGlobal)
               clones.forEach(c => c.remove())
-              el.style.overflow = ''
-              el.style.transform = ''
-              el.style.willChange = ''
+              el.style.overflow    = ''
+              el.style.transform   = ''
+              el.style.willChange  = ''
+              el.style.cursor      = ''
+              el.style.touchAction = ''
               if (parent) parent.style.overflow = prevOverflow
             })
           })
@@ -1016,12 +1544,30 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     setSelectedProduct(product)
     setProductQuantity(1)
     setActiveImageIdx(0)
+    setSelectedVariant(null)
     setShowProductModal(true)
+    // Seed viewers count uniquely per product and fluctuate over time
+    const seed = (product.id * 2654435761) >>> 0
+    const base = 4 + (seed % 28)
+    setViewersCount(base)
+    if (viewersIntervalRef.current) clearInterval(viewersIntervalRef.current)
+    viewersIntervalRef.current = setInterval(() => {
+      setViewersCount(prev => {
+        const delta = Math.random() < 0.5 ? 1 : -1
+        return Math.max(2, Math.min(base + 12, prev + delta))
+      })
+    }, 3500 + Math.random() * 3000)
     setProductReviews([])
+    window.history.pushState({}, '', `${window.location.pathname}?product=${product.id}`)
     setReviewSuccess(false)
     setShowReviewForm(false)
-    setReviewForm({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '' })
+    setReviewForm({ reviewerName: '', reviewerEmail: '', rating: 5, title: '', body: '', imageUrl1: '' })
     setReviewError('')
+    // Carga modificadores (adiciones, combos, "sin X")
+    setT1Mods([]); setT1Sel({}); setT1ModsLoading(true)
+    fetch(`${API_URL}/modifiers/public/${product.id}`).then(r => r.json()).catch(() => null)
+      .then(res => setT1Mods(Array.isArray(res?.data) ? res.data : []))
+      .finally(() => setT1ModsLoading(false))
     // Load approved reviews for this product
     const tid = product.tenantId || stores.find(s => s.slug === selectedStore)?.id
     if (tid) {
@@ -1034,13 +1580,73 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   }
 
   const closeProductModal = () => {
+    if (viewersIntervalRef.current) { clearInterval(viewersIntervalRef.current); viewersIntervalRef.current = null }
     setShowProductModal(false)
     setSelectedProduct(null)
     setProductQuantity(1)
+    window.history.replaceState({}, '', window.location.pathname)
   }
+
+  // Observe CTA visibility for sticky mobile bar
+  useEffect(() => {
+    if (!showProductModal) return
+    let observer: IntersectionObserver
+    const timer = setTimeout(() => {
+      const el = ctaRef.current
+      if (!el) return
+      observer = new IntersectionObserver(
+        ([entry]) => setCtaVisible(entry.isIntersecting),
+        { threshold: 0.1 }
+      )
+      observer.observe(el)
+    }, 100)
+    return () => {
+      clearTimeout(timer)
+      observer?.disconnect()
+      setCtaVisible(false)
+    }
+  }, [showProductModal, selectedProduct])
+
+  // Detect ?product= on load and open modal
+  useEffect(() => {
+    if (products.length === 0) return
+    const params = new URLSearchParams(window.location.search)
+    const productId = params.get('product')
+    if (!productId) return
+    const match = products.find(p => String(p.id) === productId)
+    if (match) { setShowCatalog(true); openProductModal(match) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products])
+
+  // ── Modificadores: selección, precio extra y validación ──
+  const toggleT1Mod = (g: any, optId: string) => setT1Sel(prev => {
+    const cur = new Set(prev[g.id] ?? [])
+    if (g.selectionType === 'single') { cur.clear(); cur.add(optId) }
+    else {
+      if (cur.has(optId)) cur.delete(optId)
+      else { if (g.maxSelect && cur.size >= g.maxSelect) return prev; cur.add(optId) }
+    }
+    return { ...prev, [g.id]: cur }
+  })
+  const t1SelMods = useMemo(() => {
+    const out: { groupName: string; optionName: string; priceDelta: number }[] = []
+    for (const g of (Array.isArray(t1Mods) ? t1Mods : [])) {
+      const ids = t1Sel[g.id]; if (!ids) continue
+      for (const o of (g.options || [])) if (ids.has(o.id)) out.push({ groupName: g.name, optionName: o.name, priceDelta: Number(o.priceDelta) || 0 })
+    }
+    return out
+  }, [t1Mods, t1Sel])
+  const t1Extra = t1SelMods.reduce((s, m) => s + m.priceDelta, 0)
+  const t1Missing = useMemo(() => (Array.isArray(t1Mods) ? t1Mods : []).filter((g: any) => g.isRequired && (t1Sel[g.id]?.size ?? 0) < Math.max(1, g.minSelect || 0)), [t1Mods, t1Sel])
+
+  // ¿El producto tiene variantes pero el cliente aún no elige una?
+  const variantPending = !!(selectedProduct?.variants && selectedProduct.variants.length > 0) && !selectedVariant
 
   const addFromModal = () => {
     if (!selectedProduct) return
+    if (t1Missing.length > 0) return
+    // Si el producto tiene variantes, exige elegir una antes de agregar
+    if (variantPending) return
 
     // Check if this product is in the active drop
     const dropProduct = showDrop && storeConfig?.activeDrop
@@ -1051,7 +1657,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     let precioOriginal: number | undefined
     let descuentoPorcentaje: number | undefined
 
-    if (dropProduct) {
+    if (selectedVariant) {
+      // El precio de la variante manda (incluye su tier base / override)
+      finalPrice = selectedVariant.price
+    } else if (dropProduct) {
       finalPrice = dropProduct.finalPrice
       precioOriginal = selectedProduct.salePrice
       descuentoPorcentaje = dropProduct.customDiscount ?? storeConfig!.activeDrop!.globalDiscount
@@ -1060,8 +1669,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       precioOriginal = selectedProduct.salePrice
     }
 
+    // Modificadores: suma el extra al precio y diferencia el item por combinación
+    finalPrice = finalPrice + t1Extra
+    const modSuffix = t1SelMods.length ? ` (${t1SelMods.map(m => m.optionName).join(', ')})` : ''
+    const modSig = t1SelMods.length ? `#${t1SelMods.map(m => m.optionName).sort().join('|')}` : ''
+    const varSuffix = selectedVariant ? ` — ${selectedVariant.label}` : ''
+    const varSig = selectedVariant ? `~${selectedVariant.id}` : ''
+
     setCarrito(prev => {
-      const tempId = String(selectedProduct.id)
+      const tempId = String(selectedProduct.id) + varSig + modSig
       const existingIndex = prev.findIndex(p => (p.tempId || String(p.id)) === tempId)
       if (existingIndex >= 0) {
         const newCart = [...prev]
@@ -1074,16 +1690,23 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       return [...prev, {
         id: selectedProduct.id,
         tempId,
-        nombre: selectedProduct.name,
+        nombre: selectedProduct.name + varSuffix + modSuffix,
         precio: finalPrice,
         precioOriginal,
         descuentoPorcentaje,
         cantidad: productQuantity,
-        imagen: selectedProduct.imageUrl || '',
+        imagen: selectedVariant?.image || selectedProduct.imageUrl || '',
+        variantId: selectedVariant?.id,
+        variantLabel: selectedVariant?.label,
+        tallaSeleccionada: selectedVariant?.label,
         tenantId: selectedProduct.tenantId,
         storeName: selectedProduct.storeName,
         availableForDelivery: !!selectedProduct.availableForDelivery,
         deliveryType: selectedProduct.deliveryType || null,
+        weightKg: selectedProduct.productType === 'ferreteria'
+          ? toKgClient(selectedProduct.weight, selectedProduct.hardwareWeightUnit) || null
+          : null,
+        productType: selectedProduct.productType || undefined,
       }]
     })
     setShowCart(true)
@@ -1165,6 +1788,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         storeName: product.storeName,
         availableForDelivery: !!product.availableForDelivery,
         deliveryType: (product as any).deliveryType || null,
+        weightKg: product.productType === 'ferreteria'
+          ? toKgClient(product.weight, product.hardwareWeightUnit) || null
+          : null,
+        productType: product.productType || undefined,
+        isPreorder: Boolean(product.isPreorder) || undefined,
+        preorderShipStart: product.isPreorder ? (product.preorderShipStart || null) : undefined,
+        preorderShipEnd: product.isPreorder ? (product.preorderShipEnd || null) : undefined,
+        preorderBadgeText: product.isPreorder ? (product.preorderBadgeText || 'Pre-orden') : undefined,
       }]
     })
     setShowCart(true) // Always show cart after adding
@@ -1222,6 +1853,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       }
 
       const orderNumbers: string[] = []
+      let vehicleFlota: { tipoVehiculo: string; pesoTotal: number } | null = null
 
       for (const [tid, tenantItems] of itemsByTenant) {
         const orderPayload: Record<string, any> = {
@@ -1275,6 +1907,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           const orderJson = await orderRes.json()
           if (orderJson.success && orderJson.data?.orderNumber) {
             orderNumbers.push(orderJson.data.orderNumber)
+            if (orderJson.data.vehicleAssigned && orderJson.data.totalWeightKg > 0 && !vehicleFlota) {
+              const w: number = orderJson.data.totalWeightKg
+              vehicleFlota = {
+                pesoTotal: w,
+                tipoVehiculo: w < 50 ? 'Moto' : w <= 500 ? 'Camión Ligero' : 'Camión Planta',
+              }
+            }
           }
         } catch (e) {
           console.error('Error saving order to backend:', e)
@@ -1308,6 +1947,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         productos: carrito,
         total: totalConDescuento,
         fecha,
+        vehiculoAsignado: vehicleFlota,
       }
 
       setPedidoConfirmado(pedido)
@@ -1466,6 +2106,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const carritoTieneDelivery = carrito.some(
     item => item.deliveryType === 'domicilio' || item.deliveryType === 'ambos'
   )
+  const activeDeliveryFee = (carritoTieneDelivery && DELIVERY_FREE_MIN > 0 && !deliveryUnlocked && DELIVERY_FEE > 0) ? DELIVERY_FEE : 0
 
   const fetchOrderBump = async () => {
     if (!selectedStore || selectedStore === 'all') return
@@ -1514,6 +2155,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       return
     }
     fetchOrderBump()
+    if (isAuthenticated) fetchSavedAddresses()
     setShowCheckout(true)
   }
 
@@ -1521,8 +2163,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const handleSaveProfile = async () => {
     if (!profileForm.department || !profileForm.municipality || !profileForm.address) return
     setSavingProfile(true)
+    setProfileSaveError('')
     try {
-      await updateProfile({
+      const result = await updateProfile({
         phone: profileForm.phone || undefined,
         cedula: profileForm.cedula || undefined,
         department: profileForm.department,
@@ -1532,6 +2175,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         deliveryLatitude: profileLat ?? undefined,
         deliveryLongitude: profileLng ?? undefined,
       })
+      if (!result.success) {
+        setProfileSaveError(result.error || 'Error al guardar. Intenta de nuevo.')
+        return
+      }
       // Also pre-fill checkout form
       setFormData(prev => ({
         ...prev,
@@ -1549,8 +2196,89 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       setShowProfileModal(false)
     } catch (e) {
       console.error('Error saving profile:', e)
+      setProfileSaveError('Error de conexión. Intenta de nuevo.')
     } finally {
       setSavingProfile(false)
+    }
+  }
+
+  // ====== SAVED ADDRESSES HANDLERS ======
+  const fetchSavedAddresses = async () => {
+    setLoadingAddresses(true)
+    try {
+      const res = await api.getUserAddresses()
+      if (res.success && res.data) setSavedAddresses(res.data)
+    } catch {}
+    finally { setLoadingAddresses(false) }
+  }
+
+  const openAddressForm = (existing?: any) => {
+    if (existing) {
+      setEditingAddressId(existing.id)
+      setAddressForm({ label: existing.label, department: existing.department || '', municipality: existing.municipality || '', address: existing.address || '', neighborhood: existing.neighborhood || '' })
+      setAddressFormLat(existing.deliveryLatitude || null)
+      setAddressFormLng(existing.deliveryLongitude || null)
+    } else {
+      setEditingAddressId(null)
+      setAddressForm({ label: '', department: '', municipality: '', address: '', neighborhood: '' })
+      setAddressFormLat(null)
+      setAddressFormLng(null)
+    }
+    setAddressFormError('')
+    setShowAddressForm(true)
+  }
+
+  const handleSaveAddress = async () => {
+    if (!addressForm.label || !addressForm.department || !addressForm.municipality || !addressForm.address) {
+      setAddressFormError('Completa los campos obligatorios')
+      return
+    }
+    setSavingAddress(true)
+    setAddressFormError('')
+    try {
+      const payload = {
+        label: addressForm.label,
+        department: addressForm.department,
+        municipality: addressForm.municipality,
+        address: addressForm.address,
+        neighborhood: addressForm.neighborhood || undefined,
+        deliveryLatitude: addressFormLat ?? undefined,
+        deliveryLongitude: addressFormLng ?? undefined,
+      }
+      const res = editingAddressId
+        ? await api.updateUserAddress(editingAddressId, payload)
+        : await api.addUserAddress(payload)
+      if (res.success && res.data) {
+        setSavedAddresses(res.data)
+        setShowAddressForm(false)
+      } else {
+        setAddressFormError(res.error || 'Error al guardar')
+      }
+    } catch { setAddressFormError('Error de conexión') }
+    finally { setSavingAddress(false) }
+  }
+
+  const handleDeleteAddress = async (id: string) => {
+    const res = await api.deleteUserAddress(id)
+    if (res.success && res.data) setSavedAddresses(res.data)
+  }
+
+  const handleSetDefaultAddress = async (id: string) => {
+    const res = await api.setDefaultUserAddress(id)
+    if (res.success && res.data) setSavedAddresses(res.data)
+  }
+
+  const applyAddressToCheckout = (addr: any) => {
+    setFormData(prev => ({
+      ...prev,
+      departamento: addr.department || prev.departamento,
+      municipio: addr.municipality || prev.municipio,
+      direccion: addr.address || prev.direccion,
+      barrio: addr.neighborhood || prev.barrio,
+    }))
+    if (addr.deliveryLatitude && addr.deliveryLongitude) {
+      setDeliveryLat(addr.deliveryLatitude)
+      setDeliveryLng(addr.deliveryLongitude)
     }
   }
 
@@ -1635,7 +2363,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   }
 
   // Effective background color: store-specific overrides platform global
-  const effectiveBgColor = (storeConfig?.bgColor && storeConfig.bgColor !== '#000000') ? storeConfig.bgColor : platformBgColor
+  // Paleta IA del comercio (si la guardó): tiñe el fondo de la tienda
+  const storeThemeColors = storeConfig?.themeColors?.colors || null
+  // En la home/marketplace (sin tienda seleccionada) aplica la paleta de la
+  // plataforma; dentro de una tienda manda la paleta propia del comercio.
+  const activeThemeColors = storeThemeColors || (!storeConfig ? platformThemeColors : null)
+  const effectiveBgColor = activeThemeColors?.background_store
+    ? activeThemeColors.background_store
+    : (storeConfig?.bgColor && storeConfig.bgColor !== '#000000') ? storeConfig.bgColor : platformBgColor
   // Card style chosen by the merchant
   const productCardStyle = storeConfig?.storeInfo?.productCardStyle || 'style1'
 
@@ -1686,6 +2421,34 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             </button>
           </div>
         </header>
+        {/* Saved addresses quick-select (only for authenticated users with delivery items) */}
+        {isAuthenticated && carritoTieneDelivery && savedAddresses.length > 0 && (
+          <div className="bg-blue-50 border-b border-blue-100 px-4 py-3">
+            <div className="max-w-6xl mx-auto">
+              <p className="text-xs text-blue-600 font-medium mb-2 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" /> Usar dirección guardada
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {savedAddresses.map((addr: any) => (
+                  <button
+                    key={addr.id}
+                    onClick={() => applyAddressToCheckout(addr)}
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-all ${
+                      formData.direccion === addr.address && formData.departamento === addr.department
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-blue-700 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
+                    }`}
+                  >
+                    <MapPin className="w-3 h-3" />
+                    {addr.label}
+                    {addr.isDefault && <Star className="w-2.5 h-2.5 fill-current opacity-70" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <CheckoutView
           carrito={carrito}
           totalCarrito={totalCarrito}
@@ -1716,8 +2479,62 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           onPagarConAddi={paymentConfig.addi ? handlePagarConAddi : undefined}
           onPagarConSistecredito={paymentConfig.sistecredito ? handlePagarConSistecredito : undefined}
           allowContraentrega={paymentConfig.contraentrega}
+          freeDeliveryMin={DELIVERY_FREE_MIN}
+          deliveryFee={activeDeliveryFee}
         />
       </div>
+    )
+  }
+
+  // ── Evita el flash de la estructura base: mientras no se sepa el tema de la
+  //    home (theme1/theme2), mostramos un loader neutro en la vista de marketplace ──
+  if (showStoresView && selectedStore === 'all' && !settingsLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white" style={{ ['--dz-bg' as any]: '#ffffff' }}>
+        <BoxLoader />
+      </div>
+    )
+  }
+
+  // ── TEMA 2 (institucional): reemplaza toda la home del marketplace ──
+  if (isHomeTheme2) {
+    const goToStore = (store: { slug: string; theme?: string; externalUrl?: string | null }) => {
+      // Tarjeta externa (comercio fuera del aplicativo): redirige al link configurado.
+      if (store.externalUrl) { window.open(store.externalUrl, '_blank', 'noopener,noreferrer'); return }
+      if (store.theme === 'theme2') { window.location.href = `/t/${store.slug}`; return }
+      setSelectedStore(store.slug); setShowStoresView(false); setActiveSede(null); setStoreSedes([])
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    return (
+      <MarketplaceHomeGovCo
+        stores={stores as any}
+        products={allProducts as any}
+        featured={platformFeatured as any}
+        offers={offerProducts as any}
+        heroSlides={homeHeroSlides}
+        businessTypeFilter={businessTypeFilter}
+        onSelectBusinessType={setBusinessTypeFilter}
+        onOpenStore={(store) => goToStore(store as any)}
+        onOpenProduct={(p: any) => {
+          const slug = p.storeSlug || p.tenantSlug
+          const st = stores.find(s => s.slug === slug || s.name === p.storeName)
+          if (st) goToStore(st as any)
+        }}
+        loadingStores={loadingStores}
+        storesWithServices={storesWithServices}
+        ensureAbsoluteUrl={ensureAbsoluteUrl}
+        onGoToLogin={onGoToLogin}
+        heroTitle={platformHeroTitle}
+        heroSubtitle={platformHeroSubtitle}
+        heroSplit={homeHeroSplit}
+        heroRight={homeHeroRight}
+        promoConfig={homePromoCards}
+        welcomeEnabled={homeWelcomeEnabled}
+        welcomeTitle={homeWelcomeTitle}
+        welcomeSubtitle={homeWelcomeSubtitle}
+        brandLogo={platformLogo}
+        themeColors={platformThemeColors}
+      />
     )
   }
 
@@ -1725,6 +2542,44 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     <div className={`min-h-screen ${textClass} overflow-x-hidden pb-16 md:pb-0`} style={{ scrollBehavior: 'smooth', backgroundColor: effectiveBgColor }}>
       {/* Dynamic background overrides */}
       <style>{`
+        ${activeThemeColors ? `:root{
+          --color-primary:${activeThemeColors.primary || '#00833E'};
+          --color-primary-hover:${activeThemeColors.primary_hover || '#005C2A'};
+          --color-secondary:${activeThemeColors.secondary || '#666'};
+          --color-bg-store:${activeThemeColors.background_store || effectiveBgColor};
+          --color-surface:${activeThemeColors.surface_store || altBgColor};
+          --color-text:${activeThemeColors.text_main || '#fff'};
+        }
+        /* ── Colorimetría IA: las clases de marca (verde/emerald) hardcodeadas
+              pasan a consumir la paleta generada. Sin esto la paleta se guarda
+              pero la página nunca cambia de color. ── */
+        .bg-green-400, .bg-green-500, .bg-green-600, .bg-green-700,
+        .bg-emerald-400, .bg-emerald-500, .bg-emerald-600 { background-color: var(--color-primary) !important; }
+        .hover\\:bg-green-500:hover, .hover\\:bg-green-600:hover { background-color: var(--color-primary-hover) !important; }
+        .bg-green-500\\/20  { background-color: color-mix(in srgb, var(--color-primary) 20%, transparent) !important; }
+        .bg-green-500\\/15  { background-color: color-mix(in srgb, var(--color-primary) 15%, transparent) !important; }
+        .bg-green-500\\/10, .bg-emerald-500\\/10 { background-color: color-mix(in srgb, var(--color-primary) 10%, transparent) !important; }
+        .bg-green-500\\/8   { background-color: color-mix(in srgb, var(--color-primary) 8%, transparent) !important; }
+        .bg-green-500\\/6   { background-color: color-mix(in srgb, var(--color-primary) 6%, transparent) !important; }
+        .bg-emerald-400\\/50 { background-color: color-mix(in srgb, var(--color-primary) 50%, transparent) !important; }
+        .text-green-300, .text-green-400, .text-green-500, .text-green-600,
+        .text-emerald-400, .text-emerald-500 { color: var(--color-primary) !important; }
+        .hover\\:text-green-400:hover { color: var(--color-primary) !important; }
+        .text-green-400\\/80, .text-emerald-400\\/80 { color: color-mix(in srgb, var(--color-primary) 80%, transparent) !important; }
+        .text-green-400\\/70, .text-emerald-400\\/70 { color: color-mix(in srgb, var(--color-primary) 70%, transparent) !important; }
+        .border-green-400, .border-emerald-400 { border-color: var(--color-primary) !important; }
+        .border-green-500\\/50, .border-green-400\\/50 { border-color: color-mix(in srgb, var(--color-primary) 50%, transparent) !important; }
+        .border-green-500\\/30, .border-emerald-500\\/30 { border-color: color-mix(in srgb, var(--color-primary) 30%, transparent) !important; }
+        .border-green-500\\/25, .border-emerald-500\\/25 { border-color: color-mix(in srgb, var(--color-primary) 25%, transparent) !important; }
+        .border-green-500\\/20 { border-color: color-mix(in srgb, var(--color-primary) 20%, transparent) !important; }
+        .ring-green-400\\/30 { --tw-ring-color: color-mix(in srgb, var(--color-primary) 30%, transparent) !important; }
+        .from-emerald-500 { --tw-gradient-from: var(--color-primary) !important; }
+        .from-emerald-900\\/60, .from-emerald-500\\/60 { --tw-gradient-from: color-mix(in srgb, var(--color-primary) 60%, transparent) !important; }
+        .from-emerald-500\\/\\[0\\.07\\] { --tw-gradient-from: color-mix(in srgb, var(--color-primary) 7%, transparent) !important; }
+        .to-emerald-500 { --tw-gradient-to: var(--color-primary) !important; }
+        .to-emerald-500\\/\\[0\\.03\\] { --tw-gradient-to: color-mix(in srgb, var(--color-primary) 3%, transparent) !important; }
+        .via-emerald-400\\/40 { --tw-gradient-via: color-mix(in srgb, var(--color-primary) 40%, transparent) !important; }
+        .to-teal-950\\/80 { --tw-gradient-to: color-mix(in srgb, var(--color-secondary) 80%, transparent) !important; }` : ''}
         .landing-nav { background-color: ${effectiveBgColor}cc !important; }
         .landing-section-bg { background-color: ${effectiveBgColor} !important; }
         .landing-section-alt { background-color: ${altBgColor} !important; }
@@ -1766,10 +2621,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         .placeholder-white\\/20::placeholder { color: rgba(0,0,0,0.25) !important; }
         .placeholder-white\\/30::placeholder { color: rgba(0,0,0,0.35) !important; }
         /* ── Nav accent colors → negro en fondo claro ── */
-        nav .text-amber-400 { color: #111 !important; }
         nav .text-orange-400 { color: #111 !important; }
         nav .text-red-400 { color: rgba(0,0,0,0.75) !important; }
-        nav .hover\\:text-amber-400:hover { color: #111 !important; }
         nav .hover\\:text-orange-300:hover { color: rgba(0,0,0,0.8) !important; }
         nav .hover\\:text-red-300:hover { color: rgba(0,0,0,0.8) !important; }
         /* ── data-dark exemptions: preserve white on dark surfaces (category tiles, hero images) ── */
@@ -1825,7 +2678,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           )}
           {/* Marquee text — ocupa el resto */}
           <div className="flex-1 overflow-hidden">
-            <div className="flex whitespace-nowrap" style={{ animation: `marquee ${isMobile ? '20s' : '60s'} linear infinite` }}>
+            <div className="flex whitespace-nowrap" style={{ animation: `marquee ${([0,90,50,30,15,7][storeConfig.announcementBar!.scrollSpeed ?? 3] ?? 30)}s linear infinite` }}>
               {[...Array(20)].map((_, i) => (
                 <span key={i} className="inline-flex items-center mx-12 shrink-0">
                   {storeConfig.announcementBar!.linkUrl ? (
@@ -1848,7 +2701,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         <div className={`fixed top-0 left-0 right-0 z-[70] flex items-center justify-between gap-3 px-4 py-3 text-sm font-medium shadow-lg ${
           mpReturnMsg.type === 'success' ? 'bg-green-600 text-white' :
           mpReturnMsg.type === 'failure' ? 'bg-red-600 text-white' :
-          'bg-amber-500 text-black'
+          'bg-neutral-900 text-white'
         }`}>
           <span>{mpReturnMsg.text}</span>
           <button onClick={() => setMpReturnMsg(null)} className="shrink-0 opacity-70 hover:opacity-100 transition-opacity text-lg leading-none">✕</button>
@@ -1876,7 +2729,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 />
               </>
             ) : (
-              <span className="text-xl font-light tracking-[0.3em] text-white uppercase">{storeConfig?.storeInfo?.name || 'Tienda'}</span>
+              <span className="text-xl font-light tracking-[0.3em] text-white uppercase">{storeConfig?.storeInfo?.name || 'DAIMUZ'}</span>
             )}
           </div>
           {/* Mobile: logo centered */}
@@ -1955,26 +2808,43 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             )}
             {publicServices.length > 0 && <button onClick={() => { closeProductModal(); setShowServices(true); setShowCatalog(false); setShowDrop(false); setShowNewLaunches(false); setShowOffers(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`${showServices ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase text-xs tracking-[0.2em]`}>Servicios</button>}
             {storeConfig?.activeDrop && <button onClick={() => { closeProductModal(); setShowDrop(true); setShowCatalog(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`${showDrop ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase text-xs tracking-[0.2em]`}>Drop</button>}
+            {!!storeConfig?.publicMenuEnabled && selectedStore !== 'all' && (
+              <a href={`/menu/${selectedStore}`} target="_blank" rel="noreferrer"
+                className="text-white/50 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">
+                Menú
+              </a>
+            )}
+            {!!storeConfig?.storeInfo?.contactPageEnabled && selectedStore !== 'all' && (
+              <button
+                onClick={() => { document.getElementById('seccion-contacto')?.scrollIntoView({ behavior: 'smooth' }) }}
+                className="text-white/50 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]"
+              >
+                Contacto
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {isAuthenticated && authUser ? (
               <>
                 <button
                   onClick={() => { fetchClientOrders(); setAccountTab('pedidos'); setShowAccountPanel(true) }}
-                  className="hidden md:flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 transition-colors uppercase tracking-wider"
+                  className="hidden md:flex items-center gap-1 text-xs text-white hover:text-white/80 transition-colors uppercase tracking-wider"
                 >
                   <Package className="w-4 h-4" />
                   Mis Pedidos
                 </button>
                 <button
-                  onClick={() => { setAccountTab('perfil'); setShowAccountPanel(true) }}
-                  className="hidden md:flex w-9 h-9 rounded-full bg-white/10 hover:bg-amber-500/20 border border-white/20 hover:border-amber-400/40 items-center justify-center transition-all duration-300 group"
+                  onClick={() => { setAccountTab('perfil'); setShowAccountPanel(true); fetchSavedAddresses() }}
+                  className="hidden md:flex w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 items-center justify-center transition-all duration-300 group"
                   title={authUser.name}
                 >
-                  <User className="w-4 h-4 text-white/70 group-hover:text-amber-400 transition-colors" />
+                  <User className="w-4 h-4 text-white/70 group-hover:text-white transition-colors" />
                 </button>
               </>
             ) : null}
+            <div className="hidden md:flex [&_button]:text-white/70 [&_button:hover]:text-white">
+              <ContactModal />
+            </div>
             <button
               onClick={() => { setShowDesktopSearch(s => !s); setTimeout(() => desktopSearchInputRef.current?.focus(), 50) }}
               className="hidden md:flex p-2 text-white/70 hover:text-white transition-colors"
@@ -1988,7 +2858,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             >
               <ShoppingCart className="w-5 h-5" />
               {totalItems > 0 && (
-                <span className="absolute -top-1 -right-1 bg-amber-500 text-black text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-white text-black text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
                   {totalItems}
                 </span>
               )}
@@ -1996,10 +2866,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             {!isAuthenticated && (
               <button
                 onClick={() => { setShowClientLogin(true); setClientLoginTab('login'); setClientLoginError('') }}
-                className="hidden md:flex w-9 h-9 rounded-full bg-white/10 hover:bg-amber-500/20 border border-white/20 hover:border-amber-400/40 items-center justify-center transition-all duration-300 group"
+                className="hidden md:flex w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/40 items-center justify-center transition-all duration-300 group"
                 title="Mi Cuenta"
               >
-                <User className="w-4 h-4 text-white/70 group-hover:text-amber-400 transition-colors" />
+                <User className="w-4 h-4 text-white/70 group-hover:text-white transition-colors" />
               </button>
             )}
           </div>
@@ -2011,7 +2881,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         <>
           <div
             className="fixed inset-0 z-[48] hidden md:block"
-            onClick={() => { setShowDesktopSearch(false); setGlobalSearchQuery(''); setGlobalSearchResults([]) }}
+            onClick={() => { setShowDesktopSearch(false); setGlobalSearchQuery(''); setGlobalSearchResults([]); setGlobalSearchStores([]) }}
           />
           <div
             className="fixed left-0 right-0 z-[49] hidden md:block border-b border-white/10 shadow-2xl"
@@ -2029,11 +2899,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   value={globalSearchQuery}
                   onChange={(e) => handleGlobalSearch(e.target.value)}
                   placeholder="Buscar productos, marcas o categorías..."
-                  className="w-full pl-12 pr-12 py-3 bg-white/5 border border-white/15 text-white placeholder-white/30 text-sm focus:outline-none focus:border-amber-500/50 rounded-sm"
+                  className="w-full pl-12 pr-12 py-3 bg-white/5 border border-white/15 text-white placeholder-white/30 text-sm focus:outline-none focus:border-white/50 rounded-sm"
                 />
                 {globalSearchQuery ? (
                   <button
-                    onClick={() => { setGlobalSearchQuery(''); setGlobalSearchResults([]); desktopSearchInputRef.current?.focus() }}
+                    onClick={() => { setGlobalSearchQuery(''); setGlobalSearchResults([]); setGlobalSearchStores([]); desktopSearchInputRef.current?.focus() }}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white"
                   >
                     <X className="w-4 h-4" />
@@ -2050,24 +2920,67 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
               {/* Results */}
               {!globalSearchQuery ? (
-                <p className="text-center text-white/30 text-sm py-6">Escribe para buscar productos...</p>
+                <p className="text-center text-white/30 text-sm py-6">Escribe para buscar tiendas, productos o servicios...</p>
               ) : loadingGlobalSearch ? (
                 <div className="flex items-center justify-center gap-3 py-6">
-                  <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   <span className="text-white/40 text-sm">Buscando...</span>
                 </div>
-              ) : globalSearchResults.length === 0 ? (
+              ) : globalSearchResults.length === 0 && globalSearchStores.length === 0 ? (
                 <p className="text-center text-white/30 text-sm py-6">Sin resultados para &ldquo;{globalSearchQuery}&rdquo;</p>
               ) : (
-                <div className="mt-4 grid grid-cols-4 gap-3 pb-4 max-h-[60vh] overflow-y-auto">
-                  {globalSearchResults.slice(0, 12).map(product => {
+                <div className="mt-4 pb-4 max-h-[60vh] overflow-y-auto space-y-4">
+                  {/* Stores */}
+                  {globalSearchStores.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-white/20 mb-3 font-light">Tiendas</p>
+                      <div className="flex flex-col gap-1.5">
+                        {globalSearchStores.map(store => (
+                          <button
+                            key={store.id}
+                            onClick={() => { setSelectedStore(store.slug); setShowDesktopSearch(false); setGlobalSearchQuery(''); setGlobalSearchResults([]); setGlobalSearchStores([]) }}
+                            className="group flex items-center gap-4 px-4 py-3 rounded-none border-b border-white/5 hover:bg-white/4 hover:border-white/20 transition-all duration-150 text-left w-full"
+                          >
+                            {/* Logo / icon */}
+                            <div className="shrink-0 w-10 h-10 rounded-sm overflow-hidden border border-white/8 bg-white/3 flex items-center justify-center">
+                              {store.logoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={ensureAbsoluteUrl(store.logoUrl)} alt={store.name} className="w-full h-full object-cover" />
+                              ) : (
+                                <Store className="w-4 h-4 text-white/20" />
+                              )}
+                            </div>
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-light text-white/90 tracking-wide truncate group-hover:text-white transition-colors">
+                                {store.name}
+                              </p>
+                              {store.businessType && (
+                                <p className="text-[11px] text-white/50 uppercase tracking-widest font-light mt-0.5 truncate">
+                                  {store.businessType}
+                                </p>
+                              )}
+                            </div>
+                            {/* Arrow */}
+                            <ChevronRight className="w-3.5 h-3.5 text-white/15 group-hover:text-white/50 transition-colors shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Products */}
+                  {globalSearchResults.length > 0 && (
+                    <div>
+                      {globalSearchStores.length > 0 && <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Productos</p>}
+                      <div className="grid grid-cols-4 gap-3">
+                        {globalSearchResults.slice(0, 12).map(product => {
                     const isOffer = product.isOnOffer && product.offerPrice
                     const inCart = carrito.find(c => c.id === product.id)
                     return (
                       <div
                         key={product.id}
-                        className={`group relative bg-white/5 border ${isOffer ? 'border-orange-500/30' : 'border-white/10'} overflow-hidden cursor-pointer hover:border-amber-500/40 transition-colors`}
-                        onClick={() => { openProductModal(product); setShowDesktopSearch(false); setGlobalSearchQuery(''); setGlobalSearchResults([]) }}
+                        className={`group relative bg-white/5 border ${isOffer ? 'border-orange-500/30' : 'border-white/10'} overflow-hidden cursor-pointer hover:border-white/40 transition-colors`}
+                        onClick={() => { openProductModal(product); setShowDesktopSearch(false); setGlobalSearchQuery(''); setGlobalSearchResults([]); setGlobalSearchStores([]) }}
                       >
                         <div data-dark className="relative aspect-square bg-black/50 overflow-hidden">
                           {product.imageUrl ? (
@@ -2080,18 +2993,21 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             <div className="absolute top-1.5 left-1.5 bg-gradient-to-r from-red-600 to-orange-600 text-white text-[9px] font-bold px-1.5 py-0.5">OFERTA</div>
                           )}
                           {inCart && (
-                            <div className="absolute bottom-1.5 right-1.5 bg-amber-500 text-black text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{inCart.cantidad}</div>
+                            <div className="absolute bottom-1.5 right-1.5 bg-white text-black text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{inCart.cantidad}</div>
                           )}
                         </div>
                         <div className="p-2">
                           <p className="text-xs text-white/80 truncate leading-tight">{product.name}</p>
-                          <p className="text-xs text-amber-400 font-medium mt-0.5">
+                          <p className="text-xs text-white font-medium mt-0.5">
                             {isOffer ? formatCOP(product.offerPrice!) : formatCOP(product.salePrice)}
                           </p>
                         </div>
                       </div>
                     )
                   })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2116,36 +3032,52 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               </button>
             </div>
             <div className="flex flex-col gap-6 text-sm font-bold tracking-widest text-white/70">
-              <button onClick={() => { closeProductModal(); setShowCatalog(false); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${!showCatalog && !showDrop && !showServices && !showNewLaunches && !showOffers && !showProductModal ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Inicio</button>
-              <button onClick={() => { closeProductModal(); setSedesViewMode(false); setShowCatalog(true); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showCatalog && !sedesViewMode ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Catálogo</button>
+              <button onClick={() => { closeProductModal(); setMobileActiveTab('tienda'); setShowCatalog(false); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${!showCatalog && !showDrop && !showServices && !showNewLaunches && !showOffers && !showProductModal ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Inicio</button>
+              <button onClick={() => { closeProductModal(); setMobileActiveTab('tienda'); setSedesViewMode(false); setShowCatalog(true); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showCatalog && !sedesViewMode ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Catálogo</button>
               {storeSedes.length >= 2 && (
-                <button onClick={() => { closeProductModal(); setSedesViewMode(true); setActiveSede(null); setCatalogSpecialFilter('all'); setShowCatalog(true); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 flex items-center gap-2 ${showCatalog && sedesViewMode ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>
+                <button onClick={() => { closeProductModal(); setMobileActiveTab('tienda'); setSedesViewMode(true); setActiveSede(null); setCatalogSpecialFilter('all'); setShowCatalog(true); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 flex items-center gap-2 ${showCatalog && sedesViewMode ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>
                   <Store className="w-4 h-4" />
                   Sedes
                 </button>
               )}
               {storeConfig?.newLaunches && storeConfig.newLaunches.length > 0 && (
-                <button onClick={() => { closeProductModal(); setShowNewLaunches(true); setShowCatalog(false); setShowDrop(false); setShowServices(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showNewLaunches ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>
+                <button onClick={() => { closeProductModal(); setMobileActiveTab('tienda'); setShowNewLaunches(true); setShowCatalog(false); setShowDrop(false); setShowServices(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showNewLaunches ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>
                   Nuevos Lanzamientos
                 </button>
               )}
-              {publicServices.length > 0 && <button onClick={() => { closeProductModal(); setShowServices(true); setShowCatalog(false); setShowDrop(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showServices ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Servicios</button>}
-              {storeConfig?.activeDrop && <button onClick={() => { closeProductModal(); setShowDrop(true); setShowCatalog(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showDrop ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Drop</button>}
-              {offerProducts.length > 0 && <button onClick={() => { closeProductModal(); setShowOffers(true); setShowCatalog(false); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showOffers ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Ofertas</button>}
+              {publicServices.length > 0 && <button onClick={() => { closeProductModal(); setMobileActiveTab('tienda'); setShowServices(true); setShowCatalog(false); setShowDrop(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showServices ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Servicios</button>}
+              {storeConfig?.activeDrop && <button onClick={() => { closeProductModal(); setMobileActiveTab('tienda'); setShowDrop(true); setShowCatalog(false); setShowServices(false); setShowNewLaunches(false); setShowOffers(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showDrop ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Drop</button>}
+              {offerProducts.length > 0 && <button onClick={() => { closeProductModal(); setMobileActiveTab('tienda'); setShowOffers(true); setShowCatalog(false); setShowDrop(false); setShowServices(false); setShowNewLaunches(false); setMobileMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }} className={`text-left py-2 ${showOffers ? 'text-white' : 'text-white/50'} hover:text-white transition-colors uppercase border-b border-white/5`}>Ofertas</button>}
+              {!!storeConfig?.publicMenuEnabled && selectedStore !== 'all' && (
+                <a href={`/menu/${selectedStore}`} target="_blank" rel="noreferrer"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-left py-2 text-white hover:text-white/80 transition-colors uppercase border-b border-white/5 flex items-center gap-2">
+                  <UtensilsCrossed className="w-4 h-4" />
+                  Menú
+                </a>
+              )}
+              {!!storeConfig?.storeInfo?.contactPageEnabled && selectedStore !== 'all' && (
+                <button
+                  onClick={() => { setMobileMenuOpen(false); setTimeout(() => document.getElementById('seccion-contacto')?.scrollIntoView({ behavior: 'smooth' }), 100) }}
+                  className="text-left py-2 text-white/50 hover:text-white transition-colors uppercase border-b border-white/5"
+                >
+                  Contacto
+                </button>
+              )}
               {isAuthenticated && authUser ? (
                 <>
-                  <button onClick={() => { fetchClientOrders(); setShowMyOrders(true); setMobileMenuOpen(false) }} className="text-left py-2 text-amber-400 hover:text-amber-300 transition-colors uppercase border-b border-white/5 flex items-center gap-2"><Package className="w-4 h-4" />Mis Pedidos</button>
+                  <button onClick={() => { fetchClientOrders(); setShowMyOrders(true); setMobileMenuOpen(false) }} className="text-left py-2 text-white hover:text-white/80 transition-colors uppercase border-b border-white/5 flex items-center gap-2"><Package className="w-4 h-4" />Mis Pedidos</button>
                   <button onClick={() => { handleClientLogout(); setMobileMenuOpen(false) }} className="text-left py-2 text-red-400 hover:text-red-300 transition-colors uppercase border-b border-white/5 flex items-center gap-2"><LogOut className="w-4 h-4" />Cerrar Sesión ({authUser.name})</button>
                 </>
               ) : (
-                <button onClick={() => { setMobileMenuOpen(false); setShowClientLogin(true); setClientLoginTab('login'); setClientLoginError('') }} className="text-left py-2 text-amber-400 hover:text-amber-300 transition-colors uppercase border-b border-white/5 flex items-center gap-2"><LogIn className="w-4 h-4" />Mi Cuenta</button>
+                <button onClick={() => { setMobileMenuOpen(false); setShowClientLogin(true); setClientLoginTab('login'); setClientLoginError('') }} className="text-left py-2 text-white hover:text-white/80 transition-colors uppercase border-b border-white/5 flex items-center gap-2"><LogIn className="w-4 h-4" />Mi Cuenta</button>
               )}
             </div>
           </div>
         </>
       )}
 
-      {/* ========== PRODUCT DETAIL VIEW (inline section) ========== */}
+      {/* ========== PRODUCT DETAIL VIEW (fixed overlay) ========== */}
       {showProductModal && selectedProduct && (() => {
         // Parse gallery images
         let parsedImgs: string[] = []
@@ -2159,548 +3091,1201 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           ? parsedImgs
           : selectedProduct.imageUrl ? [selectedProduct.imageUrl] : []
         const activeUrl = gallery[activeImageIdx] || gallery[0] || ''
+        // Si la variante (color) seleccionada tiene imagen propia, la foto principal cambia a ella.
+        const heroUrl = selectedVariant?.image || activeUrl
 
         // Related products: same category, different product
         const relatedProducts = products
           .filter(p => p.id !== selectedProduct.id && (p.category === selectedProduct.category || p.brand === selectedProduct.brand))
           .slice(0, 8)
 
+        // Color name → CSS color mapper
+        const colorToCss = (name: string): string | null => {
+          const map: Record<string, string> = {
+            negro: '#111', blanco: '#f5f5f5', rojo: '#ef4444', azul: '#3b82f6',
+            verde: '#22c55e', amarillo: '#eab308', rosa: '#ec4899', rosado: '#f9a8d4',
+            morado: '#a855f7', violeta: '#8b5cf6', naranja: '#f97316', gris: '#6b7280',
+            café: '#92400e', marron: '#92400e', marrón: '#92400e', dorado: '#d97706',
+            plateado: '#9ca3af', beige: '#d4b896', turquesa: '#14b8a6', coral: '#fb7185',
+            vino: '#7f1d1d', camel: '#c4a265', crema: '#fef3c7', lavanda: '#c4b5fd',
+          }
+          const lower = name.toLowerCase().trim()
+          if (/^#[0-9a-f]{3,6}$/i.test(lower)) return lower
+          return map[lower] ?? null
+        }
+
         return (
-          <div className="pt-16 min-h-screen animate-in fade-in duration-300">
-            {/* Floating close button — mobile only, always visible */}
-            <button
-              onClick={closeProductModal}
-              className="sm:hidden fixed top-[104px] right-4 z-50 w-9 h-9 rounded-full bg-black/80 border border-white/20 flex items-center justify-center text-white/70 hover:text-white hover:bg-black transition-all shadow-lg backdrop-blur-sm"
-              aria-label="Cerrar producto"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-
-              {/* Back button — desktop */}
+          <div
+            className="fixed z-[150] overflow-y-auto animate-in fade-in duration-200"
+            style={{
+              top: storeConfig?.announcementBar?.isActive ? '104px' : '64px',
+              left: 0, right: 0, bottom: 0,
+              backgroundColor: effectiveBgColor,
+            }}
+          >
+            {/* ══════════════════════════════════════════
+                MOBILE LAYOUT
+            ══════════════════════════════════════════ */}
+            <div className="sm:hidden relative" style={{ paddingBottom: '24px' }}>
+              {/* Close button */}
               <button
                 onClick={closeProductModal}
-                className="hidden sm:flex items-center gap-2 text-white/50 hover:text-white transition-colors text-xs uppercase tracking-widest mb-6"
+                className="absolute top-3 right-3 z-20 w-9 h-9 rounded-full bg-black/60 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/80 hover:text-white transition-colors"
+                aria-label="Cerrar"
               >
-                <ChevronLeft className="w-4 h-4" />
-                Volver
+                <X className="w-4 h-4" />
               </button>
 
-              {/* ── Two-column layout ── */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
-
-                {/* ════ LEFT — Gallery + Info ════ */}
-                <div className="lg:col-span-7 space-y-8">
-
-                  {/* Gallery */}
-                  <div className="flex gap-3 lg:max-h-[520px]">
-                    {/* Vertical thumbnails */}
-                    {gallery.length > 1 && (
-                      <div className="hidden sm:flex flex-col gap-2 w-[64px] flex-shrink-0 overflow-y-auto scrollbar-hide">
-                        {gallery.map((url, i) => (
-                          <button
-                            key={i}
-                            onClick={() => setActiveImageIdx(i)}
-                            className={`w-[64px] h-[64px] overflow-hidden flex-shrink-0 transition-all duration-200 ${
-                              i === activeImageIdx
-                                ? 'border-2 border-amber-400/80'
-                                : 'border border-white/10 opacity-50 hover:opacity-100'
-                            }`}
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={ensureAbsoluteUrl(url)} alt={`${selectedProduct.name} ${i + 1}`} className="w-full h-full object-cover" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Hero image */}
-                    <div className="flex-1 relative overflow-hidden lg:max-h-[520px]" style={{ aspectRatio: '4/5', backgroundColor: effectiveBgColor }}>
-                      {activeUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          key={activeUrl}
-                          src={ensureAbsoluteUrl(activeUrl)}
-                          alt={selectedProduct.name}
-                          className="w-full h-full object-contain transition-opacity duration-300"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Sparkles className="w-20 h-20 text-white/10" />
-                        </div>
-                      )}
-
-                      {/* Mobile dots */}
-                      {gallery.length > 1 && (
-                        <div className="sm:hidden absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
-                          {gallery.map((_, i) => (
-                            <button
-                              key={i}
-                              onClick={() => setActiveImageIdx(i)}
-                              className={`w-1.5 h-1.5 rounded-full transition-all ${i === activeImageIdx ? 'bg-amber-400 w-3' : 'bg-white/40'}`}
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Offer badge */}
-                      {selectedProduct.isOnOffer && selectedProduct.offerPrice && (
-                        <div className="absolute top-4 left-4 flex flex-col gap-2">
-                          <div className="flex items-center gap-1.5 bg-gradient-to-r from-red-600 to-orange-600 text-white text-sm font-bold px-3 py-1.5 shadow-lg shadow-red-500/30">
-                            <Flame className="w-4 h-4" />
-                            -{Math.round(((selectedProduct.salePrice - selectedProduct.offerPrice) / selectedProduct.salePrice) * 100)}% OFF
-                          </div>
-                          {selectedProduct.offerLabel && (
-                            <div className="bg-black/75 backdrop-blur-sm text-white/70 text-xs font-medium px-3 py-1 uppercase tracking-wider">
-                              {selectedProduct.offerLabel}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Delivery badge */}
-                      {selectedProduct.availableForDelivery && (
-                        <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white/70 text-[10px] font-medium px-2.5 py-1.5 uppercase tracking-wider">
-                          <MapPin className="w-3 h-3" /> Domicilio disponible
-                        </div>
-                      )}
-                    </div>
+              {/* ── Main image ── */}
+              <div className="relative w-full" style={{ aspectRatio: '1 / 1', backgroundColor: isLightBg ? '#f0f0f0' : '#111' }}>
+                {heroUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={heroUrl} src={ensureAbsoluteUrl(heroUrl)} alt={selectedProduct.name} className="w-full h-full object-contain" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-16 h-16 text-white/10" /></div>
+                )}
+                {!!(selectedProduct.isOnOffer && selectedProduct.offerPrice) && (
+                  <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-gradient-to-r from-red-600 to-orange-500 text-white text-xs font-bold px-2.5 py-1 shadow-lg">
+                    <Flame className="w-3.5 h-3.5" />
+                    -{Math.round(((selectedProduct.salePrice - selectedProduct.offerPrice) / selectedProduct.salePrice) * 100)}% OFF
                   </div>
-
-                  {/* Store info */}
-                  {selectedProduct.storeName && (
-                    <div className="flex items-center gap-3 py-4 border-t border-white/5">
-                      <div className="w-10 h-10 bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0">
-                        <Store className="w-5 h-5 text-white/50" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium text-white/80">{selectedProduct.storeName}</p>
-                          <span className="flex items-center gap-1 text-[10px] text-white/40 border border-white/10 px-2 py-0.5">
-                            <CheckCircle className="w-3 h-3" /> Verificado
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-white/40 mt-0.5">Tienda oficial · Envíos a todo Colombia</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Description */}
-                  {selectedProduct.description && (
-                    <div className="py-4 border-t border-white/5">
-                      <h4 className={`text-[10px] uppercase tracking-widest mb-4 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Descripción</h4>
-                      <div className="space-y-2.5">
-                        {selectedProduct.description
-                          .split(/\n+/)
-                          .map(line => line.trim())
-                          .filter(Boolean)
-                          .map((line, i) => {
-                            const isBullet = /^[-•*►▸→✓✔·]\s/.test(line)
-                            const cleanLine = isBullet ? line.replace(/^[-•*►▸→✓✔·]\s*/, '') : line
-                            if (isBullet) {
-                              return (
-                                <div key={i} className="flex items-start gap-2.5">
-                                  <span className="mt-[5px] shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500/70" />
-                                  <p className={`text-sm font-light leading-relaxed ${isLightBg ? 'text-black/75' : 'text-white/65'}`}>{cleanLine}</p>
-                                </div>
-                              )
-                            }
-                            return (
-                              <p key={i} className={`text-sm font-light leading-relaxed ${isLightBg ? 'text-black/75' : 'text-white/65'}`}>{line}</p>
-                            )
-                          })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Specs */}
-                  <div className={`py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/5'}`}>
-                    <h4 className={`text-[10px] uppercase tracking-widest mb-4 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Especificaciones</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {selectedProduct.category && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Categoría</p>
-                          <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.category}</p>
-                        </div>
-                      )}
-                      {selectedProduct.brand && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Marca</p>
-                          <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.brand}</p>
-                        </div>
-                      )}
-                      {selectedProduct.gender && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Género</p>
-                          <p className={`text-sm font-light capitalize ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.gender}</p>
-                        </div>
-                      )}
-                      {selectedProduct.size && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Tamaño</p>
-                          <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.size}</p>
-                        </div>
-                      )}
-                      {selectedProduct.color && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Color</p>
-                          <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.color}</p>
-                        </div>
-                      )}
-                      {selectedProduct.material && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Material</p>
-                          <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.material}</p>
-                        </div>
-                      )}
-                      {selectedProduct.netWeight && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Peso</p>
-                          <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.netWeight} {selectedProduct.weightUnit || ''}</p>
-                        </div>
-                      )}
-                      {selectedProduct.warrantyMonths && (
-                        <div className={`px-3 py-2 border ${isLightBg ? 'bg-black/5 border-black/10' : 'bg-white/4 border-white/5'}`}>
-                          <p className={`text-[10px] uppercase ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Garantía</p>
-                          <p className={`text-sm font-light ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{selectedProduct.warrantyMonths} meses</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* ════ RIGHT — Purchase zone ════ */}
-                <div className="lg:col-span-5">
-                  <div className="lg:sticky lg:top-24 space-y-6">
-
-                    {/* Brand + category tags */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {selectedProduct.brand && (
-                        <p className="text-amber-400 uppercase tracking-[0.25em] text-[11px] font-medium">{selectedProduct.brand}</p>
-                      )}
-                      <span className="text-[10px] text-white/40 uppercase tracking-widest border border-white/10 px-2 py-0.5">{selectedProduct.category}</span>
-                      {selectedProduct.gender && (
-                        <span className="text-[10px] text-white/40 uppercase tracking-widest border border-white/10 px-2 py-0.5">{selectedProduct.gender}</span>
-                      )}
-                    </div>
-
-                    {/* Product name */}
-                    <h1 className="text-3xl sm:text-4xl font-light text-white leading-tight">{selectedProduct.name}</h1>
-
-                    {/* Price */}
-                    <div className="space-y-2">
-                      {selectedProduct.isOnOffer && selectedProduct.offerPrice ? (
-                        <div className="space-y-2">
-                          <div className="flex items-end gap-3 flex-wrap">
-                            <span className={`text-4xl font-light ${isLightBg ? 'text-black' : 'text-amber-400'}`}>{formatCOP(selectedProduct.offerPrice)}</span>
-                            <span className="text-xl text-white/30 line-through pb-0.5">{formatCOP(selectedProduct.salePrice)}</span>
-                            <span className="bg-red-600/20 text-red-400 text-xs font-bold px-2 py-1 border border-red-600/30 self-center">
-                              -{Math.round(((selectedProduct.salePrice - selectedProduct.offerPrice) / selectedProduct.salePrice) * 100)}% OFF
-                            </span>
-                          </div>
-                          <p className="text-sm text-white/60 flex items-center gap-1.5">
-                            <Tag className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
-                            Ahorras {formatCOP(selectedProduct.salePrice - selectedProduct.offerPrice)}
-                            {selectedProduct.offerLabel && (
-                              <span className="text-white/40 ml-1">· {selectedProduct.offerLabel}</span>
-                            )}
-                          </p>
-                        </div>
-                      ) : (
-                        <span className={`text-4xl font-light ${isLightBg ? 'text-black' : 'text-amber-400'}`}>{formatCOP(selectedProduct.salePrice)}</span>
-                      )}
-                    </div>
-
-                    {/* Stock status */}
-                    <div>
-                      {selectedProduct.stock === 0 ? (
-                        <div className="flex items-center gap-2 text-red-400 text-sm">
-                          <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                          Agotado por el momento
-                        </div>
-                      ) : selectedProduct.stock <= 5 ? (
-                        <div className="flex items-center gap-2 text-amber-400 text-sm">
-                          <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
-                          ¡Últimas unidades!
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-white/60 text-sm">
-                          <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
-                          En stock
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Variants */}
-                    {(selectedProduct.color || selectedProduct.size) && (
-                      <div className="space-y-3">
-                        {selectedProduct.color && (
-                          <div>
-                            <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2">Color</p>
-                            <div className="inline-flex items-center gap-2 px-3 py-1.5 border border-white/20 text-white/60 text-xs">
-                              {selectedProduct.color}
-                            </div>
-                          </div>
-                        )}
-                        {selectedProduct.size && (
-                          <div>
-                            <p className="text-[10px] text-white/40 uppercase tracking-widest mb-2">Tamaño</p>
-                            <div className="inline-flex px-4 py-1.5 border border-white/20 text-white/60 text-xs font-medium">
-                              {selectedProduct.size}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Quantity */}
-                    <div className="flex items-center gap-4">
-                      <span className="text-xs text-white/40 uppercase tracking-widest">Cantidad</span>
-                      <div className="flex items-center border border-white/10">
-                        <button
-                          onClick={() => setProductQuantity(q => Math.max(1, q - 1))}
-                          className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/5 transition-colors"
-                          disabled={selectedProduct.stock === 0}
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="w-12 text-center text-white text-sm font-light">{productQuantity}</span>
-                        <button
-                          onClick={() => setProductQuantity(q => Math.min(selectedProduct.stock, q + 1))}
-                          className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/5 transition-colors"
-                          disabled={selectedProduct.stock === 0}
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* CTA */}
-                    <button
-                      onClick={addFromModal}
-                      disabled={selectedProduct.stock === 0}
-                      className={`w-full py-5 text-sm uppercase tracking-[0.2em] font-semibold transition-all duration-300 flex items-center justify-center gap-3 ${
-                        selectedProduct.stock === 0
-                          ? 'bg-white/5 text-white/20 cursor-not-allowed border border-white/10'
-                          : 'bg-amber-500 hover:bg-amber-400 text-black'
-                      }`}
-                    >
-                      <ShoppingCart className="w-5 h-5" />
-                      {selectedProduct.stock === 0 ? 'Agotado' : 'Agregar al Carrito'}
-                    </button>
-
-                    {/* Trust badges */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="flex flex-col items-center gap-1.5 p-3 border border-white/5 text-center">
-                        <Zap className="w-4 h-4 text-white/30" />
-                        <p className="text-[10px] text-white/40 leading-tight">Envío a todo Colombia</p>
-                      </div>
-                      <div className="flex flex-col items-center gap-1.5 p-3 border border-white/5 text-center">
-                        <ShieldCheck className="w-4 h-4 text-white/30" />
-                        <p className="text-[10px] text-white/40 leading-tight">Pago 100% seguro</p>
-                      </div>
-                      <div className="flex flex-col items-center gap-1.5 p-3 border border-white/5 text-center">
-                        <RotateCcw className="w-4 h-4 text-white/30" />
-                        <p className="text-[10px] text-white/40 leading-tight">Devoluciones fáciles</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* ── Reviews section ── */}
-              <div className="mt-20 pt-12 border-t border-white/5">
-                <div className="flex items-center justify-between mb-8">
-                  <h3 className="text-xs text-white/40 uppercase tracking-widest">Reseñas del producto</h3>
+              {/* ── Thumbnail strip ── */}
+              {gallery.length > 1 && (
+                <div className="flex gap-2.5 px-4 mt-3 overflow-x-auto scrollbar-hide">
+                  {gallery.map((url, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveImageIdx(i)}
+                      className={`flex-shrink-0 w-[64px] h-[64px] rounded-xl overflow-hidden border-2 transition-all duration-200 ${
+                        i === activeImageIdx ? 'border-white opacity-100' : 'border-transparent opacity-45'
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={ensureAbsoluteUrl(url)} alt={`${selectedProduct.name} ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Content ── */}
+              <div className="px-4 mt-5 space-y-4">
+
+                {/* Product name */}
+                <h1 className={`text-2xl font-semibold leading-tight ${isLightBg ? 'text-black' : 'text-white'}`}>{selectedProduct.name}</h1>
+
+                {/* Price */}
+                <div>
+                  {selectedVariant ? (
+                    <span className={`text-2xl font-bold ${isLightBg ? 'text-black' : 'text-white'}`}>{formatCOP(selectedVariant.price)}</span>
+                  ) : selectedProduct.isOnOffer && selectedProduct.offerPrice ? (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className={`text-2xl font-bold ${isLightBg ? 'text-black' : 'text-white'}`}>{formatCOP(selectedProduct.offerPrice)}</span>
+                      <span className="text-base text-white/30 line-through">{formatCOP(selectedProduct.salePrice)}</span>
+                    </div>
+                  ) : (
+                    <span className={`text-2xl font-bold ${isLightBg ? 'text-black' : 'text-white'}`}>{formatCOP(selectedProduct.salePrice)}</span>
+                  )}
+                </div>
+
+                {/* Viewers count */}
+                <div className={`flex items-center gap-2 text-sm ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>
+                  <Eye className="w-4 h-4 text-white/70 flex-shrink-0" />
+                  <span><strong className={isLightBg ? 'text-black/80' : 'text-white/80'}>{viewersCount}</strong> personas viendo este producto</span>
+                </div>
+
+                {/* Variants */}
+                {(selectedProduct.variants && selectedProduct.variants.length > 0) ? (
+                  <VariantSelector
+                    variants={selectedProduct.variants}
+                    basePrice={selectedProduct.salePrice}
+                    isLightBg={isLightBg}
+                    formatPrice={formatCOP}
+                    onChange={setSelectedVariant}
+                  />
+                ) : (selectedProduct.color || selectedProduct.size) ? (
+                  <div className="space-y-3">
+                    {selectedProduct.color && (
+                      <div>
+                        <p className={`text-[11px] uppercase tracking-widest mb-2.5 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                          Color — <span className={isLightBg ? 'text-black/70' : 'text-white/70'}>{selectedProduct.color}</span>
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-9 h-9 rounded-full border-[3px] border-white shadow-lg ring-2 ring-white/30"
+                            style={{ backgroundColor: colorToCss(selectedProduct.color) ?? (isLightBg ? '#444' : '#bbb') }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {selectedProduct.size && (
+                      <div>
+                        <p className={`text-[11px] uppercase tracking-widest mb-2.5 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Talla</p>
+                        <div className="flex gap-2 flex-wrap">
+                          <div className="px-5 py-2 rounded-full border-2 border-white text-sm font-medium text-white bg-white/10">
+                            {selectedProduct.size}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+
+                {/* Modificadores (adiciones, combos, "sin X") */}
+                {t1ModsLoading ? (
+                  <div className="flex justify-center py-3"><div className={`h-5 w-5 animate-spin rounded-full border-2 ${isLightBg ? 'border-black/20 border-t-black/60' : 'border-white/20 border-t-white/60'}`} /></div>
+                ) : t1Mods.map((g: any) => {
+                  const count = t1Sel[g.id]?.size ?? 0
+                  const incomplete = g.isRequired && count < Math.max(1, g.minSelect || 0)
+                  return (
+                    <div key={g.id} className={`rounded-xl border ${isLightBg ? 'border-black/10' : 'border-white/10'} overflow-hidden`}>
+                      <div className={`flex items-center justify-between px-3 py-2.5 ${isLightBg ? 'bg-black/[0.03]' : 'bg-white/[0.04]'}`}>
+                        <p className={`text-[11px] uppercase tracking-widest font-medium ${isLightBg ? 'text-black/70' : 'text-white/70'}`}>{g.name}</p>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${g.isRequired ? (incomplete ? 'bg-red-500/15 text-red-500' : 'bg-green-500/15 text-green-600') : (isLightBg ? 'bg-black/10 text-black/40' : 'bg-white/10 text-white/40')}`}>
+                          {g.isRequired ? (incomplete ? 'OBLIGATORIO' : 'LISTO') : 'OPCIONAL'}
+                        </span>
+                      </div>
+                      <div className={`divide-y ${isLightBg ? 'divide-black/5' : 'divide-white/5'}`}>
+                        {g.options.map((o: any) => {
+                          const on = t1Sel[g.id]?.has(o.id) ?? false
+                          return (
+                            <button key={o.id} type="button" onClick={() => toggleT1Mod(g, o.id)} className={`w-full flex items-center gap-3 px-3 py-2.5 text-left ${isLightBg ? 'hover:bg-black/[0.03]' : 'hover:bg-white/[0.03]'}`}>
+                              {o.imageUrl
+                                // eslint-disable-next-line @next/next/no-img-element
+                                ? <img src={ensureAbsoluteUrl(o.imageUrl)} alt={o.name} className="w-8 h-8 rounded-md object-cover shrink-0" />
+                                : <span className={`w-8 h-8 rounded-md shrink-0 ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />}
+                              <span className={`flex-1 text-sm ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{o.name}</span>
+                              {Number(o.priceDelta) > 0
+                                ? <span className={`text-xs shrink-0 ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>+{formatCOP(Number(o.priceDelta))}</span>
+                                : <span className={`text-[11px] shrink-0 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>Sin costo</span>}
+                              <span className={`shrink-0 flex items-center justify-center w-5 h-5 ${g.selectionType === 'single' ? 'rounded-full' : 'rounded-md'} border-2 ${on ? 'border-current text-current' : (isLightBg ? 'border-black/25' : 'border-white/25')}`} style={on ? { backgroundColor: isLightBg ? '#111' : '#fff' } : undefined}>
+                                {on && <span className={`${isLightBg ? 'bg-white' : 'bg-black'} ${g.selectionType === 'single' ? 'w-2 h-2 rounded-full' : 'w-2.5 h-2.5 rounded-[2px]'}`} />}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* Quantity + Heart */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => setProductQuantity(q => Math.max(1, q - 1))}
+                      disabled={selectedProduct.stock === 0}
+                      className={`w-11 h-11 flex items-center justify-center border rounded-l-xl transition-colors ${isLightBg ? 'border-black/20 text-black/60 hover:bg-black/5' : 'border-white/20 text-white/60 hover:bg-white/5'}`}
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className={`w-12 h-11 flex items-center justify-center border-y text-base font-light ${isLightBg ? 'border-black/20 text-black' : 'border-white/20 text-white'}`}>{productQuantity}</span>
+                    <button
+                      onClick={() => setProductQuantity(q => Math.min(selectedProduct.stock, q + 1))}
+                      disabled={selectedProduct.stock === 0}
+                      className={`w-11 h-11 flex items-center justify-center border rounded-r-xl transition-colors ${isLightBg ? 'border-black/20 text-black/60 hover:bg-black/5' : 'border-white/20 text-white/60 hover:bg-white/5'}`}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
                   <button
-                    onClick={() => { setShowReviewForm(p => !p); setReviewSuccess(false); setReviewError('') }}
-                    className="text-xs text-amber-400 border border-amber-400/30 px-3 py-1.5 hover:bg-amber-400/10 transition-colors"
+                    onClick={() => toggleFavorite(selectedProduct.id)}
+                    className={`w-11 h-11 flex items-center justify-center rounded-full border transition-colors ${isLightBg ? 'border-black/20 hover:bg-red-50' : 'border-white/20 hover:bg-red-500/10'}`}
                   >
-                    {showReviewForm ? 'Cancelar' : '+ Escribir reseña'}
+                    <Heart className={`w-5 h-5 ${favorites.has(selectedProduct.id) ? 'fill-red-500 text-red-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`} />
                   </button>
                 </div>
 
-                {/* Review form */}
-                {showReviewForm && !reviewSuccess && (
-                  <div className="mb-8 p-4 border border-white/10 bg-white/3 space-y-4">
-                    <p className="text-sm text-white/60">Comparte tu experiencia con este producto</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Tu nombre *</label>
+                {/* Stock status */}
+                {selectedProduct.stock === 0 ? (
+                  <div className="flex items-center gap-2 text-red-400 text-sm"><div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />Agotado</div>
+                ) : selectedProduct.stock <= 5 ? (
+                  <div className="flex items-center gap-2 text-white/90 text-sm"><div className="w-2 h-2 rounded-full bg-white animate-pulse flex-shrink-0" />¡Últimas {selectedProduct.stock} unidades!</div>
+                ) : null}
+
+                {/* Action buttons */}
+                {(() => {
+                  const isDeliveryItem = selectedProduct.deliveryType === 'domicilio' || selectedProduct.deliveryType === 'ambos'
+                  const previewTotal = totalCarrito + (selectedProduct.salePrice * productQuantity)
+                  const previewProgress = DELIVERY_FREE_MIN > 0 ? Math.min(100, (previewTotal / DELIVERY_FREE_MIN) * 100) : 0
+                  const previewUnlocked = DELIVERY_FREE_MIN > 0 && previewTotal >= DELIVERY_FREE_MIN
+                  const previewRemaining = Math.max(0, DELIVERY_FREE_MIN - previewTotal)
+                  return (
+                    <div className="space-y-3 pt-1">
+                      {t1Missing.length > 0 && (
+                        <p className="text-center text-[11px] text-red-400">Elige: {t1Missing.map((g: any) => g.name).join(', ')}</p>
+                      )}
+                      <button
+                        onClick={addFromModal}
+                        disabled={selectedProduct.stock === 0 || t1Missing.length > 0 || variantPending}
+                        style={selectedProduct.stock > 0 && t1Missing.length === 0 && !variantPending ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
+                        className={`w-full py-4 flex items-center justify-center gap-2.5 text-sm uppercase tracking-[0.15em] font-medium rounded-xl transition-opacity ${
+                          selectedProduct.stock === 0 || t1Missing.length > 0 || variantPending ? 'opacity-30 cursor-not-allowed bg-black/10 text-white/30' : 'hover:opacity-85'
+                        }`}
+                      >
+                        <ShoppingCart className="w-4 h-4 flex-shrink-0" />
+                        {variantPending ? 'Elige una opción' : t1Extra > 0 ? `Añadir · ${formatCOP((selectedProduct.offerPrice && selectedProduct.isOnOffer ? selectedProduct.offerPrice : selectedProduct.salePrice) + t1Extra)}` : 'Añadir al carrito'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (selectedProduct.stock === 0 || t1Missing.length > 0 || variantPending) return
+                          addFromModal()
+                          setShowCart(false)
+                          handleIrAlCheckout()
+                        }}
+                        disabled={selectedProduct.stock === 0 || t1Missing.length > 0 || variantPending}
+                        style={selectedProduct.stock > 0 && t1Missing.length === 0 && !variantPending ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
+                        className={`w-full py-4 flex items-center justify-center gap-2 text-sm uppercase tracking-[0.15em] font-semibold rounded-xl transition-opacity ${
+                          selectedProduct.stock === 0 || t1Missing.length > 0 || variantPending ? 'opacity-30 cursor-not-allowed bg-black/10 text-white/30' : 'hover:opacity-85'
+                        }`}
+                      >
+                        {isDeliveryItem ? <Truck className="w-4 h-4 flex-shrink-0" /> : null}
+                        {selectedProduct.stock === 0 ? 'Agotado' : isDeliveryItem ? 'Pedir Domicilio' : 'Comprar ahora'}
+                      </button>
+
+                      {/* Barra de progreso hacia domicilio gratis */}
+                      {isDeliveryItem && DELIVERY_FREE_MIN > 0 && (
+                        <div className={`rounded-xl p-3 ${isLightBg ? 'bg-black/4 border border-black/8' : 'bg-white/5 border border-white/8'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5">
+                              <Truck className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`} />
+                              {previewUnlocked ? (
+                                <span className="text-xs font-semibold text-emerald-500">¡Domicilio gratis incluido!</span>
+                              ) : (
+                                <span className={`text-xs ${isLightBg ? 'text-black/60' : 'text-white/60'}`}>
+                                  Agrega <strong className={isLightBg ? 'text-black' : 'text-white'}>{formatCOP(previewRemaining)}</strong> más para domicilio gratis
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-[10px] font-bold ml-2 shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                              {Math.round(previewProgress)}%
+                            </span>
+                          </div>
+                          <div className={`h-1.5 rounded-full overflow-hidden ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`}>
+                            <div
+                              className="h-full rounded-full transition-all duration-500 ease-out"
+                              style={{ width: `${previewProgress}%`, backgroundColor: previewUnlocked ? '#10b981' : isLightBg ? '#111111' : '#ffffff' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                {/* Verified store info */}
+                {selectedProduct.storeName && (
+                  <div className={`flex items-center gap-3 py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/8'}`}>
+                    <div className={`w-14 h-14 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 ${isLightBg ? 'bg-black/5 border border-black/10' : 'bg-white/5 border border-white/10'}`}>
+                      {storeConfig?.storeInfo?.logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={storeConfig.storeInfo.logoUrl} alt={selectedProduct.storeName} className="w-full h-full object-contain" />
+                      ) : (
+                        <Store className="w-5 h-5 text-white/70" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className={`text-sm font-medium ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{selectedProduct.storeName}</p>
+                        <span className={`flex items-center gap-1 text-[10px] border px-2 py-0.5 rounded-full ${isLightBg ? 'text-black/40 border-black/15' : 'text-white/40 border-white/15'}`}>
+                          <CheckCircle className="w-3 h-3 text-green-400" /> Verificado
+                        </span>
+                      </div>
+                      <p className={`text-[11px] mt-0.5 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Tienda oficial · Envíos a todo Colombia</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Description */}
+                {selectedProduct.description && (
+                  <div className={`py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/8'}`}>
+                    <h4 className={`text-[10px] uppercase tracking-widest mb-3 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Descripción</h4>
+                    <div className="space-y-2">
+                      {selectedProduct.description.split(/\n+/).map(l => l.trim()).filter(Boolean).map((line, i) => {
+                        const isBullet = /^[-•*►▸→✓✔·]\s/.test(line)
+                        const cleanLine = isBullet ? line.replace(/^[-•*►▸→✓✔·]\s*/, '') : line
+                        return isBullet ? (
+                          <div key={i} className="flex items-start gap-2">
+                            <span className="mt-[5px] shrink-0 w-1.5 h-1.5 rounded-full bg-white/70" />
+                            <p className={`text-sm font-light leading-relaxed ${isLightBg ? 'text-black/70' : 'text-white/60'}`}>{cleanLine}</p>
+                          </div>
+                        ) : <p key={i} className={`text-sm font-light leading-relaxed ${isLightBg ? 'text-black/70' : 'text-white/60'}`}>{line}</p>
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Mobile reviews */}
+                <div className={`pt-6 border-t ${isLightBg ? 'border-black/8' : 'border-white/8'}`}>
+                  {/* Stats header */}
+                  {!reviewsLoading && productReviews.length > 0 && (() => {
+                    const avg = productReviews.reduce((s: number, r: any) => s + r.rating, 0) / productReviews.length
+                    return (
+                      <div className="mb-6 flex items-start gap-5">
+                        <div className="flex flex-col items-center min-w-[56px]">
+                          <span className={`text-4xl font-extralight tracking-tight ${isLightBg ? 'text-black/90' : 'text-white'}`}>{avg.toFixed(1)}</span>
+                          <div className="flex gap-0.5 mt-1">
+                            {[1,2,3,4,5].map(n => (
+                              <Star key={n} size={11} className={n <= Math.round(avg) ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                            ))}
+                          </div>
+                          <span className={`text-[9px] mt-0.5 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{productReviews.length} reseña{productReviews.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          {[5,4,3,2,1].map(star => {
+                            const count = productReviews.filter((r: any) => r.rating === star).length
+                            const pct = Math.round(count / productReviews.length * 100)
+                            return (
+                              <div key={star} className="flex items-center gap-1.5">
+                                <span className={`text-[9px] w-2 shrink-0 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{star}</span>
+                                <Star size={8} className={isLightBg ? 'fill-black/20 text-black/20 shrink-0' : 'fill-white/20 text-white/20 shrink-0'} />
+                                <div className={`flex-1 h-1 rounded-full overflow-hidden ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`}>
+                                  <div className="h-full rounded-full bg-amber-400/60 transition-all duration-700" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={`text-[9px] w-3 text-right shrink-0 ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>{count}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Header + write button */}
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={`text-xs uppercase tracking-widest ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                      {productReviews.length > 0 ? `${productReviews.length} reseña${productReviews.length !== 1 ? 's' : ''}` : 'Reseñas'}
+                    </h3>
+                    <button
+                      onClick={() => { setShowReviewForm(p => !p); setReviewSuccess(false); setReviewError('') }}
+                      className={`text-xs border px-3 py-1 rounded-full transition-colors ${isLightBg ? 'text-black/60 border-black/20 hover:bg-black/5' : 'text-white/60 border-white/20 hover:bg-white/5'}`}
+                    >
+                      {showReviewForm ? 'Cancelar' : '+ Escribir reseña'}
+                    </button>
+                  </div>
+
+                  {/* Review form — mobile */}
+                  {showReviewForm && !reviewSuccess && (
+                    <div className={`mb-5 p-4 rounded-xl border space-y-3 ${isLightBg ? 'border-black/10 bg-black/2' : 'border-white/8 bg-white/2'}`}>
+                      <div className="grid grid-cols-1 gap-3">
                         <input
-                          className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-amber-400/50"
-                          placeholder="Nombre"
+                          className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
+                          placeholder="Tu nombre *"
                           value={reviewForm.reviewerName}
                           onChange={e => setReviewForm(p => ({ ...p, reviewerName: e.target.value }))}
                         />
-                      </div>
-                      <div>
-                        <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Email (opcional)</label>
                         <input
                           type="email"
-                          className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-amber-400/50"
-                          placeholder="tu@email.com"
+                          className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
+                          placeholder="Email (opcional)"
                           value={reviewForm.reviewerEmail}
                           onChange={e => setReviewForm(p => ({ ...p, reviewerEmail: e.target.value }))}
                         />
                       </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-2">Calificación *</label>
-                      <div className="flex gap-1">
-                        {[1,2,3,4,5].map(n => (
-                          <button key={n} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: n }))}>
-                            <Star size={22} className={n <= reviewForm.rating ? 'fill-amber-400 text-amber-400' : 'text-white/20'} />
-                          </button>
-                        ))}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          {[1,2,3,4,5].map(n => (
+                            <button key={n} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: n }))} className="transition-transform active:scale-90">
+                              <Star size={26} className={n <= reviewForm.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                            </button>
+                          ))}
+                          <span className={`text-xs ml-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                            {['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][reviewForm.rating]}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Título (opcional)</label>
                       <input
-                        className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-amber-400/50"
-                        placeholder="Resumen de tu reseña"
+                        className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
+                        placeholder="Título (opcional)"
                         value={reviewForm.title}
                         onChange={e => setReviewForm(p => ({ ...p, title: e.target.value }))}
                       />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/40 uppercase tracking-widest block mb-1">Tu reseña</label>
                       <textarea
                         rows={3}
-                        className="w-full bg-white/5 border border-white/10 text-white text-sm px-3 py-2 focus:outline-none focus:border-amber-400/50 resize-none"
+                        className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors resize-none ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`}
                         placeholder="Cuéntanos qué te pareció el producto..."
                         value={reviewForm.body}
                         onChange={e => setReviewForm(p => ({ ...p, body: e.target.value }))}
                       />
-                    </div>
-                    {reviewError && <p className="text-red-400 text-xs">{reviewError}</p>}
-                    <button
-                      disabled={reviewSubmitting || !reviewForm.reviewerName.trim()}
-                      onClick={async () => {
-                        const tenantId = selectedProduct?.tenantId || stores.find(s => s.slug === selectedStore)?.id
-                        if (!tenantId || !selectedProduct) {
-                          setReviewError('No se pudo identificar la tienda. Intenta recargar la página.')
-                          return
-                        }
-                        setReviewSubmitting(true)
-                        setReviewError('')
-                        const res = await api.createReview({
-                          tenantId,
-                          productId: String(selectedProduct.id),
-                          reviewerName: reviewForm.reviewerName,
-                          reviewerEmail: reviewForm.reviewerEmail || undefined,
-                          rating: reviewForm.rating,
-                          title: reviewForm.title || undefined,
-                          body: reviewForm.body || undefined,
-                        })
-                        setReviewSubmitting(false)
-                        if (res.success) {
-                          setReviewSuccess(true)
-                          setShowReviewForm(false)
-                        } else {
-                          setReviewError(res.error || 'Error al enviar la reseña')
-                        }
-                      }}
-                      className="w-full py-3 text-sm uppercase tracking-[0.2em] font-semibold bg-amber-500 hover:bg-amber-400 text-black disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {reviewSubmitting ? 'Enviando…' : 'Enviar reseña'}
-                    </button>
-                  </div>
-                )}
-
-                {reviewSuccess && (
-                  <div className="mb-8 p-4 border border-green-500/30 bg-green-500/10 text-green-400 text-sm">
-                    Gracias por tu reseña. Sera revisada y publicada pronto.
-                  </div>
-                )}
-
-                {/* Approved reviews list */}
-                {reviewsLoading ? (
-                  <p className="text-white/30 text-sm">Cargando reseñas…</p>
-                ) : productReviews.length === 0 ? (
-                  <p className="text-white/20 text-sm">Este producto aún no tiene reseñas. ¡Sé el primero!</p>
-                ) : (
-                  <div className="space-y-4">
-                    {productReviews.map((r: any) => (
-                      <div key={r.id} className="p-4 border border-white/5 bg-white/2 space-y-2">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <div>
-                            <span className="text-sm font-medium text-white/80">{r.reviewerName}</span>
-                            <span className="text-xs text-white/30 ml-2">{new Date(r.createdAt).toLocaleDateString('es-CO')}</span>
+                      <div>
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Foto (opcional)</label>
+                        {reviewForm.imageUrl1 ? (
+                          <div className="flex items-center gap-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={reviewForm.imageUrl1} alt="preview" className="w-20 h-20 object-cover rounded-lg border border-white/10" />
+                            <button type="button" onClick={() => setReviewForm(p => ({ ...p, imageUrl1: '' }))} className="text-xs text-white/40 hover:text-red-400 transition-colors">Eliminar</button>
                           </div>
-                          <div className="flex gap-0.5">
-                            {[1,2,3,4,5].map(n => (
-                              <Star key={n} size={14} className={n <= r.rating ? 'fill-amber-400 text-amber-400' : 'text-white/15'} />
-                            ))}
+                        ) : (
+                          <label className={`flex items-center gap-2 cursor-pointer border border-dashed px-3 py-2.5 rounded-lg w-fit transition-colors ${reviewImageUploading ? 'opacity-50 pointer-events-none' : ''} ${isLightBg ? 'border-black/15 hover:border-black/30' : 'border-white/15 hover:border-white/30'}`}>
+                            <svg className={`w-4 h-4 ${isLightBg ? 'text-black/30' : 'text-white/30'}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                            <span className={`text-xs ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{reviewImageUploading ? 'Subiendo…' : 'Subir imagen'}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                              const file = e.target.files?.[0]; if (!file) return
+                              setReviewImageUploading(true)
+                              try {
+                                const { cloudName, uploadPreset } = await getCloudinaryConfig()
+                                if (!cloudName || !uploadPreset) { setReviewError('La tienda no tiene configurado el servicio de imágenes.'); return }
+                                const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', uploadPreset)
+                                const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: 'POST', body: formData })
+                                if (res.ok) { const data = await res.json(); setReviewForm(p => ({ ...p, imageUrl1: data.secure_url })) }
+                                else { const data = await res.json(); setReviewError(data?.error?.message || 'Error al subir la imagen') }
+                              } catch { setReviewError('Error al subir la imagen. Intenta de nuevo.') }
+                              finally { setReviewImageUploading(false); e.target.value = '' }
+                            }} />
+                          </label>
+                        )}
+                      </div>
+                      {reviewError && <p className="text-red-400 text-xs">{reviewError}</p>}
+                      <button
+                        disabled={reviewSubmitting || !reviewForm.reviewerName.trim()}
+                        onClick={async () => {
+                          const tenantId = selectedProduct?.tenantId || stores.find(s => s.slug === selectedStore)?.id
+                          if (!tenantId || !selectedProduct) { setReviewError('No se pudo identificar la tienda.'); return }
+                          setReviewSubmitting(true); setReviewError('')
+                          const res = await api.createReview({ tenantId, productId: String(selectedProduct.id), reviewerName: reviewForm.reviewerName, reviewerEmail: reviewForm.reviewerEmail || undefined, rating: reviewForm.rating, title: reviewForm.title || undefined, body: reviewForm.body || undefined, imageUrl1: reviewForm.imageUrl1 || undefined })
+                          setReviewSubmitting(false)
+                          if (res.success) { setReviewSuccess(true); setShowReviewForm(false) } else { setReviewError(res.error || 'Error al enviar la reseña') }
+                        }}
+                        className={`w-full py-2.5 text-sm uppercase tracking-[0.15em] font-semibold rounded-lg disabled:opacity-40 transition-colors ${isLightBg ? 'bg-black text-white' : 'bg-white text-black'}`}
+                      >
+                        {reviewSubmitting ? 'Enviando…' : 'Enviar reseña'}
+                      </button>
+                    </div>
+                  )}
+
+                  {reviewSuccess && (
+                    <div className="mb-4 p-3 rounded-xl border border-green-500/30 bg-green-500/10 text-green-400 text-sm">
+                      Gracias por tu reseña. Será revisada pronto.
+                    </div>
+                  )}
+
+                  {/* Reviews list — mobile */}
+                  {reviewsLoading ? (
+                    <div className="space-y-3">
+                      {[1,2].map(i => (
+                        <div key={i} className={`p-4 rounded-xl border animate-pulse ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className={`w-8 h-8 rounded-full shrink-0 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                            <div className="flex-1 space-y-1.5">
+                              <div className={`h-3 rounded w-24 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                              <div className={`h-2 rounded w-16 ${isLightBg ? 'bg-black/6' : 'bg-white/6'}`} />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <div className={`h-2.5 rounded ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
+                            <div className={`h-2.5 rounded w-4/5 ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
                           </div>
                         </div>
-                        {r.title && <p className="text-sm font-medium text-white/70">{r.title}</p>}
-                        {r.body && <p className="text-sm text-white/50 leading-relaxed">{r.body}</p>}
-                        {(r.imageUrl1 || r.imageUrl2) && (
-                          <div className="flex gap-2 mt-1">
-                            {r.imageUrl1 && <img src={r.imageUrl1} alt="reseña" className="w-16 h-16 object-cover border border-white/10" />}
-                            {r.imageUrl2 && <img src={r.imageUrl2} alt="reseña" className="w-16 h-16 object-cover border border-white/10" />}
+                      ))}
+                    </div>
+                  ) : productReviews.length === 0 ? (
+                    <div className={`flex flex-col items-center py-8 gap-2 ${isLightBg ? 'text-black/25' : 'text-white/20'}`}>
+                      <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                      </svg>
+                      <p className="text-xs">Sé el primero en dejar una reseña</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {productReviews.map((r: any) => {
+                        const initials = r.reviewerName.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+                        const ratingLabel = ['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][r.rating] || ''
+                        const isHelpful = helpfulVotes.has(r.id)
+                        return (
+                          <div key={r.id} className={`p-4 rounded-xl border transition-colors ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                            <div className="flex items-start gap-2.5 mb-2.5">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 select-none ${isLightBg ? 'bg-black/8 text-black/50' : 'bg-white/10 text-white/60'}`}>{initials}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-sm font-medium ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{r.reviewerName}</span>
+                                  <span className="inline-flex items-center gap-0.5 text-[8px] text-green-400/70 border border-green-500/20 bg-green-500/6 px-1 py-0.5 rounded-full">
+                                    <svg className="w-1.5 h-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    Verificado
+                                  </span>
+                                </div>
+                                <span className={`text-[9px] ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>
+                                  {new Date(r.createdAt).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <div className="flex gap-0.5">
+                                {[1,2,3,4,5].map(n => (
+                                  <Star key={n} size={12} className={n <= r.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/12' : 'text-white/10')} />
+                                ))}
+                              </div>
+                              <span className={`text-xs font-medium ${isLightBg ? 'text-amber-600' : 'text-amber-400/80'}`}>{ratingLabel}</span>
+                            </div>
+                            {r.title && <p className={`text-sm font-medium mb-0.5 ${isLightBg ? 'text-black/75' : 'text-white/70'}`}>{r.title}</p>}
+                            {r.body && <p className={`text-sm leading-relaxed ${isLightBg ? 'text-black/55' : 'text-white/50'}`}>{r.body}</p>}
+                            {(r.imageUrl1 || r.imageUrl2) && (
+                              <div className="flex gap-2 mt-2">
+                                {r.imageUrl1 && <img src={r.imageUrl1} alt="reseña" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                                {r.imageUrl2 && <img src={r.imageUrl2} alt="reseña" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                              </div>
+                            )}
+                            {r.reply && (
+                              <div className={`mt-2 pl-2.5 border-l-2 py-1 ${isLightBg ? 'border-black/15' : 'border-white/15'}`}>
+                                <span className={`text-[9px] font-semibold uppercase tracking-widest block mb-0.5 ${isLightBg ? 'text-black/35' : 'text-white/35'}`}>Respuesta de la tienda</span>
+                                <p className={`text-xs leading-relaxed ${isLightBg ? 'text-black/50' : 'text-white/40'}`}>{r.reply}</p>
+                              </div>
+                            )}
+                            <div className="mt-2.5 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setHelpfulVotes(prev => { const next = new Set(prev); if (next.has(r.id)) next.delete(r.id); else next.add(r.id); return next })}
+                                className={`flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full border transition-all ${isHelpful ? (isLightBg ? 'border-black/25 bg-black/6 text-black/55' : 'border-white/25 bg-white/6 text-white/55') : (isLightBg ? 'border-black/10 text-black/25' : 'border-white/8 text-white/22')}`}
+                              >
+                                <svg className="w-2.5 h-2.5" fill={isHelpful ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.633 10.5c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 012.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 00.322-1.672V3a.75.75 0 01.75-.75A2.25 2.25 0 0116.5 4.5c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 01-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 00-1.423-.23H5.25M9 21H5.25a2.25 2.25 0 01-2.25-2.25V10.5a2.25 2.25 0 012.25-2.25H9" />
+                                </svg>
+                                {isHelpful ? 'Útil' : '¿Útil?'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* ══════════════════════════════════════════
+                DESKTOP LAYOUT
+            ══════════════════════════════════════════ */}
+            <div className="hidden sm:block">
+              {/* Close button */}
+              <button
+                onClick={closeProductModal}
+                className="fixed top-20 right-6 z-20 w-10 h-10 rounded-full bg-black/70 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white/70 hover:text-white hover:bg-black transition-all shadow-lg"
+                aria-label="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+                {/* Back button */}
+                <button onClick={closeProductModal} className="flex items-center gap-2 text-white/50 hover:text-white transition-colors text-xs uppercase tracking-widest mb-6">
+                  <ChevronLeft className="w-4 h-4" />Volver
+                </button>
+
+                {/* ── Two-column layout ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10">
+
+                  {/* ════ LEFT — Gallery + Info ════ */}
+                  <div className="lg:col-span-7 space-y-8">
+
+                    {/* Gallery */}
+                    <div className="flex gap-3 lg:max-h-[520px]">
+                      {gallery.length > 1 && (
+                        <div className="hidden sm:flex flex-col gap-2 w-[64px] flex-shrink-0 overflow-y-auto scrollbar-hide">
+                          {gallery.map((url, i) => (
+                            <button key={i} onClick={() => setActiveImageIdx(i)}
+                              className={`w-[64px] h-[64px] overflow-hidden flex-shrink-0 transition-all duration-200 ${i === activeImageIdx ? 'border-2 border-white/80' : 'border border-white/10 opacity-50 hover:opacity-100'}`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={ensureAbsoluteUrl(url)} alt={`${selectedProduct.name} ${i + 1}`} className="w-full h-full object-cover" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex-1 relative overflow-hidden lg:max-h-[520px]" style={{ aspectRatio: '4/5', backgroundColor: effectiveBgColor }}>
+                        {heroUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img key={heroUrl} src={ensureAbsoluteUrl(heroUrl)} alt={selectedProduct.name} className="w-full h-full object-contain transition-opacity duration-300" />
+                        ) : <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-20 h-20 text-white/10" /></div>}
+                        {!!(selectedProduct.isOnOffer && selectedProduct.offerPrice) && (
+                          <div className="absolute top-4 left-4 flex flex-col gap-2">
+                            <div className="flex items-center gap-1.5 bg-gradient-to-r from-red-600 to-orange-600 text-white text-sm font-bold px-3 py-1.5 shadow-lg shadow-red-500/30">
+                              <Flame className="w-4 h-4" />-{Math.round(((selectedProduct.salePrice - selectedProduct.offerPrice) / selectedProduct.salePrice) * 100)}% OFF
+                            </div>
+                            {selectedProduct.offerLabel && <div className="bg-black/75 backdrop-blur-sm text-white/70 text-xs font-medium px-3 py-1 uppercase tracking-wider">{selectedProduct.offerLabel}</div>}
                           </div>
                         )}
-                        {r.reply && (
-                          <div className="mt-2 pl-3 border-l-2 border-amber-400/40 text-xs text-white/40">
-                            <span className="text-amber-400/70 font-medium">Respuesta de la tienda: </span>{r.reply}
+                        {selectedProduct.availableForDelivery && (
+                          <div className="absolute bottom-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white/70 text-[10px] font-medium px-2.5 py-1.5 uppercase tracking-wider">
+                            <MapPin className="w-3 h-3" /> Domicilio disponible
                           </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    </div>
 
-              {/* ── Related products ── */}
-              {relatedProducts.length > 0 && (
-                <div className="mt-20 pt-12 border-t border-white/5">
-                  <h3 className="text-xs text-white/40 uppercase tracking-widest mb-8">Productos relacionados</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    {relatedProducts.map(rp => {
-                      const rpOffer = rp.isOnOffer && rp.offerPrice
-                      return (
-                        <button
-                          key={rp.id}
-                          onClick={() => openProductModal(rp)}
-                          className="group text-left border border-white/5 hover:border-white/15 transition-all duration-300"
-                        >
-                          <div className="aspect-square overflow-hidden bg-black relative">
-                            {rp.imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={ensureAbsoluteUrl(rp.imageUrl)}
-                                alt={rp.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <Sparkles className="w-8 h-8 text-white/10" />
-                              </div>
-                            )}
-                            {rpOffer && (
-                              <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5">
-                                -{Math.round(((rp.salePrice - rp.offerPrice!) / rp.salePrice) * 100)}%
-                              </div>
-                            )}
+                    {/* Store info */}
+                    {selectedProduct.storeName && (
+                      <div className={`flex items-center gap-3 py-4 border-t ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                        <div className={`w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0 ${isLightBg ? 'bg-black/5 border border-black/10' : 'bg-white/5 border border-white/10'}`}>
+                          {storeConfig?.storeInfo?.logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={storeConfig.storeInfo.logoUrl} alt={selectedProduct.storeName} className="w-full h-full object-contain p-1" />
+                          ) : (
+                            <Store className={`w-5 h-5 ${isLightBg ? 'text-black/40' : 'text-white/40'}`} />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className={`text-sm font-semibold ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{selectedProduct.storeName}</p>
+                            <span className="inline-flex items-center gap-1 text-[9px] text-green-400/80 border border-green-500/25 bg-green-500/8 px-2 py-0.5 rounded-full">
+                              <svg className="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                              Verificado
+                            </span>
                           </div>
-                          <div className="p-3 space-y-1">
-                            {rp.brand && <p className="text-[10px] text-white/40 uppercase tracking-wider truncate">{rp.brand}</p>}
-                            <p className="text-sm text-white/80 font-light leading-snug line-clamp-2">{rp.name}</p>
-                            <p className={`text-sm font-light ${isLightBg ? 'text-black' : 'text-white/70'}`}>
-                              {rpOffer ? formatCOP(rp.offerPrice!) : formatCOP(rp.salePrice)}
+                          <p className={`text-[11px] mt-0.5 ${isLightBg ? 'text-black/40' : 'text-white/35'}`}>Tienda oficial · Envíos a todo Colombia</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Description */}
+                    {selectedProduct.description && (
+                      <div className={`py-5 border-t ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                        <h4 className={`text-[10px] uppercase tracking-widest mb-4 flex items-center gap-2 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                          <span>Descripción</span>
+                          <span className={`flex-1 h-px ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`} />
+                        </h4>
+                        <div className="space-y-2.5">
+                          {selectedProduct.description.split(/\n+/).map(l => l.trim()).filter(Boolean).map((line, i) => {
+                            const isBullet = /^[-•*►▸→✓✔·]\s/.test(line)
+                            const cleanLine = isBullet ? line.replace(/^[-•*►▸→✓✔·]\s*/, '') : line
+                            return isBullet ? (
+                              <div key={i} className="flex items-start gap-2.5">
+                                <span className={`mt-[7px] shrink-0 w-1 h-1 rounded-full ${isLightBg ? 'bg-black/30' : 'bg-white/40'}`} />
+                                <p className={`text-sm leading-relaxed ${isLightBg ? 'text-black/65' : 'text-white/60'}`}>{cleanLine}</p>
+                              </div>
+                            ) : <p key={i} className={`text-sm leading-relaxed ${isLightBg ? 'text-black/65' : 'text-white/60'}`}>{line}</p>
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Specs */}
+                    {[
+                      { label: 'Categoría', value: selectedProduct.category },
+                      { label: 'Marca', value: selectedProduct.brand },
+                      { label: 'Color', value: selectedProduct.color },
+                      { label: 'Tamaño', value: selectedProduct.size },
+                      { label: 'Género', value: selectedProduct.gender },
+                      { label: 'Material', value: selectedProduct.material },
+                      { label: 'Peso', value: (selectedProduct.productType === 'ferreteria' && selectedProduct.weight) ? `${selectedProduct.weight} ${selectedProduct.hardwareWeightUnit || 'kg'}` : (selectedProduct.netWeight ? `${selectedProduct.netWeight} ${selectedProduct.weightUnit || ''}` : null) },
+                      { label: 'Garantía', value: selectedProduct.warrantyMonths ? `${selectedProduct.warrantyMonths} meses` : null },
+                    ].filter(s => s.value).length > 0 && (
+                      <div className={`py-4 border-t ${isLightBg ? 'border-black/10' : 'border-white/5'}`}>
+                        <h4 className={`text-[10px] uppercase tracking-widest mb-4 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Especificaciones</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { label: 'Categoría', value: selectedProduct.category },
+                            { label: 'Marca', value: selectedProduct.brand },
+                            { label: 'Color', value: selectedProduct.color },
+                            { label: 'Tamaño', value: selectedProduct.size },
+                            { label: 'Género', value: selectedProduct.gender },
+                            { label: 'Material', value: selectedProduct.material },
+                            { label: 'Peso', value: (selectedProduct.productType === 'ferreteria' && selectedProduct.weight) ? `${selectedProduct.weight} ${selectedProduct.hardwareWeightUnit || 'kg'}` : (selectedProduct.netWeight ? `${selectedProduct.netWeight} ${selectedProduct.weightUnit || ''}` : null) },
+                            { label: 'Garantía', value: selectedProduct.warrantyMonths ? `${selectedProduct.warrantyMonths} meses` : null },
+                          ].filter(s => s.value).map(s => (
+                            <div key={s.label} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs ${isLightBg ? 'bg-black/4 border-black/10 text-black/60' : 'bg-white/4 border-white/8 text-white/60'}`}>
+                              <span className={`font-medium ${isLightBg ? 'text-black/40' : 'text-white/35'}`}>{s.label}:</span>
+                              <span>{s.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ════ RIGHT — Purchase zone ════ */}
+                  <div className="lg:col-span-5">
+                    <div className="lg:sticky lg:top-8 space-y-6">
+
+                      <nav className="flex items-center gap-1 text-[11px] text-white/40 flex-wrap">
+                        <button onClick={closeProductModal} className="hover:text-white/70 transition-colors">Inicio</button>
+                        <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                        {selectedProduct.category && <><span className="uppercase">{selectedProduct.category}</span><ChevronRight className="w-3 h-3 flex-shrink-0" /></>}
+                        <span className={`uppercase ${isLightBg ? 'text-black/60' : 'text-white/60'}`}>{selectedProduct.name}</span>
+                      </nav>
+
+                      <div><span className={`text-[10px] uppercase tracking-widest border px-2.5 py-1 ${isLightBg ? 'border-black/20 text-black/50' : 'border-white/15 text-white/50'}`}>{selectedProduct.category}</span></div>
+
+                      <h1 className="text-3xl sm:text-4xl font-light leading-tight">{selectedProduct.name}</h1>
+
+                      <div className="space-y-2">
+                        {selectedVariant ? (
+                          <span className={`text-4xl font-light ${isLightBg ? 'text-black' : 'text-white'}`}>{formatCOP(selectedVariant.price)}</span>
+                        ) : selectedProduct.isOnOffer && selectedProduct.offerPrice ? (
+                          <div className="space-y-2">
+                            <div className="flex items-end gap-3 flex-wrap">
+                              <span className={`text-4xl font-light ${isLightBg ? 'text-black' : 'text-white'}`}>{formatCOP(selectedProduct.offerPrice)}</span>
+                              <span className="text-xl text-white/30 line-through pb-0.5">{formatCOP(selectedProduct.salePrice)}</span>
+                              <span className="bg-red-600/20 text-red-400 text-xs font-bold px-2 py-1 border border-red-600/30 self-center">
+                                -{Math.round(((selectedProduct.salePrice - selectedProduct.offerPrice) / selectedProduct.salePrice) * 100)}% OFF
+                              </span>
+                            </div>
+                            <p className="text-sm text-white/60 flex items-center gap-1.5">
+                              <Tag className="w-3.5 h-3.5 flex-shrink-0 text-white/70" />Ahorras {formatCOP(selectedProduct.salePrice - selectedProduct.offerPrice)}
+                              {selectedProduct.offerLabel && <span className="text-white/40 ml-1">· {selectedProduct.offerLabel}</span>}
                             </p>
                           </div>
+                        ) : <span className={`text-4xl font-light ${isLightBg ? 'text-black' : 'text-white'}`}>{formatCOP(selectedProduct.salePrice)}</span>}
+                      </div>
+
+                      <div>
+                        {selectedProduct.stock === 0 ? (
+                          <div className="flex items-center gap-2 text-red-400 text-sm"><div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />Agotado por el momento</div>
+                        ) : selectedProduct.stock <= 5 ? (
+                          <div className="flex items-center gap-2 text-white/90 text-sm"><div className="w-2 h-2 rounded-full bg-white animate-pulse flex-shrink-0" />¡Últimas unidades!</div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-white/60 text-sm"><div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />En stock</div>
+                        )}
+                      </div>
+
+                      {/* Variants — desktop */}
+                      {(selectedProduct.variants && selectedProduct.variants.length > 0) ? (
+                        <VariantSelector
+                          variants={selectedProduct.variants}
+                          basePrice={selectedProduct.salePrice}
+                          isLightBg={isLightBg}
+                          formatPrice={formatCOP}
+                          onChange={setSelectedVariant}
+                        />
+                      ) : (selectedProduct.color || selectedProduct.size) ? (
+                        <div className="space-y-3">
+                          {selectedProduct.color && (
+                            <div>
+                              <p className={`text-[10px] uppercase tracking-widest mb-2.5 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                                Color — <span className={isLightBg ? 'text-black/70' : 'text-white/70'}>{selectedProduct.color}</span>
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full border-[3px] border-white shadow-md ring-2 ring-white/30"
+                                  style={{ backgroundColor: colorToCss(selectedProduct.color) ?? (isLightBg ? '#444' : '#bbb') }}
+                                />
+                              </div>
+                            </div>
+                          )}
+                          {selectedProduct.size && (
+                            <div>
+                              <p className={`text-[10px] uppercase tracking-widest mb-2.5 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Talla</p>
+                              <div className="px-5 py-2 rounded-full border-2 border-white text-sm font-medium text-white bg-white/10 inline-block">{selectedProduct.size}</div>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {/* Quantity + heart */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <button onClick={() => setProductQuantity(q => Math.max(1, q - 1))} disabled={selectedProduct.stock === 0}
+                            className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/5 border border-white/10 transition-colors">
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="w-12 text-center text-sm font-light border-y border-white/10 h-10 flex items-center justify-center">{productQuantity}</span>
+                          <button onClick={() => setProductQuantity(q => Math.min(selectedProduct.stock, q + 1))} disabled={selectedProduct.stock === 0}
+                            className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/5 border border-white/10 transition-colors">
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <button onClick={() => toggleFavorite(selectedProduct.id)}
+                          className="w-10 h-10 flex items-center justify-center border border-white/10 hover:bg-red-500/10 transition-colors">
+                          <Heart className={`w-5 h-5 ${favorites.has(selectedProduct.id) ? 'fill-red-500 text-red-500' : 'text-white/40'}`} />
                         </button>
-                      )
-                    })}
+                      </div>
+
+                      {/* CTAs */}
+                      {(() => {
+                        const isDeliveryItem = selectedProduct.deliveryType === 'domicilio' || selectedProduct.deliveryType === 'ambos'
+                        const previewTotal = totalCarrito + (selectedProduct.salePrice * productQuantity)
+                        const previewProgress = DELIVERY_FREE_MIN > 0 ? Math.min(100, (previewTotal / DELIVERY_FREE_MIN) * 100) : 0
+                        const previewUnlocked = DELIVERY_FREE_MIN > 0 && previewTotal >= DELIVERY_FREE_MIN
+                        const previewRemaining = Math.max(0, DELIVERY_FREE_MIN - previewTotal)
+                        return (
+                          <div className="space-y-3 mt-2">
+                            <div ref={ctaRef} className="flex gap-3">
+                              <button
+                                onClick={addFromModal}
+                                disabled={selectedProduct.stock === 0 || variantPending}
+                                style={selectedProduct.stock > 0 && !variantPending ? { backgroundColor: isLightBg ? '#f5f5f5' : '#1a1a1a', color: isLightBg ? '#111111' : '#ffffff', border: `1px solid ${isLightBg ? '#d1d5db' : '#333333'}` } : undefined}
+                                className={`flex-1 py-4 text-xs uppercase tracking-[0.1em] font-medium transition-all duration-200 flex items-center justify-center gap-2 rounded-xl ${
+                                  selectedProduct.stock === 0 || variantPending ? 'bg-black/5 text-black/20 cursor-not-allowed border border-black/10' : 'hover:opacity-75'
+                                }`}
+                              >
+                                <ShoppingCart className="w-4 h-4 flex-shrink-0" />
+                                <span className="whitespace-nowrap">{selectedProduct.stock === 0 ? 'Agotado' : variantPending ? 'Elige una opción' : 'Añadir al carrito'}</span>
+                              </button>
+                              <button
+                                onClick={() => { if (selectedProduct.stock === 0 || variantPending) return; addFromModal(); setShowCart(false); handleIrAlCheckout() }}
+                                disabled={selectedProduct.stock === 0 || variantPending}
+                                style={selectedProduct.stock > 0 && !variantPending ? { backgroundColor: isLightBg ? '#111111' : '#ffffff', color: isLightBg ? '#ffffff' : '#000000' } : undefined}
+                                className={`flex-1 py-4 text-xs uppercase tracking-[0.1em] font-semibold flex items-center justify-center gap-2 rounded-xl transition-opacity ${
+                                  selectedProduct.stock === 0 || variantPending ? 'bg-black/5 text-black/20 cursor-not-allowed border border-black/10' : 'hover:opacity-80'
+                                }`}
+                              >
+                                {isDeliveryItem ? <Truck className="w-4 h-4 flex-shrink-0" /> : null}
+                                <span className="whitespace-nowrap">{selectedProduct.stock === 0 ? 'Agotado' : isDeliveryItem ? 'Pedir Domicilio' : 'Comprar ahora'}</span>
+                              </button>
+                            </div>
+
+                            {/* Barra de progreso hacia domicilio gratis */}
+                            {isDeliveryItem && DELIVERY_FREE_MIN > 0 && (
+                              <div className={`rounded-xl p-3 ${isLightBg ? 'bg-black/4 border border-black/8' : 'bg-white/5 border border-white/8'}`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <Truck className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`} />
+                                    {previewUnlocked ? (
+                                      <span className="text-xs font-semibold text-emerald-500">¡Domicilio gratis incluido!</span>
+                                    ) : (
+                                      <span className={`text-xs ${isLightBg ? 'text-black/60' : 'text-white/60'}`}>
+                                        Agrega <strong className={isLightBg ? 'text-black' : 'text-white'}>{formatCOP(previewRemaining)}</strong> más para domicilio gratis
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className={`text-[10px] font-bold ml-2 shrink-0 transition-colors ${previewUnlocked ? 'text-emerald-500' : isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                                    {Math.round(previewProgress)}%
+                                  </span>
+                                </div>
+                                <div className={`h-1.5 rounded-full overflow-hidden ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`}>
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500 ease-out"
+                                    style={{ width: `${previewProgress}%`, backgroundColor: previewUnlocked ? '#10b981' : isLightBg ? '#111111' : '#ffffff' }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
+
+                      {/* Trust badges */}
+                      <div className={`grid grid-cols-3 gap-2 rounded-xl border p-1 ${isLightBg ? 'border-black/8 bg-black/[0.02]' : 'border-white/8 bg-white/[0.02]'}`}>
+                        <div className={`flex flex-col items-center gap-1.5 py-3 text-center rounded-lg ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>
+                          <Zap className="w-4 h-4" /><p className="text-[10px] leading-tight">Envío Colombia</p>
+                        </div>
+                        <div className={`flex flex-col items-center gap-1.5 py-3 text-center rounded-lg border-x ${isLightBg ? 'border-black/8 text-black/50' : 'border-white/8 text-white/50'}`}>
+                          <ShieldCheck className="w-4 h-4" /><p className="text-[10px] leading-tight">Pago seguro</p>
+                        </div>
+                        <div className={`flex flex-col items-center gap-1.5 py-3 text-center rounded-lg ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>
+                          <RotateCcw className="w-4 h-4" /><p className="text-[10px] leading-tight">Devoluciones</p>
+                        </div>
+                      </div>
+
+                      <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm ${isLightBg ? 'bg-black/[0.04] text-black/60' : 'bg-white/[0.04] text-white/50'}`}>
+                        <span className="relative flex h-2 w-2 shrink-0">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                        </span>
+                        <span><strong className={isLightBg ? 'text-black/80' : 'text-white/80'}>{viewersCount}</strong> personas viendo ahora</span>
+                      </div>
+
+                      {/* Share */}
+                      {(() => {
+                        const productUrl = typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}?product=${selectedProduct.id}` : ''
+                        const shareText = `${selectedProduct.name} — ${formatCOP(selectedProduct.isOnOffer && selectedProduct.offerPrice ? selectedProduct.offerPrice : selectedProduct.salePrice)}`
+                        return (
+                          <div className={`pt-4 border-t ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                            <p className={`text-[10px] uppercase tracking-widest mb-3 ${isLightBg ? 'text-black/40' : 'text-white/30'}`}>Compartir</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button onClick={() => navigator.clipboard.writeText(productUrl).catch(() => {})}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-black/5' : 'border-white/15 text-white/50 hover:bg-white/5'}`}>
+                                <Link className="w-3.5 h-3.5" />Copiar enlace
+                              </button>
+                              <a href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(productUrl)}`} target="_blank" rel="noopener noreferrer"
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-blue-600 hover:text-white hover:border-blue-600' : 'border-white/15 text-white/50 hover:bg-blue-600 hover:text-white hover:border-blue-600'}`}>
+                                <Facebook className="w-3.5 h-3.5" />Facebook
+                              </a>
+                              <a href={`https://wa.me/?text=${encodeURIComponent(shareText + '\n' + productUrl)}`} target="_blank" rel="noopener noreferrer"
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-[#25D366] hover:text-white hover:border-[#25D366]' : 'border-white/15 text-white/50 hover:bg-[#25D366] hover:text-white hover:border-[#25D366]'}`}>
+                                <MessageCircle className="w-3.5 h-3.5" />WhatsApp
+                              </a>
+                              {storeConfig?.storeInfo?.socialInstagram && (
+                                <a href={storeConfig.storeInfo.socialInstagram.startsWith('http') ? storeConfig.storeInfo.socialInstagram : `https://instagram.com/${storeConfig.storeInfo.socialInstagram}`} target="_blank" rel="noopener noreferrer"
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-colors ${isLightBg ? 'border-black/15 text-black/60 hover:bg-[#E1306C] hover:text-white hover:border-[#E1306C]' : 'border-white/15 text-white/50 hover:bg-[#E1306C] hover:text-white hover:border-[#E1306C]'}`}>
+                                  <Instagram className="w-3.5 h-3.5" />Instagram
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
                   </div>
                 </div>
-              )}
 
+                {/* Desktop reviews */}
+                <div className="mt-20 pt-12 border-t border-white/5">
+                  {/* Stats header */}
+                  {!reviewsLoading && productReviews.length > 0 && (() => {
+                    const avg = productReviews.reduce((s: number, r: any) => s + r.rating, 0) / productReviews.length
+                    return (
+                      <div className="mb-10 flex flex-col sm:flex-row gap-6 sm:gap-10 items-start">
+                        <div className="flex flex-col items-center min-w-[72px]">
+                          <span className={`text-5xl font-extralight tracking-tight ${isLightBg ? 'text-black/90' : 'text-white'}`}>{avg.toFixed(1)}</span>
+                          <div className="flex gap-0.5 mt-1.5">
+                            {[1,2,3,4,5].map(n => (
+                              <Star key={n} size={13} className={n <= Math.round(avg) ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                            ))}
+                          </div>
+                          <span className={`text-[10px] mt-1 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{productReviews.length} reseña{productReviews.length !== 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex-1 space-y-1.5 w-full max-w-[220px]">
+                          {[5,4,3,2,1].map(star => {
+                            const count = productReviews.filter((r: any) => r.rating === star).length
+                            const pct = Math.round(count / productReviews.length * 100)
+                            return (
+                              <div key={star} className="flex items-center gap-2">
+                                <span className={`text-[10px] w-2.5 shrink-0 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{star}</span>
+                                <Star size={9} className={isLightBg ? 'fill-black/25 text-black/25 shrink-0' : 'fill-white/25 text-white/25 shrink-0'} />
+                                <div className={`flex-1 h-1 rounded-full overflow-hidden ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`}>
+                                  <div className="h-full rounded-full bg-amber-400/60 transition-all duration-700" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className={`text-[10px] w-4 text-right shrink-0 ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>{count}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] border border-green-500/25 bg-green-500/8 text-green-400/70 px-3 py-1.5 rounded-full self-start whitespace-nowrap">
+                          <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-.723 3.065 3.745 3.745 0 01-3.065.723 3.745 3.745 0 01-3.068 1.593c-1.268 0-2.39-.63-3.068-1.593a3.745 3.745 0 01-3.065-.723 3.746 3.746 0 01-.723-3.065 3.745 3.745 0 01-1.593-3.068c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 01.723-3.065 3.745 3.745 0 013.065-.723A3.745 3.745 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.745 3.745 0 013.065.723 3.745 3.745 0 01.723 3.065A3.745 3.745 0 0121 12z" />
+                          </svg>
+                          Compras verificadas
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Section header */}
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className={`text-xs uppercase tracking-widest ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                      {productReviews.length > 0 ? `${productReviews.length} reseña${productReviews.length !== 1 ? 's' : ''}` : 'Reseñas del producto'}
+                    </h3>
+                    <button
+                      onClick={() => { setShowReviewForm(p => !p); setReviewSuccess(false); setReviewError('') }}
+                      className={`text-xs border px-3 py-1.5 rounded-full transition-colors ${isLightBg ? 'text-black/70 border-black/20 hover:bg-black/5' : 'text-white/70 border-white/20 hover:bg-white/5'}`}
+                    >
+                      {showReviewForm ? 'Cancelar' : '+ Escribir reseña'}
+                    </button>
+                  </div>
+
+                  {/* Review form */}
+                  {showReviewForm && !reviewSuccess && (
+                    <div className={`mb-8 p-5 rounded-xl border space-y-4 ${isLightBg ? 'border-black/10 bg-black/2' : 'border-white/8 bg-white/2'}`}>
+                      <p className={`text-sm ${isLightBg ? 'text-black/50' : 'text-white/50'}`}>Comparte tu experiencia con este producto</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Tu nombre *</label>
+                          <input className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="Nombre" value={reviewForm.reviewerName} onChange={e => setReviewForm(p => ({ ...p, reviewerName: e.target.value }))} />
+                        </div>
+                        <div>
+                          <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Email (opcional)</label>
+                          <input type="email" className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="tu@email.com" value={reviewForm.reviewerEmail} onChange={e => setReviewForm(p => ({ ...p, reviewerEmail: e.target.value }))} />
+                        </div>
+                      </div>
+                      <div>
+                        <label className={`text-[10px] uppercase tracking-widest block mb-2 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Calificación *</label>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            {[1,2,3,4,5].map(n => (
+                              <button key={n} type="button" onClick={() => setReviewForm(p => ({ ...p, rating: n }))} className="transition-transform hover:scale-110 active:scale-95">
+                                <Star size={24} className={n <= reviewForm.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/15' : 'text-white/15')} />
+                              </button>
+                            ))}
+                          </div>
+                          <span className={`text-xs ml-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>{['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][reviewForm.rating]}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Título (opcional)</label>
+                        <input className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="Resumen de tu reseña" value={reviewForm.title} onChange={e => setReviewForm(p => ({ ...p, title: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Tu reseña</label>
+                        <textarea rows={3} className={`w-full border text-sm px-3 py-2 rounded-lg focus:outline-none transition-colors resize-none ${isLightBg ? 'bg-white border-black/15 text-black placeholder:text-black/25 focus:border-black/40' : 'bg-white/5 border-white/10 text-white placeholder:text-white/20 focus:border-white/35'}`} placeholder="Cuéntanos qué te pareció el producto..." value={reviewForm.body} onChange={e => setReviewForm(p => ({ ...p, body: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className={`text-[10px] uppercase tracking-widest block mb-1 ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>Foto (opcional)</label>
+                        {reviewForm.imageUrl1 ? (
+                          <div className="flex items-center gap-3">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={reviewForm.imageUrl1} alt="preview" className="w-20 h-20 object-cover rounded-lg border border-white/10" />
+                            <button type="button" onClick={() => setReviewForm(p => ({ ...p, imageUrl1: '' }))} className="text-xs text-white/40 hover:text-red-400 transition-colors">Eliminar</button>
+                          </div>
+                        ) : (
+                          <label className={`flex items-center gap-2 cursor-pointer border border-dashed px-3 py-2.5 rounded-lg w-fit transition-colors ${reviewImageUploading ? 'opacity-50 pointer-events-none' : ''} ${isLightBg ? 'border-black/15 hover:border-black/30' : 'border-white/15 hover:border-white/30'}`}>
+                            <svg className={`w-4 h-4 ${isLightBg ? 'text-black/30' : 'text-white/30'}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                            <span className={`text-xs ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>{reviewImageUploading ? 'Subiendo…' : 'Subir imagen'}</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                              const file = e.target.files?.[0]; if (!file) return
+                              setReviewImageUploading(true)
+                              try {
+                                const { cloudName, uploadPreset } = await getCloudinaryConfig()
+                                if (!cloudName || !uploadPreset) { setReviewError('La tienda no tiene configurado el servicio de imágenes.'); return }
+                                const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', uploadPreset)
+                                const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: 'POST', body: formData })
+                                if (res.ok) { const data = await res.json(); setReviewForm(p => ({ ...p, imageUrl1: data.secure_url })) }
+                                else { const data = await res.json(); setReviewError(data?.error?.message || 'Error al subir la imagen') }
+                              } catch { setReviewError('Error al subir la imagen. Intenta de nuevo.') }
+                              finally { setReviewImageUploading(false); e.target.value = '' }
+                            }} />
+                          </label>
+                        )}
+                      </div>
+                      {reviewError && <p className="text-red-400 text-xs">{reviewError}</p>}
+                      <button
+                        disabled={reviewSubmitting || !reviewForm.reviewerName.trim()}
+                        onClick={async () => {
+                          const tenantId = selectedProduct?.tenantId || stores.find(s => s.slug === selectedStore)?.id
+                          if (!tenantId || !selectedProduct) { setReviewError('No se pudo identificar la tienda. Intenta recargar la página.'); return }
+                          setReviewSubmitting(true); setReviewError('')
+                          const res = await api.createReview({ tenantId, productId: String(selectedProduct.id), reviewerName: reviewForm.reviewerName, reviewerEmail: reviewForm.reviewerEmail || undefined, rating: reviewForm.rating, title: reviewForm.title || undefined, body: reviewForm.body || undefined, imageUrl1: reviewForm.imageUrl1 || undefined })
+                          setReviewSubmitting(false)
+                          if (res.success) { setReviewSuccess(true); setShowReviewForm(false) } else { setReviewError(res.error || 'Error al enviar la reseña') }
+                        }}
+                        className={`w-full py-3 text-sm uppercase tracking-[0.2em] font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${isLightBg ? 'bg-black text-white hover:bg-black/85' : 'bg-white text-black hover:bg-white/90'}`}
+                      >
+                        {reviewSubmitting ? 'Enviando…' : 'Enviar reseña'}
+                      </button>
+                    </div>
+                  )}
+
+                  {reviewSuccess && (
+                    <div className="mb-8 p-4 rounded-xl border border-green-500/30 bg-green-500/10 text-green-400 text-sm">
+                      Gracias por tu reseña. Será revisada y publicada pronto.
+                    </div>
+                  )}
+
+                  {/* Reviews list */}
+                  {reviewsLoading ? (
+                    <div className="space-y-3">
+                      {[1,2,3].map(i => (
+                        <div key={i} className={`p-5 rounded-xl border animate-pulse ${isLightBg ? 'border-black/8' : 'border-white/5'}`}>
+                          <div className="flex items-start gap-3 mb-3">
+                            <div className={`w-9 h-9 rounded-full shrink-0 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                            <div className="flex-1 space-y-2 pt-0.5">
+                              <div className={`h-3 rounded w-28 ${isLightBg ? 'bg-black/10' : 'bg-white/10'}`} />
+                              <div className={`h-2 rounded w-20 ${isLightBg ? 'bg-black/6' : 'bg-white/6'}`} />
+                            </div>
+                          </div>
+                          <div className={`h-2.5 rounded w-24 mb-3 ${isLightBg ? 'bg-black/6' : 'bg-white/6'}`} />
+                          <div className="space-y-1.5">
+                            <div className={`h-2.5 rounded ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
+                            <div className={`h-2.5 rounded w-4/5 ${isLightBg ? 'bg-black/5' : 'bg-white/5'}`} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : productReviews.length === 0 ? (
+                    <div className={`flex flex-col items-center py-10 gap-3 ${isLightBg ? 'text-black/25' : 'text-white/20'}`}>
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="1.2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+                      </svg>
+                      <p className="text-sm">Este producto aún no tiene reseñas. ¡Sé el primero!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {productReviews.map((r: any) => {
+                        const initials = r.reviewerName.trim().split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+                        const ratingLabel = ['', 'Deficiente', 'Regular', 'Bueno', 'Muy bueno', 'Excelente'][r.rating] || ''
+                        const isHelpful = helpfulVotes.has(r.id)
+                        return (
+                          <div key={r.id} className={`p-5 rounded-xl border transition-all duration-200 ${isLightBg ? 'border-black/8 hover:border-black/15' : 'border-white/5 hover:border-white/10'}`}>
+                            <div className="flex items-start gap-3 mb-3">
+                              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 select-none ${isLightBg ? 'bg-black/8 text-black/50' : 'bg-white/10 text-white/60'}`}>{initials}</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`text-sm font-medium ${isLightBg ? 'text-black/80' : 'text-white/80'}`}>{r.reviewerName}</span>
+                                  <span className="inline-flex items-center gap-0.5 text-[9px] text-green-400/70 border border-green-500/20 bg-green-500/6 px-1.5 py-0.5 rounded-full">
+                                    <svg className="w-2 h-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                    Verificado
+                                  </span>
+                                </div>
+                                <span className={`text-[10px] ${isLightBg ? 'text-black/25' : 'text-white/25'}`}>{new Date(r.createdAt).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <div className="flex gap-0.5">
+                                {[1,2,3,4,5].map(n => (
+                                  <Star key={n} size={13} className={n <= r.rating ? 'fill-amber-400 text-amber-400' : (isLightBg ? 'text-black/12' : 'text-white/10')} />
+                                ))}
+                              </div>
+                              <span className={`text-xs font-medium ${isLightBg ? 'text-amber-600' : 'text-amber-400/80'}`}>{ratingLabel}</span>
+                            </div>
+                            {r.title && <p className={`text-sm font-medium mb-1 ${isLightBg ? 'text-black/75' : 'text-white/70'}`}>{r.title}</p>}
+                            {r.body && <p className={`text-sm leading-relaxed ${isLightBg ? 'text-black/55' : 'text-white/50'}`}>{r.body}</p>}
+                            {(r.imageUrl1 || r.imageUrl2) && (
+                              <div className="flex gap-2 mt-3">
+                                {r.imageUrl1 && <img src={r.imageUrl1} alt="reseña" className="w-16 h-16 object-cover rounded-lg border border-white/10" />}
+                                {r.imageUrl2 && <img src={r.imageUrl2} alt="reseña" className="w-16 h-16 object-cover rounded-lg border border-white/10" />}
+                              </div>
+                            )}
+                            {r.reply && (
+                              <div className={`mt-3 pl-3 border-l-2 py-1.5 ${isLightBg ? 'border-black/15' : 'border-white/15'}`}>
+                                <span className={`text-[10px] font-semibold uppercase tracking-widest block mb-0.5 ${isLightBg ? 'text-black/35' : 'text-white/35'}`}>Respuesta de la tienda</span>
+                                <p className={`text-xs leading-relaxed ${isLightBg ? 'text-black/50' : 'text-white/40'}`}>{r.reply}</p>
+                              </div>
+                            )}
+                            <div className="mt-3 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setHelpfulVotes(prev => { const next = new Set(prev); if (next.has(r.id)) next.delete(r.id); else next.add(r.id); return next })}
+                                className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border transition-all duration-150 ${isHelpful ? (isLightBg ? 'border-black/25 bg-black/6 text-black/55' : 'border-white/25 bg-white/6 text-white/55') : (isLightBg ? 'border-black/10 text-black/25 hover:border-black/20 hover:text-black/45' : 'border-white/8 text-white/22 hover:border-white/18 hover:text-white/40')}`}
+                              >
+                                <svg className="w-3 h-3" fill={isHelpful ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.633 10.5c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 012.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 00.322-1.672V3a.75.75 0 01.75-.75A2.25 2.25 0 0116.5 4.5c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 01-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 00-1.423-.23H5.25M9 21H5.25a2.25 2.25 0 01-2.25-2.25V10.5a2.25 2.25 0 012.25-2.25H9" />
+                                </svg>
+                                {isHelpful ? 'Útil' : '¿Útil?'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Related products ── */}
+                {relatedProducts.length > 0 && (
+                  <div className="mt-20 pt-12 border-t border-white/5">
+                    <h3 className="text-xs text-white/40 uppercase tracking-widest mb-8">Productos relacionados</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {relatedProducts.map(rp => {
+                        const rpOffer = rp.isOnOffer && rp.offerPrice
+                        return (
+                          <button
+                            key={rp.id}
+                            onClick={() => openProductModal(rp)}
+                            className="group text-left border border-white/5 hover:border-white/15 transition-all duration-300"
+                          >
+                            <div className="aspect-square overflow-hidden bg-black relative">
+                              {rp.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={ensureAbsoluteUrl(rp.imageUrl)}
+                                  alt={rp.name}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Sparkles className="w-8 h-8 text-white/10" />
+                                </div>
+                              )}
+                              {rpOffer && (
+                                <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5">
+                                  -{Math.round(((rp.salePrice - rp.offerPrice!) / rp.salePrice) * 100)}%
+                                </div>
+                              )}
+                            </div>
+                            <div className="p-3 space-y-1">
+                              {rp.brand && <p className="text-[10px] text-white/40 uppercase tracking-wider truncate">{rp.brand}</p>}
+                              <p className="text-sm text-white/80 font-light leading-snug line-clamp-2">{rp.name}</p>
+                              <p className={`text-sm font-light ${isLightBg ? 'text-black' : 'text-white/70'}`}>
+                                {rpOffer ? formatCOP(rp.offerPrice!) : formatCOP(rp.salePrice)}
+                              </p>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+              </div>
             </div>
           </div>
         )
@@ -2748,7 +4333,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       : 'Catálogo'}
                   </h1>
                   <div className="flex items-center gap-3">
-                    {!(sedesViewMode && !activeSede) && <span className="text-xs text-white/40">{catalogFilteredProducts.length} producto{catalogFilteredProducts.length !== 1 ? 's' : ''}</span>}
+                    {selectedStore === 'all' && !sedesViewMode && <span className="text-xs text-white/40">{stores.filter(s => businessTypeFilter === 'all' || s.businessType === businessTypeFilter).length} comercio{stores.filter(s => businessTypeFilter === 'all' || s.businessType === businessTypeFilter).length !== 1 ? 's' : ''}</span>}
+                    {selectedStore !== 'all' && !(sedesViewMode && !activeSede) && <span className="text-xs text-white/40">{catalogFilteredProducts.length} producto{catalogFilteredProducts.length !== 1 ? 's' : ''}</span>}
                     {sedesViewMode && !activeSede && <span className="text-xs text-white/40">{storeSedes.length} sede{storeSedes.length !== 1 ? 's' : ''}</span>}
                     {/* Mobile filter toggle */}
                     <button
@@ -2760,15 +4346,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     </button>
                   </div>
                 </div>
-                {/* Search bar (hidden in sede picker view) */}
-                {!(sedesViewMode && !activeSede) && <div className="relative">
+                {/* Search bar (hidden in sede picker view and all-stores view) */}
+                {!(sedesViewMode && !activeSede) && selectedStore !== 'all' && <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                   <input
                     type="text"
                     placeholder="Buscar productos..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 text-white placeholder-white/30 font-light text-sm focus:border-amber-500/50 focus:outline-none"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 text-white placeholder-white/30 font-light text-sm focus:border-white/50 focus:outline-none"
                   />
                 </div>}
                 {/* Sede selector (only when store has 2+ sedes and not in sedes view mode or a sede is active) */}
@@ -2787,7 +4373,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     {!sedesViewMode && (
                       <button
                         onClick={() => setActiveSede(null)}
-                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${activeSede === null ? 'bg-amber-500 border-amber-500 text-black font-medium' : 'border-white/20 text-white/60 hover:border-white/40 hover:text-white'}`}
+                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${activeSede === null ? 'bg-white border-white text-black font-medium' : 'border-white/20 text-white/60 hover:border-white/40 hover:text-white'}`}
                       >
                         Todas
                       </button>
@@ -2796,7 +4382,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       <button
                         key={s.id}
                         onClick={() => setActiveSede(activeSede === s.id ? (sedesViewMode ? null : null) : s.id)}
-                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${activeSede === s.id ? 'bg-amber-500 border-amber-500 text-black font-medium' : 'border-white/20 text-white/60 hover:border-white/40 hover:text-white'}`}
+                        className={`px-3 py-1 text-xs rounded-full border transition-colors ${activeSede === s.id ? 'bg-white border-white text-black font-medium' : 'border-white/20 text-white/60 hover:border-white/40 hover:text-white'}`}
                       >
                         {s.name}
                       </button>
@@ -2821,15 +4407,190 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     {(catalogPriceMin > 0 || catalogPriceMax > 0) && (
                       <FilterPill label={`${catalogPriceMin > 0 ? formatCOP(catalogPriceMin) : '$0'} — ${catalogPriceMax > 0 ? formatCOP(catalogPriceMax) : '∞'}`} onRemove={() => { setCatalogPriceMin(0); setCatalogPriceMax(0) }} />
                     )}
-                    <button onClick={clearCatalogFilters} className="text-[10px] text-amber-400 hover:text-amber-300 uppercase tracking-wider ml-2">Limpiar todo</button>
+                    <button onClick={clearCatalogFilters} className="text-[10px] text-white hover:text-white/80 uppercase tracking-wider ml-2">Limpiar todo</button>
                   </div>
                 )}
               </div>
 
               {/* Products Grid */}
               <div className="px-4 sm:px-6 lg:px-8 py-6">
-                {/* Sede Picker View */}
-                {sedesViewMode && !activeSede ? (
+
+                {/* ── Mobile category quick-filter (only inside a specific store, sidebar is hidden on mobile) ── */}
+                {selectedStore !== 'all' && !sedesViewMode && categories.length > 0 && (
+                  <div className="lg:hidden mb-4 -mx-4 px-4 overflow-x-auto scrollbar-hide">
+                    <div className="flex gap-2 pb-2">
+                      <button
+                        onClick={() => setCatalogSelectedCategories(new Set())}
+                        className={`shrink-0 px-3 py-1.5 text-[11px] uppercase tracking-widest rounded-full border transition-all ${
+                          catalogSelectedCategories.size === 0
+                            ? 'bg-white border-white text-black font-medium'
+                            : 'border-white/20 text-white/50 hover:border-white/40 hover:text-white'
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      {categories.map(cat => (
+                        <button
+                          key={cat}
+                          onClick={() => {
+                            const next = new Set<string>([cat])
+                            setCatalogSelectedCategories(
+                              catalogSelectedCategories.has(cat) && catalogSelectedCategories.size === 1 ? new Set() : next
+                            )
+                          }}
+                          className={`shrink-0 px-3 py-1.5 text-[11px] uppercase tracking-widest rounded-full border transition-all ${
+                            catalogSelectedCategories.has(cat)
+                              ? 'bg-white border-white text-black font-medium'
+                              : 'border-white/20 text-white/50 hover:border-white/40 hover:text-white'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── ALL-STORES CATALOG: grouped by business type ── */}
+                {selectedStore === 'all' && !sedesViewMode ? (
+                  <div className="space-y-10">
+                    {/* Business type filter pills */}
+                    {(() => {
+                      const types = Array.from(new Set(stores.map(s => s.businessType).filter(Boolean))) as string[]
+                      return types.length > 1 ? (
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            onClick={() => setBusinessTypeFilter('all')}
+                            className={`px-4 py-1.5 text-xs uppercase tracking-wider border transition-colors ${businessTypeFilter === 'all' ? 'bg-white border-white text-black font-medium' : 'border-white/20 text-white/50 hover:border-white/40 hover:text-white'}`}
+                          >
+                            Todos
+                          </button>
+                          {types.map(t => (
+                            <button
+                              key={t}
+                              onClick={() => setBusinessTypeFilter(businessTypeFilter === t ? 'all' : t)}
+                              className={`px-4 py-1.5 text-xs uppercase tracking-wider border transition-colors ${businessTypeFilter === t ? 'bg-white border-white text-black font-medium' : 'border-white/20 text-white/50 hover:border-white/40 hover:text-white'}`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null
+                    })()}
+
+                    {loadingAllProducts ? (
+                      <div className="text-center py-20">
+                        <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                        <p className="text-white/40 text-sm font-light">Cargando catálogo...</p>
+                      </div>
+                    ) : (() => {
+                      const types = Array.from(new Set(
+                        stores
+                          .filter(s => businessTypeFilter === 'all' || s.businessType === businessTypeFilter)
+                          .map(s => s.businessType || 'General')
+                      ))
+                      return types.map(type => {
+                        const typeStores = stores.filter(s => (s.businessType || 'General') === type && (businessTypeFilter === 'all' || s.businessType === businessTypeFilter))
+                        if (typeStores.length === 0) return null
+                        return (
+                          <div key={type} className="space-y-4">
+                            {/* Category section header */}
+                            <div className="flex items-center gap-4">
+                              <div className="h-px flex-1 bg-white/5" />
+                              <div className="flex items-center gap-2">
+                                <Store className="w-3 h-3 text-white/40" />
+                                <span className="text-[10px] uppercase tracking-[0.3em] text-white/50 font-light">{type}</span>
+                                <span className="text-[10px] text-white/20">· {typeStores.length} comercio{typeStores.length !== 1 ? 's' : ''}</span>
+                              </div>
+                              <div className="h-px flex-1 bg-white/5" />
+                            </div>
+
+                            {/* Store cards for this type */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                              {typeStores
+                                .sort((a, b) => (b.productCount > 0 ? 1 : 0) - (a.productCount > 0 ? 1 : 0))
+                                .map(store => {
+                                const storeProds = allProducts.filter(p =>
+                                  p.storeSlug === store.slug ||
+                                  p.storeName === store.name
+                                )
+                                const preview = storeProds.slice(0, 4)
+                                const isDarkEmpty = store.productCount === 0
+                                return (
+                                  <div
+                                    key={store.id}
+                                    className={`group relative bg-white/[0.03] border border-white/8 transition-all duration-300 overflow-hidden ${isDarkEmpty ? 'cursor-default opacity-60' : 'hover:border-white/20 hover:bg-white/[0.05] cursor-pointer'}`}
+                                    onClick={() => {
+                                      if (isDarkEmpty) return
+                                      setSelectedStore(store.slug)
+                                      setBusinessTypeFilter('all')
+                                    }}
+                                  >
+                                    {isDarkEmpty && (
+                                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/50 backdrop-blur-[1px]">
+                                        <span style={{ fontSize: '1.4rem', lineHeight: 1, marginBottom: '0.3rem' }}>🚧</span>
+                                        <p style={{ color: '#fbbf24', fontSize: '0.55rem', fontWeight: 800, letterSpacing: '0.2em', textTransform: 'uppercase' }}>Próximamente</p>
+                                      </div>
+                                    )}
+                                    {/* Store header */}
+                                    <div className="flex items-center gap-3 px-4 pt-4 pb-3">
+                                      <div className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                                        {store.logoUrl ? (
+                                          // eslint-disable-next-line @next/next/no-img-element
+                                          <img src={store.logoUrl} alt={store.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                          <Store className="w-4 h-4 text-white/30" />
+                                        )}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-white text-sm font-medium leading-tight truncate">{store.name}</p>
+                                        <p className="text-white/30 text-[10px] uppercase tracking-wider mt-0.5">{storeProds.length} producto{storeProds.length !== 1 ? 's' : ''}</p>
+                                      </div>
+                                      <ArrowRight className="w-3.5 h-3.5 text-white/20 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                                    </div>
+
+                                    {/* Product preview strip */}
+                                    {preview.length > 0 ? (
+                                      <div className="grid grid-cols-4 gap-px bg-white/5">
+                                        {preview.map((p, i) => (
+                                          <div key={p.id} className="relative aspect-square bg-black/40 overflow-hidden">
+                                            {p.imageUrl ? (
+                                              // eslint-disable-next-line @next/next/no-img-element
+                                              <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                            ) : (
+                                              <div className="w-full h-full flex items-center justify-center">
+                                                <Package className="w-4 h-4 text-white/10" />
+                                              </div>
+                                            )}
+                                            {i === 3 && storeProds.length > 4 && (
+                                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                                <span className="text-white text-xs font-medium">+{storeProds.length - 4}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                        {Array.from({ length: Math.max(0, 4 - preview.length) }).map((_, i) => (
+                                          <div key={`empty-${i}`} className="aspect-square bg-black/20" />
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="h-16 bg-white/[0.01] flex items-center justify-center border-t border-white/5">
+                                        <p className="text-white/15 text-[10px] uppercase tracking-wider">Sin productos</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })
+                    })()}
+                  </div>
+
+                ) : (
+                /* Sede Picker View */
+                sedesViewMode && !activeSede ? (
                   <div className="space-y-8">
                     <div className="flex items-center gap-3">
                       <div className="h-px flex-1 bg-white/5" />
@@ -2844,48 +4605,48 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           <button
                             key={sede.id}
                             onClick={() => setActiveSede(sede.id)}
-                            className="group relative flex flex-col gap-5 p-6 bg-white/[0.03] border border-white/8 hover:border-amber-500/40 hover:bg-white/[0.06] transition-all duration-300 text-left rounded-2xl overflow-hidden"
+                            className={`group relative flex flex-col gap-5 p-6 bg-white/[0.03] border ${isLightBg ? 'border-black/10 hover:border-black/30 hover:bg-black/[0.03]' : 'border-white/8 hover:border-white/20 hover:bg-white/[0.06]'} transition-all duration-300 text-left rounded-2xl overflow-hidden`}
                           >
                             {/* Ambient glow on hover */}
-                            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/0 to-amber-500/0 group-hover:from-amber-500/5 group-hover:to-transparent transition-all duration-500 rounded-2xl pointer-events-none" />
+                            <div className={`absolute inset-0 bg-gradient-to-br ${isLightBg ? 'group-hover:from-black/3' : 'group-hover:from-white/3'} to-transparent transition-all duration-500 rounded-2xl pointer-events-none`} />
                             {/* Corner number */}
-                            <span className="absolute top-4 right-5 text-[40px] font-bold text-white/[0.04] leading-none select-none group-hover:text-amber-500/10 transition-colors">
+                            <span className={`absolute top-4 right-5 text-[40px] font-bold ${isLightBg ? 'text-black/[0.04] group-hover:text-black/10' : 'text-white/[0.04] group-hover:text-white/10'} leading-none select-none transition-colors`}>
                               {String(idx + 1).padStart(2, '0')}
                             </span>
 
                             {/* Icon + arrow row */}
                             <div className="flex items-center justify-between w-full">
-                              <div className="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/20 group-hover:border-amber-500/40 transition-all duration-300">
-                                <MapPin className="w-5 h-5 text-amber-400" />
+                              <div className={`w-11 h-11 rounded-xl ${isLightBg ? 'bg-black/5 border border-black/10 group-hover:bg-black/10 group-hover:border-black/20' : 'bg-white/5 border border-white/10 group-hover:bg-white/10 group-hover:border-white/20'} flex items-center justify-center transition-all duration-300`}>
+                                <MapPin className={`w-5 h-5 ${isLightBg ? 'text-black/60' : 'text-white/60'}`} />
                               </div>
-                              <div className="w-8 h-8 rounded-full border border-white/8 flex items-center justify-center group-hover:border-amber-500/40 group-hover:bg-amber-500/10 transition-all duration-300">
-                                <ArrowRight className="w-3.5 h-3.5 text-white/20 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+                              <div className={`w-8 h-8 rounded-full border ${isLightBg ? 'border-black/10 group-hover:border-black/30 group-hover:bg-black/5' : 'border-white/8 group-hover:border-white/30 group-hover:bg-white/5'} flex items-center justify-center transition-all duration-300`}>
+                                <ArrowRight className={`w-3.5 h-3.5 ${isLightBg ? 'text-black/20 group-hover:text-black group-hover:translate-x-0.5' : 'text-white/20 group-hover:text-white group-hover:translate-x-0.5'} transition-all`} />
                               </div>
                             </div>
 
                             {/* Name & address */}
                             <div className="flex-1">
-                              <p className="text-white font-semibold tracking-wide uppercase text-sm leading-tight">{sede.name}</p>
+                              <p className={`${isLightBg ? 'text-black' : 'text-white'} font-semibold tracking-wide uppercase text-sm leading-tight`}>{sede.name}</p>
                               {sede.address && (
-                                <p className="text-white/35 text-xs mt-1.5 leading-relaxed">{sede.address}</p>
+                                <p className={`${isLightBg ? 'text-black/40' : 'text-white/35'} text-xs mt-1.5 leading-relaxed`}>{sede.address}</p>
                               )}
                             </div>
 
                             {/* Stats divider */}
-                            <div className="flex items-center gap-0 border-t border-white/5 pt-4 w-full">
+                            <div className={`flex items-center gap-0 border-t ${isLightBg ? 'border-black/5' : 'border-white/5'} pt-4 w-full`}>
                               <div className="flex-1 text-center">
-                                <p className="text-amber-400 font-bold text-lg leading-none">{exclusiveCount}</p>
-                                <p className="text-white/25 text-[10px] mt-1 uppercase tracking-wider">Exclusivos</p>
+                                <p className={`${isLightBg ? 'text-black' : 'text-white'} font-bold text-lg leading-none`}>{exclusiveCount}</p>
+                                <p className={`${isLightBg ? 'text-black/25' : 'text-white/25'} text-[10px] mt-1 uppercase tracking-wider`}>Exclusivos</p>
                               </div>
-                              <div className="w-px h-8 bg-white/8 mx-2" />
+                              <div className={`w-px h-8 ${isLightBg ? 'bg-black/8' : 'bg-white/8'} mx-2`} />
                               <div className="flex-1 text-center">
-                                <p className="text-white/50 font-bold text-lg leading-none">{sharedCount}</p>
-                                <p className="text-white/25 text-[10px] mt-1 uppercase tracking-wider">Compartidos</p>
+                                <p className={`${isLightBg ? 'text-black/50' : 'text-white/50'} font-bold text-lg leading-none`}>{sharedCount}</p>
+                                <p className={`${isLightBg ? 'text-black/25' : 'text-white/25'} text-[10px] mt-1 uppercase tracking-wider`}>Compartidos</p>
                               </div>
-                              <div className="w-px h-8 bg-white/8 mx-2" />
+                              <div className={`w-px h-8 ${isLightBg ? 'bg-black/8' : 'bg-white/8'} mx-2`} />
                               <div className="flex-1 text-center">
-                                <p className="text-white/70 font-bold text-lg leading-none">{exclusiveCount + sharedCount}</p>
-                                <p className="text-white/25 text-[10px] mt-1 uppercase tracking-wider">Total</p>
+                                <p className={`${isLightBg ? 'text-black/70' : 'text-white/70'} font-bold text-lg leading-none`}>{exclusiveCount + sharedCount}</p>
+                                <p className={`${isLightBg ? 'text-black/25' : 'text-white/25'} text-[10px] mt-1 uppercase tracking-wider`}>Total</p>
                               </div>
                             </div>
                           </button>
@@ -2908,14 +4669,29 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   </div>
                 ) : loadingProducts ? (
                   <div className="text-center py-20">
-                    <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                     <p className="text-white/40 text-sm font-light">Cargando productos...</p>
+                  </div>
+                ) : selectedStore !== 'all' && products.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 px-6 text-center">
+                    <div style={{ fontSize: '4rem', lineHeight: 1, marginBottom: '1.5rem' }}>🚧</div>
+                    <p style={{ color: '#fbbf24', fontSize: '1.5rem', fontWeight: 700, letterSpacing: '0.1em', marginBottom: '0.75rem' }}>
+                      PRÓXIMAMENTE
+                    </p>
+                    <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.9rem', maxWidth: '320px', lineHeight: 1.6 }}>
+                      Este comercio está preparando su catálogo. Vuelve pronto para descubrir sus productos.
+                    </p>
+                    <div style={{ marginTop: '2rem', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#fbbf24', animation: 'pulse 1.5s infinite' }} />
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#fbbf24', animation: 'pulse 1.5s infinite 0.3s' }} />
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#fbbf24', animation: 'pulse 1.5s infinite 0.6s' }} />
+                    </div>
                   </div>
                 ) : catalogFilteredProducts.length === 0 ? (
                   <div className="text-center py-20">
                     <Sparkles className="w-12 h-12 text-white/10 mx-auto mb-4" />
                     <p className="text-white/40 text-sm font-light">No se encontraron productos con estos filtros</p>
-                    <button onClick={clearCatalogFilters} className="mt-4 text-amber-400 text-sm font-light hover:text-amber-300 transition-colors underline underline-offset-4">
+                    <button onClick={clearCatalogFilters} className="mt-4 text-white/70 text-sm font-light hover:text-white transition-colors underline underline-offset-4">
                       Limpiar filtros
                     </button>
                   </div>
@@ -2953,7 +4729,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
                               {/* In-cart indicator */}
                               {inCart && (
-                                <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
+                                <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-white text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
                                   <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                                 </div>
                               )}
@@ -2963,7 +4739,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                 <div className="flex items-center gap-2">
                                   <button
                                     onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
-                                    className="w-9 h-9 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-amber-500 hover:text-white transition-colors"
+                                    className="w-9 h-9 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-neutral-800 hover:text-white transition-colors"
                                     title="Agregar al carrito"
                                   >
                                     <ShoppingCart className="w-4 h-4" />
@@ -2994,11 +4770,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             </div>
 
                             {/* Card info */}
-                            <div className="p-3">
+                            <div className="p-3 text-center">
                               <h3 className="text-xs sm:text-sm font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">
                                 {product.name}
                               </h3>
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center justify-center gap-2 mb-1">
                                 {isOffer ? (
                                   <>
                                     <span className="text-gray-400 text-xs line-through">{formatCOP(product.salePrice)}</span>
@@ -3008,8 +4784,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                   <span className="text-gray-900 font-bold text-sm">{formatCOP(product.salePrice)}</span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1 text-[10px] text-gray-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                              <div className="flex items-center justify-center gap-1 text-[10px] text-gray-400">
+                                <span className="w-1.5 h-1.5 rounded-full bg-white/60 inline-block" />
                                 1 Opción disponible
                               </div>
                             </div>
@@ -3055,7 +4831,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
                             {/* In-cart indicator */}
                             {inCart && (
-                              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                                 <ShoppingCart className="w-2.5 h-2.5" />
                                 ×{inCart.cantidad}
                               </div>
@@ -3083,7 +4859,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                     <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
                                   </>
                                 ) : (
-                                  <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                                  <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
                                 )}
                               </div>
                             </div>
@@ -3092,7 +4868,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                               <button
                                 onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
-                                className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                                className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                               >
                                 <ShoppingCart className="w-3 h-3" />
                                 Añadir
@@ -3110,7 +4886,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       )
                     })}
                   </div>
-                )}
+                ))}
               </div>
             </main>
           </div>
@@ -3148,7 +4924,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 <div className="sticky bottom-0 p-4 border-t border-white/10 landing-sidebar">
                   <button
                     onClick={() => setCatalogSidebarOpen(false)}
-                    className="w-full bg-amber-500 hover:bg-amber-400 text-black py-3 text-xs uppercase tracking-wider font-medium transition-colors"
+                    className="w-full bg-white hover:bg-white/90 text-black py-3 text-xs uppercase tracking-wider font-medium transition-colors"
                   >
                     Ver {catalogFilteredProducts.length} producto{catalogFilteredProducts.length !== 1 ? 's' : ''}
                   </button>
@@ -3281,7 +5057,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
                           {/* In-cart */}
                           {inCart && (
-                            <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                            <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                               <ShoppingCart className="w-2.5 h-2.5" />
                               ×{inCart.cantidad}
                             </div>
@@ -3307,7 +5083,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                   <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
                                 </>
                               ) : (
-                                <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                                <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
                               )}
                             </div>
                           </div>
@@ -3316,7 +5092,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                             <button
                               onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
-                              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                             >
                               <ShoppingCart className="w-3 h-3" />
                               Añadir
@@ -3444,7 +5220,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             <div className="absolute top-2.5 right-2.5 z-20 px-2 py-0.5 text-[9px] text-white/55 uppercase tracking-[0.2em]">{product.brand}</div>
                           )}
                           {inCart && (
-                            <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                            <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                               <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                             </div>
                           )}
@@ -3465,14 +5241,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                   <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
                                 </>
                               ) : (
-                                <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                                <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
                               )}
                             </div>
                           </div>
                           <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                             <button
                               onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
-                              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                             >
                               <ShoppingCart className="w-3 h-3" />Añadir
                             </button>
@@ -3513,12 +5289,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               </button>
               <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                 <div>
-                  <p className="text-amber-400 text-xs uppercase tracking-[0.3em] mb-2 flex items-center gap-2"><Flame className="w-4 h-4" /> Drop Activo</p>
+                  <p className="text-white/80 text-xs uppercase tracking-[0.3em] mb-2 flex items-center gap-2"><Flame className="w-4 h-4" /> Drop Activo</p>
                   <h1 className="text-3xl sm:text-4xl font-light text-white tracking-wide">{storeConfig.activeDrop.name}</h1>
                   {storeConfig.activeDrop.description && <p className="text-white/50 font-light mt-2 max-w-xl">{storeConfig.activeDrop.description}</p>}
                 </div>
                 <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-5 py-3 shrink-0">
-                  <Timer className="w-5 h-5 text-amber-400" />
+                  <Timer className="w-5 h-5 text-white/70" />
                   <div>
                     <p className="text-[10px] text-white/40 uppercase tracking-widest">Termina en</p>
                     <p className="text-lg font-mono text-white tracking-wider">{countdownText}</p>
@@ -3532,7 +5308,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
             {storeConfig.activeDrop.globalDiscount > 0 && (
               <div className="mb-8 text-center">
-                <span className="inline-flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 px-6 py-2 text-sm font-light tracking-wide">
+                <span className="inline-flex items-center gap-2 bg-white/10 border border-white/20 text-white px-6 py-2 text-sm font-light tracking-wide">
                   <Tag className="w-4 h-4" /> Hasta {storeConfig.activeDrop.globalDiscount}% de descuento en este drop
                 </span>
               </div>
@@ -3560,13 +5336,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           <div className="absolute top-2 left-2 z-20 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm">-{discount}%</div>
                         )}
                         {inCart && (
-                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
+                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-white text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
                             <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                           </div>
                         )}
                         <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-3 z-10">
                           <div className="flex items-center gap-2">
-                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product, { dropPrice: finalPrice, dropDiscount: discount }) }} className="w-9 h-9 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-amber-500 hover:text-white transition-colors" title="Agregar al carrito">
+                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product, { dropPrice: finalPrice, dropDiscount: discount }) }} className="w-9 h-9 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-neutral-800 hover:text-white transition-colors" title="Agregar al carrito">
                               <ShoppingCart className="w-4 h-4" />
                             </button>
                             <button onClick={(e) => { e.stopPropagation(); openProductModal(product) }} className="w-9 h-9 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-gray-800 hover:text-white transition-colors" title="Ver detalle">
@@ -3581,9 +5357,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-3">
+                      <div className="p-3 text-center">
                         <h3 className="text-xs sm:text-sm font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center gap-2">
                           {discount > 0 ? (
                             <>
                               <span className="text-gray-400 text-xs line-through">{formatCOP(product.salePrice)}</span>
@@ -3633,7 +5409,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
                       {/* In-cart indicator */}
                       {inCart && (
-                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                           <ShoppingCart className="w-2.5 h-2.5" />
                           ×{inCart.cantidad}
                         </div>
@@ -3653,7 +5429,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         <h3 className="text-xs sm:text-sm font-light text-white leading-snug line-clamp-2 mb-1">{product.name}</h3>
                         {product.size && <p className="text-[9px] text-white/35 mb-1">{product.size}</p>}
                         <div className="flex items-center gap-2">
-                          <span className="text-amber-400 font-semibold text-sm">{formatCOP(finalPrice)}</span>
+                          <span className="text-white font-semibold text-sm">{formatCOP(finalPrice)}</span>
                           {discount > 0 && <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>}
                         </div>
                       </div>
@@ -3662,7 +5438,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                         <button
                           onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product, { dropPrice: finalPrice, dropDiscount: discount }) }}
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                         >
                           <ShoppingCart className="w-3 h-3" />
                           Añadir
@@ -3701,7 +5477,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               <ArrowLeft className="w-4 h-4" /> Volver
             </button>
             <div className="mb-10">
-              <p className="text-amber-400 uppercase text-xs tracking-[0.3em] mb-2">Nuestros Servicios</p>
+              <p className="text-white/80 uppercase text-xs tracking-[0.3em] mb-2">Nuestros Servicios</p>
               <h2 className="text-3xl font-light text-white">
                 {storeConfig?.storeInfo?.name || 'Servicios'}
               </h2>
@@ -3738,7 +5514,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       {/* Service type badge — top left */}
                       <div className={`absolute top-2.5 left-2.5 z-20 flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.15em] shadow-lg ${
                         service.serviceType === 'cita'
-                          ? 'bg-amber-500 text-black'
+                          ? 'bg-white text-black'
                           : service.serviceType === 'asesoria'
                           ? 'bg-blue-600 text-white'
                           : 'bg-emerald-600 text-white'
@@ -3765,7 +5541,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           ) : service.priceType === 'cotizacion' ? (
                             <span className="text-white/50 text-sm font-light">A cotizar</span>
                           ) : (
-                            <span className="text-amber-400 font-light text-sm">
+                            <span className="text-white font-light text-sm">
                               {service.priceType === 'desde' && <span className="text-white/40 text-xs mr-1">Desde</span>}
                               {formatCOP(service.price)}
                             </span>
@@ -3777,7 +5553,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                         <button
                           onClick={(e) => { e.stopPropagation(); setBookingService(service) }}
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                         >
                           {service.serviceType === 'cita' ? 'Reservar' : service.serviceType === 'asesoria' ? 'Consultar' : 'Contactar'}
                           <ArrowRight className="w-3 h-3" />
@@ -3795,7 +5571,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {/* ========== HERO VIEW (Inicio) ========== */}
       {!showCatalog && !showDrop && !showServices && !showOffers && !showProductModal && (
       <>
-      {/* ========== HERO 1 — Banner Principal (Editable) ========== */}
+      {/* ========== HERO 1 — TEMA 2 (Carrusel marketplace) ========== */}
+      {isHomeTheme2 && homeHeroSlides.length > 0 ? (
+        <div style={{ marginTop: storeConfig?.announcementBar?.isActive ? '104px' : '64px' }}>
+          <HomeHeroCarousel slides={homeHeroSlides} isMobile={isMobile} />
+        </div>
+      ) : (
+      /* ========== HERO 1 — Banner Principal (Editable, Tema 1) ========== */
       <section
         data-dark
         className={`relative w-full${isMobile ? '' : ' px-4 py-3'}`}
@@ -3900,11 +5682,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
         {/* Scroll indicator */}
         <div className="hidden sm:block absolute bottom-20 left-1/2 -translate-x-1/2">
-          <button onClick={scrollToPerfumes} className="text-white/40 hover:text-amber-400 transition-colors animate-bounce">
+          <button onClick={scrollToPerfumes} className="text-white/40 hover:text-white transition-colors animate-bounce">
             <ChevronDown className="w-8 h-8" />
           </button>
         </div>
       </section>
+      )}
 
 
       {/* ========== SEDES BANNER (only when 2+ sedes) ========== */}
@@ -3912,7 +5695,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         <div className="landing-section-bg border-t border-white/5 py-4 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-[0.2em]">
-              <Store className="w-4 h-4 text-amber-500/70" />
+              <Store className="w-4 h-4 text-white/50" />
               <span>Nuestras sedes</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -3930,9 +5713,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     setShowOffers(false)
                     window.scrollTo({ top: 0, behavior: 'smooth' })
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 hover:border-amber-500/40 hover:bg-amber-500/10 text-white/60 hover:text-white text-xs uppercase tracking-wider transition-all duration-200"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 hover:border-white/40 hover:bg-white/10 text-white/60 hover:text-white text-xs uppercase tracking-wider transition-all duration-200"
                 >
-                  <MapPin className="w-3 h-3 text-amber-500/60" />
+                  <MapPin className="w-3 h-3 text-white/40" />
                   {sede.name}
                   {sede.address && <span className="hidden sm:inline text-white/30">· {sede.address}</span>}
                 </button>
@@ -3950,7 +5733,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 setShowOffers(false)
                 window.scrollTo({ top: 0, behavior: 'smooth' })
               }}
-              className="ml-auto flex items-center gap-1 text-amber-400/70 hover:text-amber-400 text-xs uppercase tracking-wider transition-colors"
+              className="ml-auto flex items-center gap-1 text-white/50 hover:text-white text-xs uppercase tracking-wider transition-colors"
             >
               Ver todas <ArrowRight className="w-3 h-3" />
             </button>
@@ -3958,82 +5741,160 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         </div>
       )}
 
-      {/* ========== HERO 2 — Categorías ========== */}
-      {(() => {
-        const heroCategories: Array<{ name: string; displayName?: string; imageUrl: string | null }> =
-          storeConfig && storeConfig.categories.length > 0
-            ? storeConfig.categories
-            : categories.length > 0
-              ? categories.map(c => ({ name: c, imageUrl: null }))
-              : []
-        const categoryGradients = [
-          'from-red-900/60 to-red-950/80',
-          'from-amber-900/60 to-yellow-950/80',
-          'from-red-900/60 to-red-950/80',
-          'from-emerald-900/60 to-teal-950/80',
-        ]
-        return heroCategories.length > 0 ? (
-          <RevealSection className="pt-2 pb-6 sm:pt-3 sm:pb-10 landing-section-bg relative">
-            <div className="relative">
-              {/* Mobile left arrow */}
-              <button
-                onClick={() => carouselCategoriesRef.current?.scrollBy({ left: -600, behavior: 'smooth' })}
-                className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 flex items-center justify-center text-white hover:bg-amber-500 hover:border-amber-500 hover:text-black transition-all shadow-lg flex sm:hidden"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              {/* Mobile: horizontal scroll — Desktop: equal columns like the example */}
-              <div ref={carouselCategoriesRef} className="flex gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible scrollbar-hide scroll-smooth px-2 sm:px-3">
-                {heroCategories.map((cat, idx) => (
+      {/* ========== HERO 2 — TEMA 2 (Barra + grid de rubros, estilo Mercado Libre) ========== */}
+      {isHomeTheme2 && stores.length > 0 ? (
+        (() => {
+          const counts = new Map<string, number>()
+          for (const s of stores) {
+            const key = (s.businessType || 'General') as string
+            counts.set(key, (counts.get(key) || 0) + 1)
+          }
+          const categories = Array.from(counts.entries())
+            .map(([type, count]) => ({ type, count }))
+            .sort((a, b) => b.count - a.count)
+          return (
+            <HomeCategoryRail
+              categories={categories}
+              active={businessTypeFilter}
+              total={stores.length}
+              onSelect={(t) => { setBusinessTypeFilter(t); scrollToPerfumes() }}
+            />
+          )
+        })()
+      ) : (showStoresView && selectedStore === 'all' && stores.length > 0) ? (
+        /* ========== HERO 2 — Tema 1 (pills centradas) ========== */
+        <RevealSection className="py-5 sm:py-8 landing-section-bg relative">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Label */}
+            <p className={`text-center text-[10px] uppercase tracking-[0.4em] mb-4 ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>
+              ¿Qué estás buscando?
+            </p>
+            {/* Business-type pills */}
+            {(() => {
+              const businessTypeIconMap: Record<string, React.ReactNode> = {
+                restaurante: <UtensilsCrossed className="w-4 h-4" />,
+                comida: <UtensilsCrossed className="w-4 h-4" />,
+                tecnologia: <Zap className="w-4 h-4" />,
+                tecnología: <Zap className="w-4 h-4" />,
+                ropa: <Tag className="w-4 h-4" />,
+                moda: <Tag className="w-4 h-4" />,
+                drogueria: <Package className="w-4 h-4" />,
+                droguería: <Package className="w-4 h-4" />,
+                farmacia: <Package className="w-4 h-4" />,
+                fruver: <Sparkles className="w-4 h-4" />,
+                supermercado: <Store className="w-4 h-4" />,
+              }
+              const getIcon = (type: string) =>
+                businessTypeIconMap[type.toLowerCase()] ?? <Store className="w-4 h-4" />
+              const types = Array.from(new Set(stores.map(s => s.businessType).filter(Boolean))) as string[]
+              return (
+                <div className="flex flex-wrap gap-2 sm:gap-3 justify-center">
+                  {/* Todos */}
                   <button
-                    key={cat.name}
-                    onClick={() => {
-                      setCatalogSelectedCategories(new Set([cat.name]))
-                      setShowCatalog(true)
-                      setShowDrop(false)
-                      window.scrollTo({ top: 0, behavior: 'smooth' })
-                    }}
-                    className="group flex flex-col flex-shrink-0 w-[42vw] sm:flex-1 sm:w-auto transition-all duration-300"
+                    onClick={() => { setBusinessTypeFilter('all'); scrollToPerfumes() }}
+                    className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-2 sm:py-3 rounded-full border transition-all duration-200 text-[11px] sm:text-sm uppercase tracking-wider font-light ${
+                      businessTypeFilter === 'all'
+                        ? 'bg-white border-white text-black'
+                        : isLightBg
+                          ? 'bg-transparent border-black/15 text-black/50 hover:border-black/40 hover:text-black/80'
+                          : 'bg-transparent border-white/15 text-white/50 hover:border-white/40 hover:text-white/80'
+                    }`}
                   >
-                    {/* Image — data-dark solo en la imagen para preservar colores internos */}
-                    <div data-dark className="relative overflow-hidden w-full aspect-square sm:aspect-auto sm:h-[380px]">
-                      {cat.imageUrl ? (
-                        <>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <Store className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    Todos
+                  </button>
+                  {types.map(type => (
+                    <button
+                      key={type}
+                      onClick={() => { setBusinessTypeFilter(type); scrollToPerfumes() }}
+                      className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-6 py-2 sm:py-3 rounded-full border transition-all duration-200 text-[11px] sm:text-sm uppercase tracking-wider font-light ${
+                        businessTypeFilter === type
+                          ? 'bg-white border-white text-black'
+                          : isLightBg
+                            ? 'bg-transparent border-black/15 text-black/50 hover:border-black/40 hover:text-black/80'
+                            : 'bg-transparent border-white/15 text-white/50 hover:border-white/40 hover:text-white/80'
+                      }`}
+                    >
+                      {getIcon(type)}
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
+        </RevealSection>
+      ) : (
+        /* Original image carousel — only shown inside individual store */
+        (() => {
+          const heroCategories: Array<{ name: string; displayName?: string; imageUrl: string | null }> =
+            storeConfig && storeConfig.categories.length > 0
+              ? storeConfig.categories
+              : categories.length > 0
+                ? categories.map(c => ({ name: c, imageUrl: null }))
+                : []
+          const categoryGradients = [
+            'from-red-900/60 to-red-950/80',
+            'from-neutral-900/60 to-neutral-950/80',
+            'from-red-900/60 to-red-950/80',
+            'from-emerald-900/60 to-teal-950/80',
+          ]
+          return heroCategories.length > 0 ? (
+            <RevealSection className="pt-2 pb-6 sm:pt-3 sm:pb-10 landing-section-bg relative">
+              <div className="relative">
+                <button
+                  onClick={() => carouselCategoriesRef.current?.scrollBy({ left: -600, behavior: 'smooth' })}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 hidden sm:flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 hover:text-white transition-all shadow-lg"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div ref={carouselCategoriesRef} className="grid grid-cols-2 gap-2 px-2 sm:flex sm:gap-3 sm:overflow-x-auto sm:overflow-visible scrollbar-hide sm:scroll-smooth sm:px-3">
+                  {heroCategories.map((cat, idx) => (
+                    <button
+                      key={cat.name}
+                      onClick={() => {
+                        setCatalogSelectedCategories(new Set([cat.name]))
+                        setShowCatalog(true)
+                        setShowDrop(false)
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                      }}
+                      className="group flex flex-col w-full sm:flex-shrink-0 sm:flex-1 sm:w-auto transition-all duration-300"
+                    >
+                      <div data-dark className="relative overflow-hidden w-full aspect-[4/3] sm:aspect-auto sm:h-[380px]">
+                        {cat.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={cat.imageUrl}
                             alt={cat.name}
                             className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                           />
-                        </>
-                      ) : (
-                        <div className={`absolute inset-0 bg-gradient-to-br ${categoryGradients[idx % categoryGradients.length]} group-hover:scale-105 transition-transform duration-700`}>
-                          <div className="absolute inset-0 flex items-center justify-center opacity-10">
-                            <Sparkles className="w-20 h-20 text-white" />
+                        ) : (
+                          <div className={`absolute inset-0 bg-gradient-to-br ${categoryGradients[idx % categoryGradients.length]} group-hover:scale-105 transition-transform duration-700`}>
+                            <div className="absolute inset-0 flex items-center justify-center opacity-10">
+                              <Sparkles className="w-20 h-20 text-white" />
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                    {/* Nombre debajo — responde al fondo claro/oscuro */}
-                    <div className="py-3 text-center">
-                      <h3 className={`text-[11px] sm:text-sm font-light uppercase tracking-[0.2em] transition-colors group-hover:text-amber-500 ${isLightBg ? 'text-black/70' : 'text-white/80'}`}>
-                        {cat.displayName || cat.name}
-                      </h3>
-                    </div>
-                  </button>
-                ))}
+                        )}
+                      </div>
+                      <div className="py-3 text-center">
+                        <h3 className={`text-[11px] sm:text-sm font-light uppercase tracking-[0.2em] transition-colors group-hover:text-white/70 ${isLightBg ? 'text-black/70' : 'text-white/80'}`}>
+                          {cat.displayName || cat.name}
+                        </h3>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => carouselCategoriesRef.current?.scrollBy({ left: 600, behavior: 'smooth' })}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 hidden sm:flex items-center justify-center text-white hover:bg-white/20 hover:border-white/40 hover:text-white transition-all shadow-lg"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
-              {/* Mobile right arrow */}
-              <button
-                onClick={() => carouselCategoriesRef.current?.scrollBy({ left: 600, behavior: 'smooth' })}
-                className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 flex items-center justify-center text-white hover:bg-amber-500 hover:border-amber-500 hover:text-black transition-all shadow-lg flex sm:hidden"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </RevealSection>
-        ) : null
-      })()}
+            </RevealSection>
+          ) : null
+        })()
+      )}
 
       {/* ========== HERO 3 — Productos Tendencia ========== */}
       {storeConfig && storeConfig.trendingProducts.length > 0 && (
@@ -4042,13 +5903,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             <div className="flex items-center gap-4 mb-8">
               <div className="flex-1 h-px bg-current opacity-10" />
               <div className="flex items-center gap-2 shrink-0">
-                <Flame className="w-3.5 h-3.5 text-amber-500" />
+                <Flame className="w-3.5 h-3.5 text-white/70" />
                 <span className="text-sm font-light uppercase tracking-[0.3em]">Tendencia</span>
               </div>
               <div className="flex-1 h-px bg-current opacity-10" />
               <button
                 onClick={() => openCatalogWithFilter('trending')}
-                className="shrink-0 inline-flex items-center gap-1.5 text-amber-400 hover:text-amber-300 text-xs uppercase tracking-[0.2em] transition-colors"
+                className="shrink-0 inline-flex items-center gap-1.5 text-white hover:text-white/80 text-xs uppercase tracking-[0.2em] transition-colors"
               >
                 Ver todos <ArrowRight className="w-3 h-3" />
               </button>
@@ -4077,13 +5938,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           <div className="absolute top-2 left-2 z-20 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm">-{discount}%</div>
                         )}
                         {inCart && (
-                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
+                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-white text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
                             <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                           </div>
                         )}
                         <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-2 z-10">
                           <div className="flex items-center gap-1.5">
-                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-amber-500 hover:text-white transition-colors" title="Agregar al carrito">
+                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-neutral-800 hover:text-white transition-colors" title="Agregar al carrito">
                               <ShoppingCart className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={(e) => { e.stopPropagation(); openProductModal(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-gray-800 hover:text-white transition-colors" title="Ver detalle">
@@ -4098,9 +5959,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-2">
+                      <div className="p-2 text-center">
                         <h3 className="text-xs font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {isOffer ? (
                             <>
                               <span className="text-gray-400 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
@@ -4137,7 +5998,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         <div className="absolute top-2.5 right-2.5 z-20 px-2 py-0.5 text-[9px] text-white/60 uppercase tracking-[0.2em]">{product.brand}</div>
                       )}
                       {inCart && (
-                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                           <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                         </div>
                       )}
@@ -4158,14 +6019,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                               <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
                             </>
                           ) : (
-                            <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                            <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
                           )}
                         </div>
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                         <button
                           onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                         >
                           <ShoppingCart className="w-3 h-3" />Añadir
                         </button>
@@ -4236,7 +6097,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           href={hero4.linkUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-black px-8 py-3 text-xs uppercase tracking-[0.2em] font-medium transition-all duration-300"
+                          className="inline-flex items-center gap-2 bg-white hover:bg-white/90 text-black px-8 py-3 text-xs uppercase tracking-[0.2em] font-medium transition-all duration-300"
                         >
                           Ver más <ArrowRight className="w-4 h-4" />
                         </a>
@@ -4257,13 +6118,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             <div className="flex items-center gap-4 mb-8">
               <div className="flex-1 h-px bg-current opacity-10" />
               <div className="flex items-center gap-2 shrink-0">
-                <Star className="w-3.5 h-3.5 text-amber-500" />
+                <Star className="w-3.5 h-3.5 text-white/70" />
                 <span className="text-sm font-light uppercase tracking-[0.3em]">Productos Destacados</span>
               </div>
               <div className="flex-1 h-px bg-current opacity-10" />
               <button
                 onClick={() => openCatalogWithFilter('featured')}
-                className="shrink-0 inline-flex items-center gap-1.5 text-amber-400 hover:text-amber-300 text-xs uppercase tracking-[0.2em] transition-colors"
+                className="shrink-0 inline-flex items-center gap-1.5 text-white hover:text-white/80 text-xs uppercase tracking-[0.2em] transition-colors"
               >
                 Ver todos <ArrowRight className="w-3 h-3" />
               </button>
@@ -4288,20 +6149,20 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         ) : (
                           <div className="w-full h-full flex items-center justify-center"><Package className="w-10 h-10 text-gray-300" /></div>
                         )}
-                        <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
+                        <div className="absolute top-2 left-2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
                           <Star className="w-2.5 h-2.5" />
                         </div>
                         {isOffer && (
                           <div className="absolute top-2 left-8 z-20 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm">-{discount}%</div>
                         )}
                         {inCart && (
-                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
+                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-white text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
                             <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                           </div>
                         )}
                         <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-2 z-10">
                           <div className="flex items-center gap-1.5">
-                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-amber-500 hover:text-white transition-colors" title="Agregar al carrito">
+                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-neutral-800 hover:text-white transition-colors" title="Agregar al carrito">
                               <ShoppingCart className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={(e) => { e.stopPropagation(); openProductModal(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-gray-800 hover:text-white transition-colors" title="Ver detalle">
@@ -4316,9 +6177,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-2">
+                      <div className="p-2 text-center">
                         <h3 className="text-xs font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {isOffer ? (
                             <>
                               <span className="text-gray-400 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
@@ -4348,11 +6209,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
                       {/* Top badges row */}
                       <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex items-center justify-between gap-1">
-                        <div className="flex items-center gap-1 bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-[9px] font-bold px-2 py-0.5 shadow-lg shrink-0">
+                        <div className="flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5 shadow-lg shrink-0">
                           <Star className="w-2.5 h-2.5" />Destacado
                         </div>
                         {inCart && (
-                          <div className="flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5 shrink-0">
+                          <div className="flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5 shrink-0">
                             <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                           </div>
                         )}
@@ -4372,7 +6233,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       </button>
                       <div className="absolute bottom-0 left-0 right-0 z-10 px-3 pt-2 pb-[52px]">
                         {product.brand && (
-                          <p className="text-[9px] text-amber-400/70 uppercase tracking-[0.2em] truncate mb-0.5">{product.brand}</p>
+                          <p className="text-[9px] text-white/50 uppercase tracking-[0.2em] truncate mb-0.5">{product.brand}</p>
                         )}
                         <h3 className="text-xs font-light text-white leading-snug line-clamp-2 mb-1">{product.name}</h3>
                         {product.size && <p className="text-[9px] text-white/35 mb-1">{product.size}</p>}
@@ -4383,14 +6244,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                               <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
                             </>
                           ) : (
-                            <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                            <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
                           )}
                         </div>
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                         <button
                           onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                         >
                           <ShoppingCart className="w-3 h-3" />Añadir
                         </button>
@@ -4417,7 +6278,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         <RevealSection id="perfumes" className="py-10 sm:py-20 landing-section-alt relative">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-8 space-y-2">
-              <p className="text-amber-400/60 uppercase tracking-[0.5em] text-xs">Información</p>
+              <p className="text-white/40 uppercase tracking-[0.5em] text-xs">Información</p>
               <h2 className="text-3xl sm:text-4xl font-extralight tracking-tight">
                 {storeConfig.storeInfo?.name || stores.find(s => s.slug === selectedStore)?.name || 'Nuestra Tienda'}
               </h2>
@@ -4432,8 +6293,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               {/* Horario */}
               {storeConfig.storeInfo?.schedule && (
                 <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/5 transition-colors">
-                  <div className="mt-0.5 w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                    <Clock className="w-4 h-4 text-amber-400" />
+                  <div className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                    <Clock className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <p className="text-white/50 text-xs uppercase tracking-wider mb-1">Horario</p>
@@ -4445,8 +6306,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               {/* Dirección */}
               {storeConfig.storeInfo?.address && (
                 <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/5 transition-colors">
-                  <div className="mt-0.5 w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-4 h-4 text-amber-400" />
+                  <div className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                    <MapPin className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <p className="text-white/50 text-xs uppercase tracking-wider mb-1">Dirección</p>
@@ -4455,7 +6316,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         href={storeConfig.storeInfo.locationMapUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-amber-400/80 text-sm font-light hover:text-amber-400 transition-colors underline underline-offset-2"
+                        className="text-white/60 text-sm font-light hover:text-white transition-colors underline underline-offset-2"
                       >
                         {storeConfig.storeInfo.address}
                       </a>
@@ -4469,12 +6330,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               {/* Teléfono */}
               {storeConfig.storeInfo?.phone && (
                 <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/5 transition-colors">
-                  <div className="mt-0.5 w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                    <Phone className="w-4 h-4 text-amber-400" />
+                  <div className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                    <Phone className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <p className="text-white/50 text-xs uppercase tracking-wider mb-1">Teléfono</p>
-                    <a href={`tel:${storeConfig.storeInfo.phone}`} className="text-white/90 text-sm font-light hover:text-amber-400 transition-colors">
+                    <a href={`tel:${storeConfig.storeInfo.phone}`} className="text-white/90 text-sm font-light hover:text-white transition-colors">
                       {storeConfig.storeInfo.phone}
                     </a>
                   </div>
@@ -4504,8 +6365,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               {/* Métodos de pago */}
               {storeConfig.storeInfo?.paymentMethods && (
                 <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/5 transition-colors">
-                  <div className="mt-0.5 w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                    <CreditCard className="w-4 h-4 text-amber-400" />
+                  <div className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                    <CreditCard className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <p className="text-white/50 text-xs uppercase tracking-wider mb-1">Métodos de pago</p>
@@ -4517,8 +6378,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               {/* Redes sociales */}
               {(storeConfig.storeInfo?.socialInstagram || storeConfig.storeInfo?.socialFacebook || storeConfig.storeInfo?.socialTiktok) && (
                 <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/5 transition-colors">
-                  <div className="mt-0.5 w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                    <Star className="w-4 h-4 text-amber-400" />
+                  <div className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                    <Star className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <p className="text-white/50 text-xs uppercase tracking-wider mb-2">Redes Sociales</p>
@@ -4564,12 +6425,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               {/* Email */}
               {storeConfig.storeInfo?.email && (
                 <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/5 transition-colors">
-                  <div className="mt-0.5 w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-                    <Mail className="w-4 h-4 text-amber-400" />
+                  <div className="mt-0.5 w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
+                    <Mail className="w-4 h-4 text-white" />
                   </div>
                   <div>
                     <p className="text-white/50 text-xs uppercase tracking-wider mb-1">Email</p>
-                    <a href={`mailto:${storeConfig.storeInfo.email}`} className="text-white/90 text-sm font-light hover:text-amber-400 transition-colors">
+                    <a href={`mailto:${storeConfig.storeInfo.email}`} className="text-white/90 text-sm font-light hover:text-white transition-colors">
                       {storeConfig.storeInfo.email}
                     </a>
                   </div>
@@ -4584,9 +6445,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(storeConfig.storeInfo.address)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 hover:border-amber-400/40 hover:bg-white/5 transition-all duration-300 group"
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all duration-300 group"
                 >
-                  <MapPin className="w-5 h-5 text-amber-400 shrink-0" />
+                  <MapPin className="w-5 h-5 text-white shrink-0" />
                   <span className="text-white/70 group-hover:text-white text-sm transition-colors">{storeConfig.storeInfo.address}</span>
                 </a>
               </div>
@@ -4597,10 +6458,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       <RevealSection id="perfumes" className="py-6 sm:py-14 landing-section-alt relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-6 sm:mb-10 space-y-2 sm:space-y-4">
-            <p className="text-amber-400/60 uppercase tracking-[0.5em] text-xs">
+            <p className="text-white/40 uppercase tracking-[0.5em] text-xs">
               {showStoresView && selectedStore === 'all' ? 'Epicentro' : 'Tienda Online'}
             </p>
-            <h2 className="text-3xl sm:text-4xl font-extralight tracking-tight">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extralight tracking-tight">
               {showStoresView && selectedStore === 'all'
                 ? 'Productos & Servicios'
                 : selectedStore !== 'all'
@@ -4626,7 +6487,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 <div className="mb-12">
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2">
-                      <Star className="w-4 h-4 text-amber-400" />
+                      <Star className="w-4 h-4 text-white" />
                       <span className="text-white/60 text-sm font-light uppercase tracking-widest">Productos Destacados</span>
                     </div>
                   </div>
@@ -4638,7 +6499,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       return (
                         <div
                           key={product.id}
-                          className="group relative overflow-hidden cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/60 transition-all duration-500 flex-shrink-0 w-48 sm:w-56"
+                          className="group relative overflow-hidden cursor-pointer hover:-translate-y-1 hover:shadow-2xl hover:shadow-black/60 transition-all duration-500 flex-shrink-0 w-36 sm:w-48 md:w-56"
                           onClick={() => openProductModal(product)}
                         >
                           <div className="relative aspect-[3/4] overflow-hidden bg-black/60">
@@ -4654,30 +6515,30 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                 <Flame className="w-2.5 h-2.5" />-{discount}%
                               </div>
                             )}
-                            <div className="absolute top-2 right-2 z-20 bg-amber-500/90 text-black text-[9px] font-bold px-1.5 py-0.5 flex items-center gap-0.5 rounded-sm">
+                            <div className="absolute top-2 right-2 z-20 bg-white/90 text-black text-[9px] font-bold px-1.5 py-0.5 flex items-center gap-0.5 rounded-sm">
                               <Star className="w-2.5 h-2.5" />Dest.
                             </div>
                             {inCart && (
-                              <div className="absolute top-7 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                              <div className="absolute top-7 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                                 <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                               </div>
                             )}
                             <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
                               <p className="text-white font-light text-sm leading-snug line-clamp-2">{product.name}</p>
-                              {product.storeName && <p className="text-amber-400/70 text-[10px] uppercase tracking-wider mt-0.5">{product.storeName}</p>}
+                              {product.storeName && <p className="text-white/50 text-[10px] uppercase tracking-wider mt-0.5">{product.storeName}</p>}
                               <div className="flex items-center gap-2 mt-1.5">
                                 {isOffer ? (
                                   <>
                                     <span className="text-white/40 text-xs line-through">{formatCOP(product.salePrice)}</span>
-                                    <span className="text-amber-400 font-semibold text-sm">{formatCOP(product.offerPrice!)}</span>
+                                    <span className="text-white font-semibold text-sm">{formatCOP(product.offerPrice!)}</span>
                                   </>
                                 ) : (
-                                  <span className="text-amber-400 font-semibold text-sm">{formatCOP(product.salePrice)}</span>
+                                  <span className="text-white font-semibold text-sm">{formatCOP(product.salePrice)}</span>
                                 )}
                               </div>
                               <button
                                 onClick={e => { e.stopPropagation(); agregarAlCarrito(product) }}
-                                className="mt-2 w-full py-1.5 bg-amber-500/20 border border-amber-500/40 text-amber-400 text-xs uppercase tracking-wider hover:bg-amber-500 hover:text-black hover:border-amber-500 transition-colors"
+                                className="mt-2 w-full py-1.5 bg-white/15 border border-white/30 text-white text-xs uppercase tracking-wider hover:bg-white/20 hover:text-white hover:border-white/50 transition-colors"
                               >
                                 Añadir
                               </button>
@@ -4700,7 +6561,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     </div>
                     <button
                       onClick={() => { setMobileActiveTab('ofertas'); fetchAllStoreOffers() }}
-                      className="flex items-center gap-1.5 text-amber-400 hover:text-amber-300 text-xs uppercase tracking-[0.2em] transition-colors"
+                      className="flex items-center gap-1.5 text-white hover:text-white/80 text-xs uppercase tracking-[0.2em] transition-colors"
                     >
                       Ver todas <ArrowRight className="w-3.5 h-3.5" />
                     </button>
@@ -4712,7 +6573,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       return (
                         <div
                           key={product.id}
-                          className="group relative overflow-hidden cursor-pointer hover:-translate-y-1 transition-all duration-500 flex-shrink-0 w-48 sm:w-56"
+                          className="group relative overflow-hidden cursor-pointer hover:-translate-y-1 transition-all duration-500 flex-shrink-0 w-36 sm:w-48 md:w-56"
                           onClick={() => openProductModal(product)}
                         >
                           <div className="relative aspect-[3/4] overflow-hidden bg-black/60">
@@ -4727,7 +6588,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                               <Flame className="w-2.5 h-2.5" />-{discount}%
                             </div>
                             {inCart && (
-                              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                              <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                                 <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                               </div>
                             )}
@@ -4761,7 +6622,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               {selectedStore !== 'all' && stores.length > 1 && (
                 <button
                   onClick={() => { setSelectedStore('all'); setShowStoresView(true) }}
-                  className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm font-light hover:bg-amber-500/20 transition-colors whitespace-nowrap"
+                  className="flex items-center gap-2 px-4 py-3 bg-white/10 border border-white/20 text-white text-sm font-light hover:bg-white/15 transition-colors whitespace-nowrap"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   Todas las tiendas
@@ -4774,99 +6635,277 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   placeholder="Buscar perfume..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 text-white placeholder-white/30 font-light text-sm focus:border-amber-500/50 focus:outline-none transition-colors rounded-none"
+                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 text-white placeholder-white/30 font-light text-sm focus:border-white/50 focus:outline-none transition-colors rounded-none"
                 />
               </div>
             </div>
           )}
 
-          {/* STORES SECTION — moved to bottom when in all-stores view */}
-          {showStoresView && selectedStore === 'all' && stores.length > 0 && (
-            <div className="mt-4 mb-12">
-              {/* Stores carousel header */}
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <Store className="w-4 h-4 text-amber-500" />
-                  <span className="text-white/60 text-sm font-light uppercase tracking-widest">Comercios Activos en el Epicentro</span>
-                </div>
-              </div>
-              {/* Carousel */}
-              <div className="relative">
-                <button onClick={() => carouselStoresRef.current?.scrollBy({ left: -600, behavior: 'smooth' })} className="absolute -left-3 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 flex items-center justify-center text-white hover:bg-amber-500 hover:border-amber-500 hover:text-black transition-all shadow-lg hidden sm:flex"><ChevronLeft className="w-4 h-4" /></button>
-                <div ref={carouselStoresRef} className="flex gap-5 overflow-x-auto scrollbar-hide scroll-smooth">
-                  {stores.map(store => (
-                    <button
-                      key={store.id}
-                      onClick={() => {
-                        setSelectedStore(store.slug)
-                        setShowStoresView(false)
-                        setActiveSede(null)
-                        setStoreSedes([])
-                      }}
-                      className="group relative bg-white/5 border border-white/10 hover:border-amber-500/40 transition-all duration-500 overflow-hidden text-left flex-shrink-0 w-64 sm:w-72"
-                    >
-                      {/* Services ribbon — direct child of card, outside any overflow-hidden child */}
-                      {storesWithServices.has(store.slug) && (
-                        <div style={{ position: 'absolute', top: 0, left: 0, width: 96, height: 96, zIndex: 30, pointerEvents: 'none', overflow: 'hidden' }}>
-                          <div style={{
-                            position: 'absolute', top: 22, left: -26, width: 120,
-                            transform: 'rotate(-45deg)',
-                            background: 'linear-gradient(90deg,#7c3aed,#a855f7)',
-                            color: '#fff', fontSize: 9, fontWeight: 800,
-                            textTransform: 'uppercase', letterSpacing: '0.18em',
-                            padding: '4px 0', textAlign: 'center',
-                            boxShadow: '0 2px 8px rgba(124,58,237,0.5)',
-                          }}>
-                            Servicios
+          {/* ===== MARKETPLACE: ALL STORES VIEW ===== */}
+          {showStoresView && selectedStore === 'all' && (
+            <div className="space-y-8 mt-2">
+
+
+              {/* ── Store cards grid ── */}
+              {(() => {
+                const visibleStores = stores
+                  .filter(s => businessTypeFilter === 'all' || s.businessType === businessTypeFilter)
+                  .sort((a, b) => (b.productCount > 0 ? 1 : 0) - (a.productCount > 0 ? 1 : 0))
+                if (loadingStores) return (
+                  <div>
+                    <div className="flex items-center gap-2 mb-5">
+                      <Store className="w-3.5 h-3.5 text-white/40" />
+                      <span className="text-[10px] uppercase tracking-widest text-white/30 font-light">Cargando comercios...</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                      {[0,1,2,3,4,5].map(i => (
+                        <div key={i} className="bg-white rounded-2xl overflow-hidden animate-pulse shadow-sm border border-gray-100">
+                          <div className="bg-gray-100" style={{ aspectRatio: '16/9' }} />
+                          <div className="p-3 space-y-2">
+                            <div className="h-3 bg-gray-200 rounded w-2/3" />
+                            <div className="h-2 bg-gray-100 rounded w-1/3" />
                           </div>
                         </div>
-                      )}
-                      {/* Store Image/Logo */}
-                      <div className="relative h-40 bg-gradient-to-br from-amber-500/10 via-black to-white/5 overflow-hidden flex items-center justify-center">
-                        {store.logoUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={ensureAbsoluteUrl(store.logoUrl)} alt={store.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
-                        ) : (
-                          <Store className="w-16 h-16 text-amber-500/20 group-hover:text-amber-500/40 transition-colors duration-500" />
-                        )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                        {/* Product count badge */}
-                        <div className="absolute top-3 right-3 bg-amber-500/90 text-black text-[10px] font-bold px-2 py-1 flex items-center gap-1">
-                          <Package className="w-3 h-3" />
-                          {store.productCount}
-                        </div>
-                      </div>
-                      {/* Store Info */}
-                      <div className="p-5 space-y-2">
-                        <h3 className="text-base font-light text-white group-hover:text-amber-400 transition-colors truncate">{store.name}</h3>
-                        {store.businessType && (
-                          <p className="text-[11px] text-amber-400/60 uppercase tracking-widest">{store.businessType}</p>
-                        )}
-                        {store.address && (
-                          <p className="text-xs text-white/30 font-light flex items-center gap-1.5 truncate">
-                            <MapPin className="w-3 h-3 shrink-0" />
-                            {store.address}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-2 text-amber-400/70 text-xs uppercase tracking-[0.15em] font-light pt-2 group-hover:gap-3 transition-all">
-                          <span>Ver productos</span>
-                          <ArrowRight className="w-3 h-3" />
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+                if (visibleStores.length === 0) return (
+                  <div className="text-center py-16 space-y-4">
+                    <Store className="w-12 h-12 text-white/10 mx-auto" />
+                    <p className="text-white/30 text-sm font-light">No hay comercios disponibles</p>
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="text-xs text-white border border-white/30 px-4 py-2 hover:bg-white/10 transition-colors"
+                    >
+                      Reintentar
                     </button>
-                  ))}
-                </div>
-                <button onClick={() => carouselStoresRef.current?.scrollBy({ left: 600, behavior: 'smooth' })} className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-8 h-8 rounded-full bg-black/80 border border-white/20 flex items-center justify-center text-white hover:bg-amber-500 hover:border-amber-500 hover:text-black transition-all shadow-lg hidden sm:flex"><ChevronRight className="w-4 h-4" /></button>
-              </div>
+                  </div>
+                )
+                return (
+                  <div>
+                    <div className="flex items-center gap-2 mb-5">
+                      <Store className="w-3.5 h-3.5 text-white/40" />
+                      <span className="text-[10px] uppercase tracking-widest text-white/30 font-light">
+                        {visibleStores.length} Comercio{visibleStores.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                      {visibleStores.map(store => {
+                        const storeProducts = allProducts.filter(p => {
+                          const matchStore = p.storeName === store.name || (p as any).storeSlug === store.slug || (p as any).tenantSlug === store.slug
+                          const matchCat = selectedCategory === 'all' || p.category === selectedCategory
+                          return matchStore && matchCat
+                        }).slice(0, 4)
+                        const isEmpty = store.productCount === 0
+                        return (
+                          <button
+                            key={store.id}
+                            onClick={() => {
+                              if (isEmpty) return
+                              // Tema 2: abre la página completa de la tienda (estilo gastronómico)
+                              if (store.theme === 'theme2') { window.location.href = `/t/${store.slug}`; return }
+                              setSelectedStore(store.slug); setShowStoresView(false); setActiveSede(null); setStoreSedes([]); window.scrollTo({ top: 0, behavior: 'smooth' })
+                            }}
+                            className={`group relative bg-[#171717] rounded-2xl overflow-hidden text-left flex flex-col shadow-sm transition-all duration-300 border ${isEmpty ? 'cursor-default border-white/5 opacity-70' : 'hover:shadow-xl border-white/10 hover:border-white/25 cursor-pointer'}`}
+                          >
+                            {/* Próximamente overlay for empty stores */}
+                            {isEmpty && (
+                              <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/80 backdrop-blur-[2px] rounded-2xl">
+                                <span style={{ fontSize: '1.6rem', lineHeight: 1, marginBottom: '0.4rem' }}>🚧</span>
+                                <p style={{ color: '#d97706', fontSize: '0.6rem', fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase' }}>Próximamente</p>
+                              </div>
+                            )}
+
+                            {/* Services ribbon */}
+                            {storesWithServices.has(store.slug) && (
+                              <div style={{ position: 'absolute', top: 0, left: 0, width: 80, height: 80, zIndex: 30, pointerEvents: 'none', overflow: 'hidden' }}>
+                                <div style={{ position: 'absolute', top: 18, left: -22, width: 100, transform: 'rotate(-45deg)', background: 'linear-gradient(90deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 8, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.18em', padding: '3px 0', textAlign: 'center' }}>
+                                  Servicios
+                                </div>
+                              </div>
+                            )}
+
+                            {/* ── Portada / banner ── */}
+                            <div className="relative w-full bg-[#0e0e0e] overflow-hidden shrink-0" style={{ aspectRatio: '16/10' }}>
+                              {(store.coverUrl || store.logoUrl) ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={ensureAbsoluteUrl((store.coverUrl || store.logoUrl) as string)}
+                                  alt={store.name}
+                                  className={`w-full h-full ${store.coverUrl ? 'object-cover' : 'object-contain p-4'} ${isEmpty ? '' : 'group-hover:scale-105'} transition-transform duration-500`}
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Store className="w-10 h-10 text-white/15" />
+                                </div>
+                              )}
+                              {/* Degradado inferior para fundir con la tarjeta */}
+                              <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#171717] to-transparent pointer-events-none" />
+                              {/* Badge Abierto / Cerrado */}
+                              {!isEmpty && (
+                                <span className={`absolute top-2.5 right-2.5 flex items-center gap-1 text-[9px] sm:text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-sm ${store.openState === 'closed' ? 'bg-red-500/20 text-red-300 border border-red-400/40' : 'bg-green-500/20 text-green-300 border border-green-400/50'}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${store.openState === 'closed' ? 'bg-red-400' : 'bg-green-400'}`} />
+                                  {store.openState === 'closed' ? 'CERRADO' : 'ABIERTO'}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* ── Logo circular superpuesto ── */}
+                            <div className="px-4 -mt-7 relative z-10 flex">
+                              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl overflow-hidden bg-[#1f1f1f] border-2 border-[#171717] shadow-lg flex items-center justify-center shrink-0">
+                                {store.logoUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={ensureAbsoluteUrl(store.logoUrl)} alt={store.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <Store className="w-6 h-6 text-white/30" />
+                                )}
+                              </div>
+                            </div>
+
+                            {/* ── Info ── */}
+                            <div className="px-4 pt-2 pb-4 flex flex-col gap-1 mt-auto">
+                              <div className="flex items-center gap-1.5">
+                                <h3 className="text-sm sm:text-base font-bold text-white truncate">{store.name}</h3>
+                                {Boolean(store.isVerified) && (
+                                  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" role="img" aria-label="Verificado">
+                                    <path fill="#3b82f6" d="M12 1l2.4 1.8 3 .2.9 2.9 2.4 1.8-.9 2.9.9 2.9-2.4 1.8-.9 2.9-3 .2L12 23l-2.4-1.8-3-.2-.9-2.9L3.3 16l.9-2.9-.9-2.9 2.4-1.8.9-2.9 3-.2z"/>
+                                    <path fill="#fff" d="M10.6 14.6l-2.2-2.2-1.1 1.1 3.3 3.3 6-6-1.1-1.1z"/>
+                                  </svg>
+                                )}
+                              </div>
+                              {(store.cardDescription || store.businessType) && (
+                                <p className="text-[11px] sm:text-xs text-white/50 truncate">{store.cardDescription || store.businessType}</p>
+                              )}
+                              <div className="flex items-center gap-1 mt-1 text-[11px] text-white/40">
+                                <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
+                                <span className="truncate">
+                                  {[
+                                    typeof store.sedeCount === 'number' ? `${store.sedeCount} Sede(s)` : null,
+                                    store.city || (!store.city && typeof store.sedeCount !== 'number' ? store.address : null),
+                                  ].filter(Boolean).join(' · ')}
+                                </span>
+                              </div>
+                              {store.openState === 'closed' && store.nextOpenLabel && (
+                                <p className="text-[11px] text-amber-400/90 mt-0.5 truncate">🕒 {store.nextOpenLabel}</p>
+                              )}
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* ── All products across stores ── */}
+              {(() => {
+                const allCats = Array.from(new Set(allProducts.map(p => p.category).filter(Boolean))) as string[]
+                const filtered = allProducts.filter(p => {
+                  const matchType = businessTypeFilter === 'all' || stores.find(s => (s.name === p.storeName || (s as any).slug === (p as any).storeSlug || (s as any).slug === (p as any).tenantSlug) && s.businessType === businessTypeFilter)
+                  const matchCat = selectedCategory === 'all' || p.category === selectedCategory
+                  return matchType && matchCat
+                })
+                if (filtered.length === 0 && !loadingAllProducts) return null
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Package className="w-3.5 h-3.5 text-white/40" />
+                        <span className="text-[10px] uppercase tracking-widest text-white/30 font-light">
+                          {loadingAllProducts ? 'Cargando productos...' : 'Productos destacados'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Category filter pills */}
+                    {allCats.length > 0 && (
+                      <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-3 -mx-4 px-4 sm:mx-0 sm:px-0">
+                        <button
+                          onClick={() => setSelectedCategory('all')}
+                          className={`shrink-0 px-3 py-1.5 text-[10px] uppercase tracking-widest rounded-full border transition-all ${
+                            selectedCategory === 'all'
+                              ? 'bg-white text-black border-white'
+                              : 'border-white/15 text-white/40 hover:border-white/30 hover:text-white/70'
+                          }`}
+                        >
+                          Todos
+                        </button>
+                        {allCats.map(cat => (
+                          <button
+                            key={cat}
+                            onClick={() => setSelectedCategory(selectedCategory === cat ? 'all' : cat)}
+                            className={`shrink-0 px-3 py-1.5 text-[10px] uppercase tracking-widest rounded-full border transition-all ${
+                              selectedCategory === cat
+                                ? 'bg-white text-black border-white'
+                                : 'border-white/15 text-white/40 hover:border-white/30 hover:text-white/70'
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {loadingAllProducts ? (
+                      <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
+                        {[0,1,2,3,4].map(i => (
+                          <div key={i} className="bg-white/5 animate-pulse aspect-[3/4] flex-shrink-0 w-36 sm:w-44" />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+                        {filtered.slice(0, 5).map(product => {
+                          const isOffer = !!(product.isOnOffer && product.offerPrice)
+                          const inCart = carrito.find(c => c.id === product.id)
+                          return (
+                            <button
+                              key={product.id}
+                              onClick={() => openProductModal(product)}
+                              className="group relative bg-white/3 border border-white/8 hover:border-white/20 overflow-hidden transition-all duration-300 text-left flex-shrink-0 w-36 sm:w-44"
+                            >
+                              <div className="relative aspect-[3/4] bg-black/50 overflow-hidden">
+                                {product.imageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-8 h-8 text-white/8" /></div>
+                                )}
+                                {isOffer && (
+                                  <div className="absolute top-2 left-2 bg-gradient-to-r from-red-600 to-orange-600 text-white text-[9px] font-bold px-1.5 py-0.5">OFERTA</div>
+                                )}
+                                {inCart && (
+                                  <div className="absolute bottom-2 right-2 bg-white text-black text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{inCart.cantidad}</div>
+                                )}
+                              </div>
+                              <div className="p-2.5">
+                                <p className="text-[11px] text-white/70 truncate font-light">{product.name}</p>
+                                {product.storeName && (
+                                  <p className="text-[9px] text-white/25 truncate mt-0.5 uppercase tracking-wide">{product.storeName}</p>
+                                )}
+                                <p className="text-xs text-white font-light mt-1">
+                                  {isOffer ? formatCOP(product.offerPrice!) : formatCOP(product.salePrice)}
+                                </p>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
             </div>
           )}
-          {!(showStoresView && selectedStore === 'all') && (
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 sm:pb-0 sm:flex-wrap sm:justify-center mb-6 sm:mb-10 -mx-4 px-4 sm:mx-0 sm:px-0">
+          {/* Category filter — only when a store is selected */}
+          {!(showStoresView && selectedStore === 'all') && categories.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 mb-6 sm:mb-10 -mx-4 px-4">
               <button
                 onClick={() => setSelectedCategory('all')}
-                className={`shrink-0 px-4 py-2 text-xs uppercase tracking-wider border transition-all duration-300 ${selectedCategory === 'all'
-                  ? 'bg-amber-500 text-black border-amber-500'
-                  : 'bg-transparent text-white/50 border-white/10 hover:border-white/30'
+                className={`shrink-0 px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs uppercase tracking-wider rounded-full border transition-all duration-300 ${selectedCategory === 'all'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-transparent text-white/50 border-white/15 hover:border-white/30'
                   }`}
               >
                 Todos
@@ -4875,9 +6914,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 <button
                   key={cat}
                   onClick={() => setSelectedCategory(cat)}
-                  className={`shrink-0 px-4 py-2 text-xs uppercase tracking-wider border transition-all duration-300 ${selectedCategory === cat
-                    ? 'bg-amber-500 text-black border-amber-500'
-                    : 'bg-transparent text-white/50 border-white/10 hover:border-white/30'
+                  className={`shrink-0 px-3 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs uppercase tracking-wider rounded-full border transition-all duration-300 ${selectedCategory === cat
+                    ? 'bg-white text-black border-white'
+                    : 'bg-transparent text-white/50 border-white/15 hover:border-white/30'
                     }`}
                 >
                   {cat}
@@ -4889,7 +6928,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           {/* Products Carousel */}
           {showStoresView && selectedStore === 'all' ? null : loadingProducts ? (
             <div className="text-center py-20">
-              <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="text-white/40 text-sm font-light">Cargando perfumes...</p>
             </div>
           ) : filteredProducts.length === 0 ? (
@@ -4925,13 +6964,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           <div className="absolute top-2 left-2 z-20 bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm">-{discount}%</div>
                         )}
                         {inCart && (
-                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-amber-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
+                          <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 bg-white text-black text-[9px] font-bold px-1.5 py-0.5 rounded-sm">
                             <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                           </div>
                         )}
                         <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-center pb-2 z-10">
                           <div className="flex items-center gap-1.5">
-                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-amber-500 hover:text-white transition-colors" title="Agregar al carrito">
+                            <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-neutral-800 hover:text-white transition-colors" title="Agregar al carrito">
                               <ShoppingCart className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={(e) => { e.stopPropagation(); openProductModal(product) }} className="w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center text-gray-700 hover:bg-gray-800 hover:text-white transition-colors" title="Ver detalle">
@@ -4943,9 +6982,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="p-2">
+                      <div className="p-2 text-center">
                         <h3 className="text-xs font-medium text-gray-800 line-clamp-2 mb-1 leading-snug">{product.name}</h3>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           {isOffer ? (
                             <>
                               <span className="text-gray-400 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
@@ -4982,7 +7021,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         <div className="absolute top-2.5 right-2.5 z-20 px-2 py-0.5 text-[9px] text-white/60 uppercase tracking-[0.2em]">{product.brand}</div>
                       )}
                       {inCart && (
-                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-amber-500 text-black text-[9px] font-bold px-2 py-0.5">
+                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white text-black text-[9px] font-bold px-2 py-0.5">
                           <ShoppingCart className="w-2.5 h-2.5" />×{inCart.cantidad}
                         </div>
                       )}
@@ -5003,14 +7042,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                               <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
                             </>
                           ) : (
-                            <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                            <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
                           )}
                         </div>
                       </div>
                       <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center gap-0 translate-y-0 sm:translate-y-full sm:group-hover:translate-y-0 transition-transform duration-300 ease-out">
                         <button
                           onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
-                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-amber-500/70 hover:bg-amber-500/90 text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-white/85 hover:bg-white text-black text-[9px] font-semibold uppercase tracking-wider transition-colors"
                         >
                           <ShoppingCart className="w-3 h-3" />Añadir
                         </button>
@@ -5033,6 +7072,120 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       )}
 
 
+
+      {/* ========== SECCIÓN DE CONTACTO ========== */}
+      {storeConfig?.storeInfo?.contactPageEnabled && selectedStore !== 'all' && (
+        <RevealSection id="seccion-contacto" className="py-12 sm:py-20 landing-section-bg border-t border-white/5">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Header */}
+            <div className="text-center mb-10 space-y-3">
+              <p className="text-white/40 uppercase tracking-[0.5em] text-xs">Contacto</p>
+              <h2 className="text-2xl sm:text-3xl font-extralight tracking-tight text-white">
+                {storeConfig.storeInfo.contactPageTitle || 'Contáctanos'}
+              </h2>
+              {storeConfig.storeInfo.contactPageDescription && (
+                <p className="text-white/50 text-sm font-light max-w-lg mx-auto leading-relaxed">
+                  {storeConfig.storeInfo.contactPageDescription}
+                </p>
+              )}
+            </div>
+
+            {/* Imagen */}
+            {storeConfig.storeInfo.contactPageImage && (
+              <div className="mb-10 rounded-2xl overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={storeConfig.storeInfo.contactPageImage}
+                  alt="Contacto"
+                  className="w-full h-auto block"
+                />
+              </div>
+            )}
+
+            {/* Canales personalizados */}
+            {(() => {
+              let links: { label: string; url: string }[] = []
+              try { links = storeConfig.storeInfo.contactPageLinks ? JSON.parse(storeConfig.storeInfo.contactPageLinks) : [] } catch { links = [] }
+              if (links.length === 0) return null
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {links.map((link, i) => {
+                    const { Icon, color, bg } = getLinkIcon(link.url, link.label)
+                    return (
+                      <a
+                        key={i}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/8 hover:border-white/20 transition-all duration-200 group"
+                      >
+                        <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+                          <Icon className={`w-4 h-4 ${color}`} />
+                        </div>
+                        <span className="text-white/80 text-sm font-light group-hover:text-white transition-colors">
+                          {link.label || link.url}
+                        </span>
+                      </a>
+                    )
+                  })}
+                </div>
+              )
+            })()}
+
+            {/* Fallback: datos de contacto de store_info */}
+            {(() => {
+              let links: { label: string; url: string }[] = []
+              try { links = storeConfig.storeInfo.contactPageLinks ? JSON.parse(storeConfig.storeInfo.contactPageLinks) : [] } catch { links = [] }
+              if (links.length > 0) return null
+              const { phone, email, socialWhatsapp } = storeConfig.storeInfo
+              if (!phone && !email && !socialWhatsapp) return null
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(socialWhatsapp || phone) && (
+                    <a
+                      href={socialWhatsapp || `tel:${phone}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/8 hover:border-white/20 transition-all duration-200 group"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-green-500/15 flex items-center justify-center shrink-0">
+                        <Phone className="w-4 h-4 text-green-400" />
+                      </div>
+                      <span className="text-white/80 text-sm font-light group-hover:text-white transition-colors">
+                        {socialWhatsapp ? 'WhatsApp' : phone}
+                      </span>
+                    </a>
+                  )}
+                  {email && (
+                    <a
+                      href={`mailto:${email}`}
+                      className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/3 hover:bg-white/8 hover:border-white/20 transition-all duration-200 group"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-blue-500/15 flex items-center justify-center shrink-0">
+                        <Mail className="w-4 h-4 text-blue-400" />
+                      </div>
+                      <span className="text-white/80 text-sm font-light group-hover:text-white transition-colors">
+                        {email}
+                      </span>
+                    </a>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        </RevealSection>
+      )}
+
+      {/* ========== CUSTOM HTML SECTIONS (active) ========== */}
+      {!showProductModal && storeConfig?.customSections && storeConfig.customSections.length > 0 && (
+        <div className="w-full">
+          {storeConfig.customSections.map(section => (
+            section.htmlContent
+              ? <CustomSectionFrame key={section.id} name={section.name} html={section.htmlContent} />
+              : null
+          ))}
+        </div>
+      )}
 
       {/* ========== HERO 6 — Footer con Logo, Info, Enlaces Legales, Contacto ========== */}
       {!showProductModal && <footer className="border-t border-white/10 landing-footer py-16">
@@ -5071,7 +7224,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     </button>
                   )}
                   {storeConfig.storeInfo.email && (
-                    <a href={`mailto:${storeConfig.storeInfo.email}`} className="text-white/30 hover:text-amber-400 transition-colors"><Mail className="w-5 h-5" /></a>
+                    <a href={`mailto:${storeConfig.storeInfo.email}`} className="text-white/30 hover:text-white transition-colors"><Mail className="w-5 h-5" /></a>
                   )}
                 </div>
               </div>
@@ -5084,7 +7237,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     <li>
                       <button
                         onClick={() => setLegalModal({ title: 'Términos y condiciones', content: storeConfig.storeInfo!.termsContent! })}
-                        className="text-white/40 text-sm font-light hover:text-amber-400 transition-colors flex items-center gap-1.5"
+                        className="text-white/40 text-sm font-light hover:text-white transition-colors flex items-center gap-1.5"
                       >
                         <FileText className="w-3 h-3" />
                         Términos y condiciones
@@ -5095,7 +7248,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     <li>
                       <button
                         onClick={() => setLegalModal({ title: 'Política de privacidad', content: storeConfig.storeInfo!.privacyContent! })}
-                        className="text-white/40 text-sm font-light hover:text-amber-400 transition-colors flex items-center gap-1.5"
+                        className="text-white/40 text-sm font-light hover:text-white transition-colors flex items-center gap-1.5"
                       >
                         <Shield className="w-3 h-3" />
                         Política de privacidad
@@ -5106,7 +7259,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     <li>
                       <button
                         onClick={() => setLegalModal({ title: 'Términos de envío', content: storeConfig.storeInfo!.shippingTerms! })}
-                        className="text-white/40 text-sm font-light hover:text-amber-400 transition-colors flex items-center gap-1.5"
+                        className="text-white/40 text-sm font-light hover:text-white transition-colors flex items-center gap-1.5"
                       >
                         <Truck className="w-3 h-3" />
                         Términos de envío
@@ -5129,9 +7282,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 <ul className="space-y-2 text-white/40 text-sm font-light">
                   {storeConfig.storeInfo.address && (
                     <li className="flex items-start gap-2">
-                      <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-amber-400/50" />
+                      <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-white/50" />
                       {storeConfig.storeInfo.locationMapUrl ? (
-                        <a href={storeConfig.storeInfo.locationMapUrl} target="_blank" rel="noopener noreferrer" className="hover:text-amber-400 transition-colors">
+                        <a href={storeConfig.storeInfo.locationMapUrl} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
                           {storeConfig.storeInfo.address}
                         </a>
                       ) : (
@@ -5141,14 +7294,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   )}
                   {storeConfig.storeInfo.phone && (
                     <li className="flex items-center gap-2">
-                      <svg className="w-4 h-4 shrink-0 text-amber-400/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+                      <svg className="w-4 h-4 shrink-0 text-white/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
                       {storeConfig.storeInfo.phone}
                     </li>
                   )}
                   {storeConfig.storeInfo.email && (
                     <li className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 shrink-0 text-amber-400/50" />
-                      <a href={`mailto:${storeConfig.storeInfo.email}`} className="hover:text-amber-400 transition-colors">
+                      <Mail className="w-4 h-4 shrink-0 text-white/50" />
+                      <a href={`mailto:${storeConfig.storeInfo.email}`} className="hover:text-white transition-colors">
                         {storeConfig.storeInfo.email}
                       </a>
                     </li>
@@ -5174,10 +7327,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(storeConfig.storeInfo.address)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/10 hover:border-amber-400/40 hover:bg-white/5 transition-all duration-300 group"
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/10 hover:border-white/30 hover:bg-white/5 transition-all duration-300 group"
                     title="Abrir en Google Maps"
                   >
-                    <MapPin className="w-5 h-5 text-amber-400 shrink-0" />
+                    <MapPin className="w-5 h-5 text-white shrink-0" />
                     <span className="text-white/70 group-hover:text-white text-sm transition-colors">{storeConfig.storeInfo.address}</span>
                   </a>
                 </div>
@@ -5217,7 +7370,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 <img src={storeConfig.activeDrop.bannerUrl} alt={storeConfig.activeDrop.name} className="w-full h-48 object-cover" />
               )}
               <div className="p-6 text-center space-y-4">
-                <div className="inline-flex items-center gap-2 text-amber-400 text-xs uppercase tracking-[0.3em]">
+                <div className="inline-flex items-center gap-2 text-white text-xs uppercase tracking-[0.3em]">
                   <Flame className="w-4 h-4" /> Nuevo Drop
                 </div>
                 <h3 className="text-2xl font-light text-white">{storeConfig.activeDrop.name}</h3>
@@ -5225,15 +7378,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   <p className="text-white/50 text-sm font-light">{storeConfig.activeDrop.description}</p>
                 )}
                 {storeConfig.activeDrop.globalDiscount > 0 && (
-                  <p className="text-lg text-amber-400 font-light">Hasta {storeConfig.activeDrop.globalDiscount}% OFF</p>
+                  <p className="text-lg text-white font-light">Hasta {storeConfig.activeDrop.globalDiscount}% OFF</p>
                 )}
                 <div className="flex items-center justify-center gap-2 text-white/60">
-                  <Timer className="w-4 h-4 text-amber-400" />
+                  <Timer className="w-4 h-4 text-white" />
                   <span className="font-mono text-sm">{countdownText}</span>
                 </div>
                 <button
                   onClick={() => { dismissDropPopup(); setShowDrop(true); setShowCatalog(false) }}
-                  className="w-full py-3 bg-gradient-to-r from-amber-500 to-yellow-500 text-black uppercase tracking-[0.2em] text-xs font-bold hover:from-amber-400 hover:to-yellow-400 transition-all"
+                  className="w-full py-3 bg-white text-black uppercase tracking-[0.2em] text-xs font-bold hover:bg-white/90 transition-all"
                 >
                   Ver Drop
                 </button>
@@ -5262,7 +7415,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {dropPopupSeen && !showDrop && storeConfig?.activeDrop && countdownText !== 'Finalizado' && (
         <button
           onClick={() => { setShowDrop(true); setShowCatalog(false) }}
-          className="fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-black border-r border-t border-b border-white/10 text-amber-400 px-2 py-4 shadow-lg shadow-black/50 hover:px-3 hover:border-amber-500/30 transition-all duration-300 group"
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-40 bg-black border-r border-t border-b border-white/10 text-white px-2 py-4 shadow-lg shadow-black/50 hover:px-3 hover:border-white/20 transition-all duration-300 group"
         >
           <div className="flex flex-col items-center gap-2 writing-vertical">
             <Flame className="w-4 h-4 shrink-0" />
@@ -5280,16 +7433,62 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {totalItems > 0 && !showCart && (
         <button
           onClick={() => setShowCart(true)}
-          className="hidden md:flex fixed bottom-6 right-6 z-40 bg-amber-500 hover:bg-amber-400 text-black p-4 rounded-full shadow-2xl shadow-amber-500/30 transition-all duration-300 hover:scale-110 group items-center justify-center"
+          className="hidden md:flex fixed bottom-6 right-6 z-40 bg-white hover:bg-white/90 text-black p-4 rounded-full shadow-2xl shadow-black/30 transition-all duration-300 hover:scale-110 group items-center justify-center"
         >
           <ShoppingCart className="w-6 h-6" />
-          <span className="absolute -top-2 -right-2 bg-black text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center border-2 border-amber-500">
+          <span className="absolute -top-2 -right-2 bg-black text-white text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center border-2 border-black">
             {totalItems}
           </span>
           <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-black/90 text-white text-xs font-light px-3 py-1.5 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
             {formatCOP(totalCarrito)}
+            {totalPesoKg > 0 && ` · ${totalPesoKg.toFixed(1)} kg`}
           </span>
         </button>
+      )}
+
+      {/* ========== MODAL DOMICILIO CON FLOTA ========== */}
+      {showFlotaDeliveryModal && (
+        <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
+            <div className="bg-orange-500 px-6 py-5 text-white text-center">
+              <span className="text-4xl block mb-2">🚛</span>
+              <h3 className="text-xl font-bold">¡Tienes domicilio disponible!</h3>
+              <p className="text-orange-100 text-sm mt-1">Nuestra flota de vehículos llevará tu pedido</p>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {totalPesoKg > 0 && (
+                <div className="flex items-center gap-3 bg-orange-50 rounded-xl px-4 py-3">
+                  <Truck className="text-orange-500 shrink-0" size={20} />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      Peso del pedido: {totalPesoKg.toFixed(2)} kg
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {totalPesoKg < 50 ? 'Entrega en moto' : totalPesoKg <= 500 ? 'Camión ligero' : 'Camión planta (carga pesada)'}
+                    </p>
+                  </div>
+                </div>
+              )}
+              <p className="text-sm text-gray-600 text-center">
+                Al finalizar tu compra podrás indicarnos la dirección exacta de entrega y asignaremos el vehículo adecuado.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowFlotaDeliveryModal(false); setFlotaDeliveryShown(true) }}
+                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  Recoger en tienda
+                </button>
+                <button
+                  onClick={() => { setShowFlotaDeliveryModal(false); setFlotaDeliveryShown(true); setShowCheckout(true) }}
+                  className="flex-1 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-semibold hover:bg-orange-600"
+                >
+                  Quiero domicilio
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ========== CHATBOT FLOATING BUTTON ========== */}
@@ -5302,7 +7501,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         return (
           <button
             onClick={() => setShowChatWidget(v => !v)}
-            className={`hidden md:flex fixed ${totalItems > 0 && !showCart ? 'bottom-24' : 'bottom-6'} right-6 z-40 p-4 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 group items-center justify-center`}
+            className={`flex fixed ${totalItems > 0 && !showCart ? 'bottom-32 sm:bottom-24' : 'bottom-20 sm:bottom-6'} right-4 sm:right-6 z-40 p-4 rounded-full shadow-2xl transition-all duration-300 hover:scale-110 group items-center justify-center`}
             style={{ background: btnColor }}
             title={`Chatear con ${chatbotStatus.botName}`}
           >
@@ -5342,18 +7541,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         />
       )}
 
-      {/* ========== FLOATING WHATSAPP BUTTON (only when no chatbot) ========== */}
-      {!chatbotStatus?.enabled && storeConfig?.storeInfo?.socialWhatsapp && (
-        <button
-          onClick={() => setShowWhatsappModal(true)}
-          className={`hidden md:flex fixed ${totalItems > 0 && !showCart ? 'bottom-24' : 'bottom-6'} right-6 z-40 bg-green-500 hover:bg-green-400 text-white p-4 rounded-full shadow-2xl shadow-green-500/30 transition-all duration-300 hover:scale-110 group items-center justify-center`}
-          title="Enviar mensaje por WhatsApp"
-        >
-          <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-          <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 bg-black/90 text-white text-xs font-light px-3 py-1.5 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-            WhatsApp
-          </span>
-        </button>
+      {/* ========== FLOATING WHATSAPP WIDGET (only when no chatbot) ========== */}
+      {!chatbotStatus?.enabled && !showWhatsappModal && storeConfig?.storeInfo?.socialWhatsapp && (
+        <WhatsAppFloatingWidget
+          phoneNumber={storeConfig.storeInfo.socialWhatsapp.replace(/\D/g, '')}
+          welcomeMessage="¿Cómo podemos ayudarte?"
+          prefilledText={whatsappMessage}
+          raised={totalItems > 0 && !showCart}
+          onOpen={() => setShowWhatsappModal(true)}
+        />
       )}
 
       {/* ========== WHATSAPP MODAL ========== */}
@@ -5390,7 +7586,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   href={`https://api.whatsapp.com/send/?phone=${storeConfig.storeInfo.socialWhatsapp}&text=${encodeURIComponent(whatsappMessage)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => setShowWhatsappModal(false)}
+                  onClick={() => {
+                    setShowWhatsappModal(false)
+                    const fbq = (window as any).fbq
+                    if (typeof fbq === 'function') fbq('track', 'Lead', { content_name: 'Click WhatsApp', value: 1, currency: 'COP' })
+                  }}
                   className="flex-1 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold text-center transition-colors"
                 >
                   Enviar mensaje
@@ -5405,32 +7605,43 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {showCart && (
         <>
           <div className="fixed inset-0 z-[65] bg-black/60 backdrop-blur-sm" onClick={() => setShowCart(false)} />
-          <div className="fixed top-0 right-0 h-full w-full max-w-md z-[65] landing-sidebar border-l border-white/10 shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+          <div
+            className="fixed top-0 right-0 h-full w-full max-w-md z-[65] flex flex-col shadow-2xl animate-in slide-in-from-right duration-300"
+            style={{ backgroundColor: '#ffffff', borderLeft: '1px solid rgba(0,0,0,0.12)' }}
+          >
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <ShoppingCart className="w-5 h-5 text-amber-400" />
-                <h2 className="text-lg font-light tracking-wide text-white">
-                  Mi Carrito <span className="text-white/40 text-sm">({totalItems})</span>
-                </h2>
+            <div style={{ borderBottom: '1px solid rgba(0,0,0,0.12)', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <ShoppingCart style={{ width: 18, height: 18, color: '#000000' }} />
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#000000', letterSpacing: '0.02em' }}>
+                  Mi Carrito
+                </span>
+                <span style={{ fontSize: 13, color: 'rgba(0,0,0,0.45)', fontWeight: 400 }}>
+                  ({totalItems})
+                </span>
               </div>
-              <button onClick={() => setShowCart(false)} className="p-2 text-white/40 hover:text-white transition-colors">
-                <X className="w-5 h-5" />
+              <button
+                onClick={() => setShowCart(false)}
+                style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: 'rgba(0,0,0,0.7)', cursor: 'pointer' }}
+              >
+                <X style={{ width: 15, height: 15 }} />
               </button>
             </div>
 
             {/* Items */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0', backgroundColor: '#ffffff' }}>
               {carrito.length === 0 ? (
-                <div className="text-center py-16">
-                  <ShoppingCart className="w-12 h-12 text-white/10 mx-auto mb-4" />
-                  <p className="text-white/40 text-sm font-light">Tu carrito está vacío</p>
-                  <button onClick={() => { setShowCart(false); scrollToPerfumes() }} className="mt-4 text-amber-400 text-sm font-light hover:text-amber-300 transition-colors underline underline-offset-4">
-                    Explorar perfumes
+                <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+                  <ShoppingCart style={{ width: 44, height: 44, color: 'rgba(0,0,0,0.15)', margin: '0 auto 16px' }} />
+                  <p style={{ color: 'rgba(0,0,0,0.5)', fontSize: 14, marginBottom: 20 }}>Tu carrito está vacío</p>
+                  <button
+                    onClick={() => { setShowCart(false); scrollToPerfumes() }}
+                    style={{ width: '100%', backgroundColor: '#000000', color: '#ffffff', fontSize: 12, fontWeight: 700, padding: '12px', textTransform: 'uppercase', letterSpacing: '0.15em', cursor: 'pointer', border: 'none' }}
+                  >
+                    Explorar productos
                   </button>
                 </div>
               ) : (() => {
-                // Group items by store for display
                 const storeGroups = new Map<string, ProductoCarrito[]>()
                 for (const item of carrito) {
                   const key = item.storeName || 'Tienda'
@@ -5442,48 +7653,75 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 return Array.from(storeGroups.entries()).map(([storeName, items]) => (
                   <div key={storeName}>
                     {hasMultipleStores && (
-                      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-amber-500/20">
-                        <Store className="w-3.5 h-3.5 text-amber-400" />
-                        <span className="text-[11px] text-amber-400 uppercase tracking-wider font-medium">{storeName}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '8px 24px 4px', paddingBottom: 8, borderBottom: '1px solid rgba(0,0,0,0.12)' }}>
+                        <Store style={{ width: 13, height: 13, color: 'rgba(0,0,0,0.5)' }} />
+                        <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>{storeName}</span>
                       </div>
                     )}
                     {items.map((item, index) => (
-                      <div key={`${item.id}-${index}`} className="flex gap-4 pb-4 border-b border-white/5 last:border-0 mb-2">
-                        <div className="w-16 h-16 bg-white/5 flex-shrink-0 overflow-hidden">
+                      <div
+                        key={`${item.id}-${index}`}
+                        style={{ display: 'flex', gap: 14, padding: '14px 24px', borderBottom: '1px solid rgba(0,0,0,0.08)', backgroundColor: '#ffffff' }}
+                      >
+                        {/* Imagen */}
+                        <div style={{ width: 64, height: 64, flexShrink: 0, overflow: 'hidden', border: '1px solid rgba(0,0,0,0.15)', backgroundColor: 'rgba(0,0,0,0.04)' }}>
                           {item.imagen ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={ensureAbsoluteUrl(item.imagen)} alt={item.nombre} className="w-full h-full object-cover" />
+                            <img src={ensureAbsoluteUrl(item.imagen)} alt={item.nombre} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-4 h-4 text-white/10" /></div>
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Sparkles style={{ width: 16, height: 16, color: 'rgba(0,0,0,0.2)' }} />
+                            </div>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-light text-white truncate">{item.nombre}</h4>
-                          {item.perfumeSeleccionado && <p className="text-xs text-white/50">Perfume: {item.perfumeSeleccionado}</p>}
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-amber-400/70">{formatCOP(item.precio)} c/u</span>
+
+                        {/* Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13, fontWeight: 600, color: '#000000', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                            {item.nombre}
+                          </p>
+                          {item.perfumeSeleccionado && (
+                            <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', margin: '2px 0 0' }}>Perfume: {item.perfumeSeleccionado}</p>
+                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                            <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>{formatCOP(item.precio)} c/u</span>
                             {item.precioOriginal && item.precioOriginal > item.precio && (
-                              <span className="text-[10px] text-white/30 line-through">{formatCOP(item.precioOriginal)}</span>
+                              <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.35)', textDecoration: 'line-through' }}>{formatCOP(item.precioOriginal)}</span>
                             )}
                             {item.descuentoPorcentaje && item.descuentoPorcentaje > 0 && (
-                              <span className="text-[10px] text-green-400">-{item.descuentoPorcentaje}%</span>
+                              <span style={{ fontSize: 10, color: '#34d399', fontWeight: 600 }}>-{item.descuentoPorcentaje}%</span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <button onClick={() => actualizarCantidad(item.id, -1, item.tempId)} className="w-7 h-7 border border-white/10 text-white/50 flex items-center justify-center hover:border-white/30 hover:text-white transition-colors">
-                              <Minus className="w-3 h-3" />
+
+                          {/* Cantidad */}
+                          <div style={{ display: 'flex', alignItems: 'center', marginTop: 8, border: '1px solid rgba(0,0,0,0.25)', width: 'fit-content' }}>
+                            <button
+                              onClick={() => actualizarCantidad(item.id, -1, item.tempId)}
+                              style={{ width: 30, height: 30, backgroundColor: '#000000', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRight: '1px solid rgba(0,0,0,0.25)', cursor: 'pointer' }}
+                            >
+                              <Minus style={{ width: 11, height: 11 }} />
                             </button>
-                            <span className="text-sm text-white font-light w-6 text-center">{item.cantidad}</span>
-                            <button onClick={() => actualizarCantidad(item.id, 1, item.tempId)} className="w-7 h-7 border border-white/10 text-white/50 flex items-center justify-center hover:border-white/30 hover:text-white transition-colors">
-                              <Plus className="w-3 h-3" />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#000000', width: 32, textAlign: 'center' }}>{item.cantidad}</span>
+                            <button
+                              onClick={() => actualizarCantidad(item.id, 1, item.tempId)}
+                              style={{ width: 30, height: 30, backgroundColor: '#000000', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderLeft: '1px solid rgba(0,0,0,0.25)', cursor: 'pointer' }}
+                            >
+                              <Plus style={{ width: 11, height: 11 }} />
                             </button>
                           </div>
                         </div>
-                        <div className="flex flex-col items-end justify-between">
-                          <button onClick={() => removerProducto(item)} className="p-1 text-white/20 hover:text-red-400 transition-colors">
-                            <X className="w-4 h-4" />
+
+                        {/* Precio total y eliminar */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', flexShrink: 0 }}>
+                          <button
+                            onClick={() => removerProducto(item)}
+                            style={{ background: 'none', border: 'none', color: 'rgba(0,0,0,0.3)', cursor: 'pointer', padding: 2 }}
+                            onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+                            onMouseLeave={e => (e.currentTarget.style.color = 'rgba(0,0,0,0.3)')}
+                          >
+                            <X style={{ width: 14, height: 14 }} />
                           </button>
-                          <span className="text-sm font-light text-white">{formatCOP(item.precio * item.cantidad)}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: '#000000' }}>{formatCOP(item.precio * item.cantidad)}</span>
                         </div>
                       </div>
                     ))}
@@ -5497,22 +7735,84 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               const uniqueStores = new Set(carrito.map(i => i.tenantId).filter(Boolean))
               const multiStore = uniqueStores.size > 1
               return (
-                <div className="border-t border-white/10 p-6 space-y-4">
+                <div style={{ borderTop: '1px solid rgba(0,0,0,0.12)', padding: '20px 24px', backgroundColor: '#ffffff', display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {multiStore && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 p-3 text-center">
-                      <p className="text-[11px] text-amber-400">
-                        Tienes productos de {uniqueStores.size} tiendas. Se crearán pedidos separados por tienda.
+                    <div style={{ backgroundColor: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.1)', padding: '8px 12px', textAlign: 'center' }}>
+                      <p style={{ fontSize: 11, color: 'rgba(0,0,0,0.6)', margin: 0 }}>
+                        Productos de {uniqueStores.size} tiendas — se crearán pedidos separados.
                       </p>
                     </div>
                   )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-white/50 font-light uppercase tracking-wider">Total</span>
-                    <span className="text-xl text-white font-light">{formatCOP(totalCarrito)}</span>
+
+                  {/* ── Barra de progreso: meta para domicilio con flota (solo si hay mínimo configurado) ── */}
+                  {DELIVERY_FREE_MIN > 0 && <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Truck style={{ width: 13, height: 13, color: deliveryUnlocked ? '#10b981' : 'rgba(0,0,0,0.35)', flexShrink: 0, transition: 'color 0.3s ease' }} />
+                        {deliveryUnlocked ? (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981' }}>
+                            ¡Domicilio con flota incluido!
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>
+                            Agrega <b style={{ color: '#000' }}>{formatCOP(deliveryRemaining)}</b> más para domicilio
+                          </span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: deliveryUnlocked ? '#10b981' : 'rgba(0,0,0,0.4)', transition: 'color 0.3s ease' }}>
+                        {Math.round(deliveryProgress)}%
+                      </span>
+                    </div>
+                    {/* Track */}
+                    <div style={{ height: 5, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 99, overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${deliveryProgress}%`,
+                        backgroundColor: deliveryUnlocked ? '#10b981' : '#000000',
+                        borderRadius: 99,
+                        transition: 'width 0.5s cubic-bezier(0.4,0,0.2,1), background-color 0.4s ease',
+                      }} />
+                    </div>
+                  </div>}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
+                    <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.5)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 600 }}>Total</span>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: '#000000' }}>{formatCOP(totalCarrito)}</span>
                   </div>
-                  <button onClick={() => { setShowCart(false); handleIrAlCheckout() }} className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black py-4 font-medium uppercase tracking-[0.2em] text-xs transition-all duration-300">
-                    {carritoTieneDelivery ? 'Pedir Domicilio' : 'Finalizar Compra'}
+                  {totalPesoKg > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' }}>
+                      <Truck style={{ width: 13, height: 13, color: '#f97316', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.55)' }}>
+                        Peso: <b style={{ color: '#f97316' }}>{totalPesoKg.toFixed(2)} kg</b>
+                        {' · '}
+                        <span style={{ color: 'rgba(0,0,0,0.4)' }}>
+                          {totalPesoKg < 50 ? 'Entrega en moto' : totalPesoKg <= 500 ? 'Camión ligero' : 'Camión planta'}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setShowCart(false); handleIrAlCheckout() }}
+                    style={{
+                      width: '100%',
+                      backgroundColor: deliveryUnlocked ? '#10b981' : '#000000',
+                      color: '#ffffff',
+                      padding: '15px',
+                      fontWeight: 800,
+                      fontSize: 11,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.18em',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.4s ease',
+                    }}
+                  >
+                    {deliveryUnlocked ? '🚛 Pedir con Domicilio' : carritoTieneDelivery ? 'Pedir Domicilio' : 'Finalizar Compra'}
                   </button>
-                  <button onClick={() => { setShowCart(false); scrollToPerfumes() }} className="w-full text-center text-white/40 text-xs font-light hover:text-white/60 transition-colors py-2">
+                  <button
+                    onClick={() => { setShowCart(false); scrollToPerfumes() }}
+                    style={{ width: '100%', backgroundColor: 'transparent', border: '1px solid rgba(0,0,0,0.25)', color: '#000000', padding: '11px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', cursor: 'pointer' }}
+                  >
                     Seguir comprando
                   </button>
                 </div>
@@ -5525,7 +7825,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {/* ========== DECANT MODAL ========== */}
       {showDecantModal && decantProduct && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
-          <div className="landing-sidebar border border-white/10 w-full max-w-md p-6 sm:p-8 space-y-8 relative shadow-2xl shadow-amber-500/10">
+          <div className="landing-sidebar border border-white/10 w-full max-w-md p-6 sm:p-8 space-y-8 relative shadow-2xl shadow-black/10">
             <button
               onClick={() => setShowDecantModal(false)}
               className="absolute top-4 right-4 text-white/30 hover:text-white transition-colors"
@@ -5534,7 +7834,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             </button>
 
             <div className="text-center space-y-2">
-              <p className="text-amber-500 text-xs uppercase tracking-[0.2em]">Personaliza tu</p>
+              <p className="text-white/70 text-xs uppercase tracking-[0.2em]">Personaliza tu</p>
               <h3 className="text-2xl font-light text-white">{decantProduct.name}</h3>
               <p className="text-white/40 text-xs font-light">Stock disponible (envases): {decantProduct.stock}</p>
             </div>
@@ -5549,7 +7849,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   <select
                     value={selectedPerfumeId}
                     onChange={(e) => setSelectedPerfumeId(e.target.value)}
-                    className="w-full appearance-none bg-white/5 border border-white/10 text-white py-4 px-4 pr-10 focus:border-amber-500 focus:outline-none rounded-none text-sm font-light cursor-pointer"
+                    className="w-full appearance-none bg-white/5 border border-white/10 text-white py-4 px-4 pr-10 focus:border-white/50 focus:outline-none rounded-none text-sm font-light cursor-pointer"
                   >
                     <option value="" className="bg-zinc-900 text-white/50">Selecciona una fragancia...</option>
                     {products
@@ -5571,7 +7871,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
               <Button
                 onClick={handleConfirmDecant}
-                className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black py-6 rounded-none uppercase tracking-[0.2em] text-xs font-bold mt-4"
+                className="w-full bg-white hover:bg-white/90 text-black py-6 rounded-none uppercase tracking-[0.2em] text-xs font-bold mt-4"
               >
                 Agregar al Carrito
               </Button>
@@ -5583,125 +7883,114 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {/* ========== CLIENT LOGIN MODAL ========== */}
       {showClientLogin && !isAuthenticated && (
         <>
+          {/* Backdrop */}
           <div
-            className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-md"
+            className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm"
             onClick={() => setShowClientLogin(false)}
           />
-          <div className="fixed inset-0 z-[81] flex items-center justify-center p-4 pointer-events-none">
+
+          {/* Desktop: centered · Mobile: bottom sheet */}
+          <div className="fixed inset-0 z-[81] flex items-end sm:items-center justify-center pointer-events-none">
             <div
-              className="w-full max-w-sm bg-[#141414] border border-white/15 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto"
+              className={`w-full sm:max-w-[400px] pointer-events-auto animate-in sm:fade-in slide-in-from-bottom sm:slide-in-from-bottom-0 duration-300 border-t sm:border ${
+                isLightBg
+                  ? 'bg-white border-black/12 sm:shadow-[0_32px_80px_rgba(0,0,0,0.18)]'
+                  : 'bg-[#0d0d0d] border-white/10 sm:shadow-[0_32px_80px_rgba(0,0,0,0.8)]'
+              }`}
               onClick={e => e.stopPropagation()}
             >
+              {/* Mobile drag handle */}
+              <div className={`sm:hidden flex justify-center pt-3 pb-1 ${isLightBg ? 'bg-white' : 'bg-[#0d0d0d]'}`}>
+                <div className={`w-10 h-1 rounded-full ${isLightBg ? 'bg-black/15' : 'bg-white/15'}`} />
+              </div>
+
               {/* Header */}
-              <div className="relative px-6 pt-7 pb-5 text-center border-b border-white/10">
+              <div className={`relative px-8 pt-8 sm:pt-10 pb-6 border-b ${isLightBg ? 'border-black/8' : 'border-white/8'}`}>
                 <button
                   onClick={() => setShowClientLogin(false)}
-                  className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors"
+                  className={`absolute top-4 right-5 p-1 transition-colors ${isLightBg ? 'text-black/25 hover:text-black/60' : 'text-white/25 hover:text-white/60'}`}
+                  aria-label="Cerrar"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
-                <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center mx-auto mb-3">
-                  <User className="w-6 h-6 text-amber-400" />
+
+                {/* Logo mark */}
+                <div className={`w-10 h-10 border flex items-center justify-center mb-5 ${isLightBg ? 'border-black/15' : 'border-white/15'}`}>
+                  <User className={`w-4 h-4 ${isLightBg ? 'text-black/50' : 'text-white/50'}`} />
                 </div>
-                <h2 className="text-lg font-semibold text-white tracking-tight">
-                  {clientLoginTab === 'login' ? 'Inicia sesión' : 'Crea tu cuenta'}
+
+                <h2 className={`text-xl font-light tracking-tight ${isLightBg ? 'text-black' : 'text-white'}`}>
+                  Inicia sesión
                 </h2>
-                <p className="text-sm text-white/60 mt-1">
-                  {clientLoginTab === 'login' ? 'Accede a tus pedidos y perfil' : 'Regístrate para comprar fácil'}
+                <p className={`text-[11px] uppercase tracking-[0.2em] mt-1 font-light ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                  Accede a tus pedidos y perfil
                 </p>
               </div>
 
-              {/* Tabs */}
-              <div className="flex border-b border-white/10">
-                <button
-                  onClick={() => { setClientLoginTab('login'); setClientLoginError('') }}
-                  className={`flex-1 py-3 text-xs font-semibold tracking-wider uppercase transition-colors ${clientLoginTab === 'login' ? 'text-amber-400 border-b-2 border-amber-400 -mb-px' : 'text-white/50 hover:text-white/80'}`}
-                >
-                  Ingresar
-                </button>
-                <button
-                  onClick={() => { setClientLoginTab('register'); setClientLoginError('') }}
-                  className={`flex-1 py-3 text-xs font-semibold tracking-wider uppercase transition-colors ${clientLoginTab === 'register' ? 'text-amber-400 border-b-2 border-amber-400 -mb-px' : 'text-white/50 hover:text-white/80'}`}
-                >
-                  Registrarse
-                </button>
-              </div>
+              {/* Body */}
+              <div className="px-8 py-7 space-y-5">
 
-              {/* Form */}
-              <div className="px-6 py-5">
-                {/* Google login */}
-                <div ref={clientGoogleBtnRef} className="mb-4 w-full">
+                {/* Google */}
+                <div ref={clientGoogleBtnRef} className="w-full flex justify-center">
                   <GoogleLogin
                     onSuccess={handleClientGoogleLogin}
                     onError={() => setClientLoginError('Error al conectar con Google')}
-                    theme="filled_black"
+                    theme={isLightBg ? 'outline' : 'filled_black'}
                     size="large"
                     width={clientGoogleBtnWidth}
-                    text={clientLoginTab === 'login' ? 'signin_with' : 'signup_with'}
-                    shape="pill"
+                    text="signin_with"
+                    shape="rectangular"
                   />
                 </div>
 
                 {/* Divider */}
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="flex-1 h-px bg-white/15" />
-                  <span className="text-[11px] text-white/50 uppercase tracking-widest">o continúa con correo</span>
-                  <div className="flex-1 h-px bg-white/15" />
+                <div className="flex items-center gap-4">
+                  <div className={`flex-1 h-px ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`} />
+                  <span className={`text-[9px] uppercase tracking-[0.3em] font-light ${isLightBg ? 'text-black/30' : 'text-white/30'}`}>o continúa con correo</span>
+                  <div className={`flex-1 h-px ${isLightBg ? 'bg-black/8' : 'bg-white/8'}`} />
                 </div>
 
-                <form onSubmit={clientLoginTab === 'login' ? handleClientLogin : handleClientRegister} className="space-y-3">
-                  {clientLoginTab === 'register' && (
-                    <>
-                      <div>
-                        <label className="block text-xs text-white/70 font-medium mb-1.5">Nombre completo <span className="text-amber-400">*</span></label>
-                        <input
-                          type="text"
-                          placeholder="Tu nombre"
-                          value={clientLoginForm.name}
-                          onChange={e => setClientLoginForm(p => ({ ...p, name: e.target.value }))}
-                          className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/35 focus:outline-none focus:border-amber-400/60 focus:bg-white/10 transition-all"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-white/70 font-medium mb-1.5">Cédula / Documento <span className="text-amber-400">*</span></label>
-                        <input
-                          type="text"
-                          placeholder="Número de documento"
-                          value={clientLoginForm.cedula}
-                          onChange={e => setClientLoginForm(p => ({ ...p, cedula: e.target.value }))}
-                          className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/35 focus:outline-none focus:border-amber-400/60 focus:bg-white/10 transition-all"
-                          required
-                        />
-                      </div>
-                    </>
-                  )}
-                  <div>
-                    <label className="block text-xs text-white/70 font-medium mb-1.5">Correo electrónico <span className="text-amber-400">*</span></label>
+                {/* Fields */}
+                <form onSubmit={handleClientLogin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className={`block text-[9px] uppercase tracking-[0.25em] font-light ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                      Correo electrónico
+                    </label>
                     <input
                       type="email"
                       placeholder="correo@ejemplo.com"
                       value={clientLoginForm.email}
                       onChange={e => setClientLoginForm(p => ({ ...p, email: e.target.value }))}
-                      className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/35 focus:outline-none focus:border-amber-400/60 focus:bg-white/10 transition-all"
+                      className={`w-full border px-4 py-3 text-sm font-light focus:outline-none transition-colors bg-transparent ${
+                        isLightBg
+                          ? 'border-black/15 text-black placeholder-black/25 focus:border-black/50'
+                          : 'border-white/12 text-white placeholder-white/20 focus:border-white/50'
+                      }`}
                       required
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-white/70 font-medium mb-1.5">Contraseña <span className="text-amber-400">*</span></label>
+
+                  <div className="space-y-1.5">
+                    <label className={`block text-[9px] uppercase tracking-[0.25em] font-light ${isLightBg ? 'text-black/40' : 'text-white/40'}`}>
+                      Contraseña
+                    </label>
                     <input
                       type="password"
                       autoComplete="current-password"
                       placeholder="••••••••"
                       value={clientLoginForm.password}
                       onChange={e => setClientLoginForm(p => ({ ...p, password: e.target.value }))}
-                      className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/35 focus:outline-none focus:border-amber-400/60 focus:bg-white/10 transition-all"
+                      className={`w-full border px-4 py-3 text-sm font-light focus:outline-none transition-colors bg-transparent ${
+                        isLightBg
+                          ? 'border-black/15 text-black placeholder-black/25 focus:border-black/50'
+                          : 'border-white/12 text-white placeholder-white/20 focus:border-white/50'
+                      }`}
                       required
                     />
                   </div>
 
                   {clientLoginError && (
-                    <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+                    <p className={`text-[11px] font-light px-3 py-2 border border-red-500/30 bg-red-500/8 ${isLightBg ? 'text-red-600' : 'text-red-400'}`}>
                       {clientLoginError}
                     </p>
                   )}
@@ -5709,28 +7998,29 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   <button
                     type="submit"
                     disabled={clientLoginLoading}
-                    className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-black text-sm font-bold tracking-wide transition-all duration-200 mt-1 flex items-center justify-center gap-2"
+                    style={{ backgroundColor: isLightBg ? '#000' : '#fff', color: isLightBg ? '#fff' : '#000' }}
+                    className="w-full py-3.5 text-[11px] uppercase tracking-[0.3em] font-light disabled:opacity-40 disabled:cursor-not-allowed transition-opacity hover:opacity-75 flex items-center justify-center gap-2"
                   >
                     {clientLoginLoading ? (
-                      <span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                      <span className={`w-4 h-4 border border-current/30 border-t-current rounded-full animate-spin`} />
                     ) : (
-                      clientLoginTab === 'login' ? 'Entrar' : 'Crear cuenta'
+                      'Entrar'
                     )}
                   </button>
                 </form>
+              </div>
 
-                {/* ¿Eres comerciante? */}
-                <div className="mt-5 pt-4 border-t border-white/10 text-center">
-                  <button
-                    onClick={() => { setShowClientLogin(false); onGoToLogin() }}
-                    className="text-xs text-white/50 hover:text-white/80 transition-colors"
-                  >
-                    ¿Eres comerciante?{' '}
-                    <span className="text-amber-400 hover:text-amber-300 underline underline-offset-2">
-                      Accede al panel
-                    </span>
-                  </button>
-                </div>
+              {/* Footer */}
+              <div className={`px-8 pb-8 sm:pb-6 pt-0 text-center border-t ${isLightBg ? 'border-black/6' : 'border-white/6'}`}>
+                <button
+                  onClick={() => { setShowClientLogin(false); onGoToLogin() }}
+                  className={`text-[10px] uppercase tracking-[0.2em] font-light transition-colors pt-5 block w-full ${isLightBg ? 'text-black/35 hover:text-black/70' : 'text-white/35 hover:text-white/70'}`}
+                >
+                  ¿Eres comerciante?{' '}
+                  <span className={`underline underline-offset-4 ${isLightBg ? 'text-black/60' : 'text-white/60'}`}>
+                    Accede al panel
+                  </span>
+                </button>
               </div>
             </div>
           </div>
@@ -5743,41 +8033,77 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm" onClick={() => setShowAccountPanel(false)} />
           <div className="fixed top-0 right-0 bottom-0 z-[71] w-full max-w-md flex flex-col landing-sidebar border-l border-white/10 shadow-2xl">
 
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center">
-                  <User className="w-5 h-5 text-amber-400" />
+            {/* ── Header ── */}
+            <div className="relative shrink-0 overflow-hidden">
+              {/* Decorative glow blobs */}
+              <div className="absolute top-0 left-0 w-48 h-48 rounded-full bg-blue-600/10 blur-3xl -translate-x-12 -translate-y-12 pointer-events-none" />
+              <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-purple-600/10 blur-2xl translate-x-8 -translate-y-8 pointer-events-none" />
+
+              {/* Close button */}
+              <button
+                onClick={() => setShowAccountPanel(false)}
+                className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/[0.07] hover:bg-white/[0.14] flex items-center justify-center text-white/40 hover:text-white transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              {/* User info row */}
+              <div className="relative flex items-center gap-4 px-5 pt-6 pb-4">
+                {/* Avatar */}
+                <div className="relative shrink-0">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/40 to-indigo-600/30 border border-white/[0.12] flex items-center justify-center shadow-lg">
+                    <User className="w-7 h-7 text-white/80" />
+                  </div>
+                  {/* Profile complete badge */}
+                  <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 flex items-center justify-center shadow-sm ${
+                    authUser.profileCompleted
+                      ? 'bg-emerald-500 border-[color:var(--sidebar-bg,#000)]'
+                      : 'bg-amber-500 border-[color:var(--sidebar-bg,#000)]'
+                  }`}>
+                    {authUser.profileCompleted
+                      ? <CheckCircle className="w-3 h-3 text-white" />
+                      : <span className="text-white text-[8px] font-bold leading-none">!</span>
+                    }
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-white leading-tight">{authUser.name}</p>
-                  <p className="text-xs text-white/40 leading-tight">{authUser.email}</p>
+
+                {/* Name + email + role */}
+                <div className="min-w-0 flex-1 pr-8">
+                  <p className="text-base font-semibold text-white leading-tight truncate">{authUser.name}</p>
+                  <p className="text-[11px] text-white/40 leading-snug truncate mt-0.5">{authUser.email}</p>
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${authUser.profileCompleted ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                    <span className={`text-[10px] font-medium ${authUser.profileCompleted ? 'text-emerald-400/80' : 'text-amber-400/80'}`}>
+                      {authUser.profileCompleted ? 'Perfil de entrega completo' : 'Completa tu perfil de entrega'}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <button onClick={() => setShowAccountPanel(false)} className="text-white/30 hover:text-white transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Tabs */}
-            <div className="flex border-b border-white/10 shrink-0">
-              {([
-                { key: 'perfil',    label: 'Mi Perfil',    icon: <MapPin className="w-3.5 h-3.5" /> },
-                { key: 'pedidos',   label: 'Pedidos',      icon: <Package className="w-3.5 h-3.5" /> },
-                { key: 'favoritos', label: 'Favoritos',    icon: <Heart className="w-3.5 h-3.5" /> },
-              ] as const).map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => { setAccountTab(tab.key); if (tab.key === 'pedidos') fetchClientOrders() }}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs uppercase tracking-wider transition-colors border-b-2 ${
-                    accountTab === tab.key
-                      ? 'border-amber-400 text-amber-400'
-                      : 'border-transparent text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  {tab.icon}{tab.label}
-                </button>
-              ))}
+              {/* Tabs — pill style */}
+              <div className="flex gap-1.5 px-4 pb-4">
+                {([
+                  { key: 'perfil',    label: 'Mi Perfil',  icon: <User className="w-3.5 h-3.5" /> },
+                  { key: 'pedidos',   label: 'Pedidos',    icon: <Package className="w-3.5 h-3.5" /> },
+                  { key: 'favoritos', label: 'Favoritos',  icon: <Heart className="w-3.5 h-3.5" /> },
+                ] as const).map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => { setAccountTab(tab.key); if (tab.key === 'pedidos') fetchClientOrders() }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-medium tracking-wide transition-all ${
+                      accountTab === tab.key
+                        ? 'bg-white/[0.12] text-white shadow-sm'
+                        : 'text-white/35 hover:text-white/65 hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Separator */}
+              <div className="h-px bg-white/[0.07] mx-0" />
             </div>
 
             {/* Tab content */}
@@ -5785,71 +8111,165 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
               {/* ── MI PERFIL ── */}
               {accountTab === 'perfil' && (
-                <div className="p-6 space-y-6">
+                <div className="p-5 space-y-5">
 
                   {/* Datos personales */}
-                  <section className="space-y-3">
-                    <h4 className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-medium">Datos personales</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        { label: 'Teléfono',  value: authUser.phone },
-                        { label: 'Cédula',    value: authUser.cedula },
-                      ].map(f => (
-                        <div key={f.label} className="bg-white/5 border border-white/10 p-3 space-y-1">
-                          <p className="text-[10px] text-white/30 uppercase tracking-wider">{f.label}</p>
-                          <p className="text-sm text-white font-light">{f.value || <span className="text-white/20 italic text-xs">Sin datos</span>}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-
-                  {/* Dirección de entrega */}
-                  <section className="space-y-3">
-                    <h4 className="text-[10px] uppercase tracking-[0.2em] text-white/30 font-medium">Dirección de entrega</h4>
-                    <div className="space-y-2">
-                      {[
-                        { label: 'Departamento',  value: authUser.department },
-                        { label: 'Municipio',     value: authUser.municipality },
-                        { label: 'Dirección',     value: authUser.address },
-                        { label: 'Barrio',        value: authUser.neighborhood },
-                      ].map(f => (
-                        <div key={f.label} className="flex items-start justify-between gap-3 bg-white/5 border border-white/10 px-3 py-2.5">
-                          <span className="text-[10px] text-white/30 uppercase tracking-wider shrink-0 pt-0.5">{f.label}</span>
-                          <span className="text-xs text-white/80 text-right font-light">{f.value || <span className="text-white/20 italic">—</span>}</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* GPS */}
-                    {authUser.deliveryLatitude && authUser.deliveryLongitude && (
-                      <div className="flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 px-3 py-2.5">
-                        <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                        <span className="text-xs text-blue-300 font-light">
-                          {Number(authUser.deliveryLatitude).toFixed(5)}, {Number(authUser.deliveryLongitude).toFixed(5)}
-                        </span>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {[
+                      { label: 'Teléfono', value: authUser.phone, icon: '📱' },
+                      { label: 'Cédula',   value: authUser.cedula, icon: '🪪' },
+                    ].map(f => (
+                      <div key={f.label} className="rounded-xl bg-white/[0.04] border border-white/[0.08] px-3.5 py-3 space-y-0.5">
+                        <p className="text-[10px] text-white/35 uppercase tracking-widest">{f.label}</p>
+                        <p className="text-sm text-white/90 font-light truncate">{f.value || <span className="text-white/20 italic text-xs">—</span>}</p>
                       </div>
-                    )}
-                  </section>
-
-                  {/* Estado del perfil */}
-                  <div className={`flex items-center gap-2 px-3 py-2.5 border text-xs ${
-                    authUser.profileCompleted
-                      ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                      : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                  }`}>
-                    {authUser.profileCompleted
-                      ? '✓ Perfil de entrega completo'
-                      : '⚠ Completa tu dirección para pedir a domicilio'}
+                    ))}
                   </div>
 
-                  {/* Edit button */}
-                  <button
-                    onClick={() => { setShowAccountPanel(false); setShowProfileModal(true) }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 border border-white/20 hover:border-amber-400/40 hover:bg-amber-500/10 text-white/70 hover:text-amber-400 text-sm transition-all uppercase tracking-wider"
-                  >
-                    <Settings className="w-4 h-4" />
-                    Editar datos de entrega
-                  </button>
+                  {/* ── DIRECCIÓN ACTUAL / EN USO ── */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-white/30 font-medium px-0.5">Dirección activa</p>
+
+                    {/* Card dirección principal */}
+                    <div className={`relative rounded-2xl overflow-hidden border ${
+                      authUser.profileCompleted
+                        ? 'border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.07] to-emerald-500/[0.03]'
+                        : 'border-amber-500/30 bg-gradient-to-br from-amber-500/[0.07] to-amber-500/[0.03]'
+                    }`}>
+                      {/* top accent line */}
+                      <div className={`h-0.5 w-full ${authUser.profileCompleted ? 'bg-gradient-to-r from-emerald-500/60 via-emerald-400/40 to-transparent' : 'bg-gradient-to-r from-amber-500/60 via-amber-400/40 to-transparent'}`} />
+
+                      <div className="px-4 py-3.5">
+                        {/* header row */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${authUser.profileCompleted ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
+                            <span className={`text-[11px] font-medium tracking-wide ${authUser.profileCompleted ? 'text-emerald-400' : 'text-amber-400'}`}>
+                              {authUser.profileCompleted ? 'En uso · Completa' : 'Incompleta'}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setProfileForm({
+                                phone: authUser.phone || '', cedula: authUser.cedula || '',
+                                department: authUser.department || '', municipality: authUser.municipality || '',
+                                address: authUser.address || '', neighborhood: authUser.neighborhood || '',
+                              })
+                              if (authUser.deliveryLatitude && authUser.deliveryLongitude) {
+                                setProfileLat(authUser.deliveryLatitude); setProfileLng(authUser.deliveryLongitude)
+                              }
+                              setShowAccountPanel(false); setShowProfileModal(true)
+                            }}
+                            className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white transition-colors py-1 px-2 rounded-lg hover:bg-white/10"
+                          >
+                            <Pencil className="w-3 h-3" /> Editar
+                          </button>
+                        </div>
+
+                        {authUser.address ? (
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium text-white/90 leading-snug">{authUser.address}</p>
+                            {authUser.neighborhood && (
+                              <p className="text-xs text-white/45">{authUser.neighborhood}</p>
+                            )}
+                            <p className="text-xs text-white/40">{[authUser.municipality, authUser.department].filter(Boolean).join(' · ')}</p>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setShowAccountPanel(false); setShowProfileModal(true) }}
+                            className="flex items-center gap-2 text-xs text-amber-400/70 hover:text-amber-400 transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Agregar dirección de entrega
+                          </button>
+                        )}
+
+                        {/* Mini map — shown when GPS coordinates are saved */}
+                        {authUser.deliveryLatitude && authUser.deliveryLongitude && (
+                          <div className="mt-3">
+                            <MiniMap
+                              latitude={Number(authUser.deliveryLatitude)}
+                              longitude={Number(authUser.deliveryLongitude)}
+                              height={140}
+                              onEdit={() => {
+                                setProfileForm({
+                                  phone: authUser.phone || '', cedula: authUser.cedula || '',
+                                  department: authUser.department || '', municipality: authUser.municipality || '',
+                                  address: authUser.address || '', neighborhood: authUser.neighborhood || '',
+                                })
+                                setProfileLat(authUser.deliveryLatitude!); setProfileLng(authUser.deliveryLongitude!)
+                                setShowAccountPanel(false); setShowProfileModal(true)
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── MIS DIRECCIONES GUARDADAS ── */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-white/30 font-medium">Mis direcciones</p>
+                      {loadingAddresses && <div className="w-3.5 h-3.5 border border-white/20 border-t-white/50 rounded-full animate-spin" />}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {savedAddresses.map((addr: any) => (
+                        <div
+                          key={addr.id}
+                          className={`group relative rounded-xl border p-3.5 flex flex-col gap-1.5 transition-all ${
+                            addr.isDefault
+                              ? 'border-blue-500/40 bg-gradient-to-br from-blue-500/10 to-blue-600/[0.04]'
+                              : 'border-white/[0.08] bg-white/[0.04] hover:border-white/15 hover:bg-white/[0.07]'
+                          }`}
+                        >
+                          {/* label + default star */}
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="text-xs font-semibold text-white/85 leading-tight">{addr.label}</span>
+                            {addr.isDefault
+                              ? <Star className="w-3 h-3 text-blue-400 fill-blue-400 shrink-0 mt-0.5" />
+                              : <button onClick={() => handleSetDefaultAddress(addr.id)} className="opacity-0 group-hover:opacity-100 transition-opacity" title="Marcar predeterminada">
+                                  <Star className="w-3 h-3 text-white/25 hover:text-blue-400 shrink-0 mt-0.5" />
+                                </button>
+                            }
+                          </div>
+
+                          {/* address text */}
+                          <p className="text-[11px] text-white/40 leading-tight line-clamp-2">
+                            {[addr.address, addr.municipality].filter(Boolean).join(', ')}
+                          </p>
+
+                          {/* actions */}
+                          <div className="flex items-center gap-1 mt-auto pt-1.5 border-t border-white/[0.06] opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => openAddressForm(addr)}
+                              className="flex items-center gap-1 text-[10px] text-white/40 hover:text-white transition-colors px-1.5 py-0.5 rounded hover:bg-white/10"
+                            >
+                              <Pencil className="w-2.5 h-2.5" /> Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAddress(addr.id)}
+                              className="flex items-center gap-1 text-[10px] text-white/40 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded hover:bg-red-500/10 ml-auto"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Add new card */}
+                      <button
+                        onClick={() => openAddressForm()}
+                        className="rounded-xl border border-dashed border-white/[0.12] bg-white/[0.02] hover:border-white/25 hover:bg-white/[0.06] p-3.5 flex flex-col items-center justify-center gap-2 transition-all min-h-[90px] group"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-white/[0.06] group-hover:bg-white/10 flex items-center justify-center transition-all">
+                          <Plus className="w-4 h-4 text-white/35 group-hover:text-white/60" />
+                        </div>
+                        <span className="text-[10px] text-white/30 group-hover:text-white/50 transition-colors leading-tight text-center">Nueva<br/>dirección</span>
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
               )}
 
@@ -5858,7 +8278,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 <div className="p-6">
                   {clientOrdersLoading ? (
                     <div className="text-center py-16">
-                      <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                      <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                       <p className="text-white/40 text-sm">Cargando pedidos...</p>
                     </div>
                   ) : clientOrders.length === 0 ? (
@@ -5875,7 +8295,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             <span className={`text-[10px] uppercase tracking-wider px-2 py-1 ${
                               order.status === 'entregado'  ? 'bg-green-500/10 text-green-400 border border-green-500/30' :
                               order.status === 'en_camino'  ? 'bg-blue-500/10  text-blue-400  border border-blue-500/30'  :
-                              order.status === 'preparando' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' :
+                              order.status === 'preparando' ? 'bg-white/10 text-white border border-white/20' :
                               order.status === 'cancelado'  ? 'bg-red-500/10   text-red-400   border border-red-500/30'   :
                               'bg-white/5 text-white/50 border border-white/10'
                             }`}>{order.status}</span>
@@ -5899,7 +8319,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                               ))}
                             </div>
                           )}
-                          <div className="text-sm text-amber-400 font-medium">{formatCOP(order.total || 0)}</div>
+                          <div className="text-sm text-white font-medium">{formatCOP(order.total || 0)}</div>
                           {order.deliveryStatus && order.deliveryStatus !== 'sin_asignar' && (
                             <div className="pt-2 border-t border-white/5">
                               <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Estado del envío</p>
@@ -5909,8 +8329,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                   const cur = steps.indexOf(order.deliveryStatus || '')
                                   return (
                                     <div key={step} className="flex items-center gap-1 flex-1">
-                                      <div className={`w-2 h-2 rounded-full ${i <= cur ? 'bg-amber-400' : 'bg-white/10'}`} />
-                                      {i < 3 && <div className={`flex-1 h-px ${i < cur ? 'bg-amber-400' : 'bg-white/10'}`} />}
+                                      <div className={`w-2 h-2 rounded-full ${i <= cur ? 'bg-white' : 'bg-white/10'}`} />
+                                      {i < 3 && <div className={`flex-1 h-px ${i < cur ? 'bg-white' : 'bg-white/10'}`} />}
                                     </div>
                                   )
                                 })}
@@ -5943,7 +8363,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                       {products.filter(p => favorites.has(p.id)).map(product => {
                         const isOffer = product.isOnOffer && product.offerPrice
                         return (
-                          <div key={product.id} className="flex items-center gap-3 bg-white/5 border border-white/10 hover:border-amber-500/20 p-3 transition-all">
+                          <div key={product.id} className="flex items-center gap-3 bg-white/5 border border-white/10 hover:border-white/15 p-3 transition-all">
                             <div className="w-14 h-14 shrink-0 bg-black/40 overflow-hidden">
                               {product.imageUrl
                                 ? <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover" />
@@ -5959,13 +8379,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                                   <span className="text-white/20 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
                                 </div>
                               ) : (
-                                <span className="text-amber-400 text-xs">{formatCOP(product.salePrice)}</span>
+                                <span className="text-white text-xs">{formatCOP(product.salePrice)}</span>
                               )}
                             </div>
                             <div className="flex flex-col items-end gap-1.5 shrink-0">
                               <button
                                 onClick={() => agregarAlCarrito(product)}
-                                className="w-7 h-7 rounded-full bg-amber-500/20 border border-amber-500/30 hover:bg-amber-500 flex items-center justify-center text-amber-400 hover:text-black transition-all"
+                                className="w-7 h-7 rounded-full bg-white/15 border border-white/20 hover:bg-white flex items-center justify-center text-white hover:text-black transition-all"
                               >
                                 <ShoppingCart className="w-3 h-3" />
                               </button>
@@ -6002,97 +8422,150 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {/* ========== MIS PEDIDOS (CLIENT ORDERS) ========== */}
       {showMyOrders && isAuthenticated && (
         <>
-          <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm" onClick={() => setShowMyOrders(false)} />
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-            <div className="landing-sidebar border border-white/10 w-full max-w-lg max-h-[80vh] flex flex-col relative shadow-2xl">
-              <div className="flex items-center justify-between p-6 border-b border-white/10">
+          <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-md" onClick={() => setShowMyOrders(false)} />
+          {/* Bottom sheet on mobile, centered panel on desktop */}
+          <div className="fixed inset-x-0 bottom-0 z-[71] md:inset-0 md:flex md:items-center md:justify-center md:p-6">
+            <div className="landing-sidebar w-full md:max-w-lg md:rounded-2xl flex flex-col rounded-t-3xl overflow-hidden shadow-2xl border border-white/[0.08]"
+              style={{ maxHeight: '88vh' }}>
+
+              {/* Drag handle (mobile) */}
+              <div className="flex justify-center pt-3 pb-1 md:hidden shrink-0">
+                <div className="w-10 h-1 rounded-full bg-white/20" />
+              </div>
+
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 shrink-0">
                 <div className="flex items-center gap-3">
-                  <Package className="w-5 h-5 text-amber-400" />
-                  <h3 className="text-lg font-light text-white tracking-wide">Mis Pedidos</h3>
+                  <div className="w-9 h-9 rounded-xl bg-white/[0.07] flex items-center justify-center">
+                    <Package className="w-4 h-4 text-white/70" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Mis Pedidos</h3>
+                    <p className="text-[10px] text-white/35">{clientOrders.length > 0 ? `${clientOrders.length} pedido${clientOrders.length !== 1 ? 's' : ''}` : 'Historial de compras'}</p>
+                  </div>
                 </div>
-                <button onClick={() => setShowMyOrders(false)} className="text-white/30 hover:text-white transition-colors">
-                  <X className="w-5 h-5" />
+                <button
+                  onClick={() => setShowMyOrders(false)}
+                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-white/40 hover:text-white transition-all"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className="h-px bg-white/[0.07] mx-5 shrink-0" />
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto px-4 py-4">
                 {clientOrdersLoading ? (
-                  <div className="text-center py-12">
-                    <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-white/40 text-sm">Cargando pedidos...</p>
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <div className="w-8 h-8 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
+                    <p className="text-white/35 text-sm">Cargando pedidos...</p>
                   </div>
                 ) : clientOrders.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Package className="w-12 h-12 text-white/10 mx-auto mb-4" />
-                    <p className="text-white/40 text-sm font-light">No tienes pedidos aún</p>
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">
+                      <Package className="w-7 h-7 text-white/20" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-white/50 text-sm font-medium">No tienes pedidos aún</p>
+                      <p className="text-white/25 text-xs mt-1">Tus compras aparecerán aquí</p>
+                    </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {clientOrders.map((order: any) => (
-                      <div key={order.id} className="border border-white/10 p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-white">{order.orderNumber || `#${order.id}`}</span>
-                          <span className={`text-[10px] uppercase tracking-wider px-2 py-1 ${
-                            order.status === 'entregado' ? 'bg-green-500/10 text-green-400 border border-green-500/30' :
-                            order.status === 'enviado' || order.status === 'en_camino' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' :
-                            order.status === 'preparando' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' :
-                            order.status === 'cancelado' ? 'bg-red-500/10 text-red-400 border border-red-500/30' :
-                            'bg-white/5 text-white/50 border border-white/10'
-                          }`}>
-                            {order.status}
-                          </span>
-                        </div>
-                        {order.storeName && (
-                          <div className="flex items-center gap-1.5">
-                            <Store className="w-3 h-3 text-white/30" />
-                            <span className="text-xs text-white/50">{order.storeName}</span>
-                          </div>
-                        )}
-                        <div className="text-xs text-white/40">
-                          {new Date(order.createdAt || order.created_at).toLocaleDateString('es-CO', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                        {/* Order items */}
-                        {order.items && order.items.length > 0 && (
-                          <div className="space-y-1.5 pt-2 border-t border-white/5">
-                            {order.items.map((item: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between text-xs">
-                                <span className="text-white/60 truncate mr-2">{item.quantity}x {item.productName}</span>
-                                <span className="text-white/40 shrink-0">{formatCOP(item.totalPrice || item.unitPrice * item.quantity)}</span>
+                  <div className="space-y-3">
+                    {clientOrders.map((order: any) => {
+                      const statusMap: Record<string, { label: string; color: string }> = {
+                        entregado:   { label: 'Entregado',   color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25' },
+                        en_camino:   { label: 'En camino',   color: 'text-blue-400 bg-blue-500/10 border-blue-500/25' },
+                        enviado:     { label: 'Enviado',     color: 'text-blue-400 bg-blue-500/10 border-blue-500/25' },
+                        preparando:  { label: 'Preparando',  color: 'text-amber-400 bg-amber-500/10 border-amber-500/25' },
+                        pendiente:   { label: 'Pendiente',   color: 'text-white/60 bg-white/[0.05] border-white/10' },
+                        cancelado:   { label: 'Cancelado',   color: 'text-red-400 bg-red-500/10 border-red-500/25' },
+                      }
+                      const st = statusMap[order.status] ?? { label: order.status, color: 'text-white/40 bg-white/[0.04] border-white/10' }
+                      const orderDate = new Date(order.createdAt || order.created_at)
+                      const deliverySteps = ['asignado', 'recogido', 'en_camino', 'entregado']
+                      const deliveryIdx = deliverySteps.indexOf(order.deliveryStatus || '')
+
+                      return (
+                        <div key={order.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] overflow-hidden">
+                          {/* Order header */}
+                          <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-white/[0.06] flex items-center justify-center shrink-0">
+                                <Package className="w-3.5 h-3.5 text-white/50" />
                               </div>
-                            ))}
+                              <div>
+                                <p className="text-sm font-semibold text-white/90 leading-tight">{order.orderNumber || `#${order.id?.slice(0,8)}`}</p>
+                                <p className="text-[10px] text-white/30 leading-tight">
+                                  {orderDate.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full border ${st.color}`}>
+                              {st.label}
+                            </span>
                           </div>
-                        )}
-                        <div className="text-sm text-amber-400 font-medium">
-                          {formatCOP(order.total || order.totalAmount || 0)}
-                        </div>
-                        {/* Delivery status timeline */}
-                        {order.deliveryStatus && order.deliveryStatus !== 'sin_asignar' && (
-                          <div className="pt-2 border-t border-white/5">
-                            <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Estado del envío</p>
-                            <div className="flex items-center gap-1">
-                              {['asignado', 'recogido', 'en_camino', 'entregado'].map((step, i) => {
-                                const steps = ['asignado', 'recogido', 'en_camino', 'entregado']
-                                const currentIndex = steps.indexOf(order.deliveryStatus || '')
-                                const isActive = i <= currentIndex
-                                return (
-                                  <div key={step} className="flex items-center gap-1 flex-1">
-                                    <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-amber-400' : 'bg-white/10'}`} />
-                                    {i < 3 && <div className={`flex-1 h-px ${isActive && i < currentIndex ? 'bg-amber-400' : 'bg-white/10'}`} />}
+
+                          <div className="px-4 py-3 space-y-3">
+                            {/* Store */}
+                            {order.storeName && (
+                              <div className="flex items-center gap-1.5">
+                                <Store className="w-3 h-3 text-white/25 shrink-0" />
+                                <span className="text-[11px] text-white/40">{order.storeName}</span>
+                              </div>
+                            )}
+
+                            {/* Items */}
+                            {order.items && order.items.length > 0 && (
+                              <div className="space-y-1.5">
+                                {order.items.map((item: any, idx: number) => (
+                                  <div key={idx} className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="text-[10px] font-bold text-white/30 bg-white/[0.06] w-5 h-5 rounded-md flex items-center justify-center shrink-0">{item.quantity}</span>
+                                      <span className="text-xs text-white/60 truncate">{item.productName}</span>
+                                    </div>
+                                    <span className="text-xs text-white/40 shrink-0">{formatCOP(item.totalPrice || item.unitPrice * item.quantity)}</span>
                                   </div>
-                                )
-                              })}
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Total */}
+                            <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                              <span className="text-[11px] text-white/35 uppercase tracking-wider">Total</span>
+                              <span className="text-sm font-bold text-white/90">{formatCOP(order.total || order.totalAmount || 0)}</span>
                             </div>
-                            <div className="flex justify-between mt-1">
-                              <span className="text-[9px] text-white/30">Asignado</span>
-                              <span className="text-[9px] text-white/30">Entregado</span>
-                            </div>
-                            {order.driverName && (
-                              <p className="text-xs text-white/50 mt-2">Repartidor: {order.driverName}</p>
+
+                            {/* Delivery timeline */}
+                            {order.deliveryStatus && order.deliveryStatus !== 'sin_asignar' && (
+                              <div className="pt-1">
+                                <div className="flex items-center gap-0">
+                                  {deliverySteps.map((step, i) => {
+                                    const done = i <= deliveryIdx
+                                    const labels = ['Asignado', 'Recogido', 'En camino', 'Entregado']
+                                    return (
+                                      <div key={step} className="flex items-center flex-1">
+                                        <div className="flex flex-col items-center gap-1">
+                                          <div className={`w-2.5 h-2.5 rounded-full border-2 transition-all ${done ? 'bg-emerald-400 border-emerald-400' : 'bg-transparent border-white/15'}`} />
+                                          <span className={`text-[8px] leading-none text-center ${done ? 'text-emerald-400/70' : 'text-white/20'}`}>{labels[i]}</span>
+                                        </div>
+                                        {i < 3 && <div className={`flex-1 h-px mb-3.5 ${i < deliveryIdx ? 'bg-emerald-400/50' : 'bg-white/10'}`} />}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                {order.driverName && (
+                                  <p className="text-[11px] text-white/35 mt-2 flex items-center gap-1.5">
+                                    <User className="w-3 h-3" /> {order.driverName}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
@@ -6185,11 +8658,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 value={globalSearchQuery}
                 onChange={(e) => handleGlobalSearch(e.target.value)}
                 placeholder="Buscar productos en todas las tiendas..."
-                className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 text-white placeholder-white/30 text-sm focus:outline-none focus:border-amber-500/50"
+                className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 text-white placeholder-white/30 text-sm focus:outline-none focus:border-white/50"
                 autoFocus
               />
               {globalSearchQuery && (
-                <button onClick={() => { setGlobalSearchQuery(''); setGlobalSearchResults([]) }} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white">
+                <button onClick={() => { setGlobalSearchQuery(''); setGlobalSearchResults([]); setGlobalSearchStores([]) }} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white">
                   <X className="w-4 h-4" />
                 </button>
               )}
@@ -6198,28 +8671,121 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
           <div className="flex-1 overflow-y-auto px-4 py-4">
             {!globalSearchQuery ? (
-              <div className="text-center py-16">
-                <Search className="w-12 h-12 text-white/10 mx-auto mb-4" />
-                <p className="text-white/40 text-sm font-light">Busca productos, marcas o categorías</p>
-              </div>
-            ) : loadingGlobalSearch ? (
+              searchInitialProducts.length > 0 ? (
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-white/20 mb-3 font-light">Productos disponibles</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {searchInitialProducts.map(product => {
+                      const isOffer = product.isOnOffer && product.offerPrice
+                      const inCart = carrito.find(c => c.id === product.id)
+                      return (
+                        <div key={product.id} className={`group relative bg-white/5 border ${isOffer ? 'border-orange-500/30' : 'border-white/10'} overflow-hidden cursor-pointer`} onClick={() => { setMobileActiveTab(null); openProductModal(product) }}>
+                          <div data-dark className="relative aspect-square bg-black/50 overflow-hidden">
+                            {product.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-8 h-8 text-white/10" /></div>
+                            )}
+                            <div className="absolute top-2 right-2 z-10">
+                              <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 hover:text-white transition-all">
+                                <ShoppingCart className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            {isOffer && (
+                              <div className="absolute top-2 left-2 z-20 bg-gradient-to-r from-red-600 to-orange-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-sm">OFERTA</div>
+                            )}
+                            {inCart && (
+                              <div className="absolute bottom-2 right-2 z-10 bg-white text-black text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{inCart.cantidad}</div>
+                            )}
+                          </div>
+                          <div className="p-3 space-y-1">
+                            <h3 className="text-xs font-light text-white truncate">{product.name}</h3>
+                            {isOffer ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-orange-400 font-medium text-sm">{formatCOP(product.offerPrice!)}</span>
+                                <span className="text-white/30 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
+                              </div>
+                            ) : (
+                              <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-16">
+                  <Search className="w-12 h-12 text-white/10 mx-auto mb-4" />
+                  <p className="text-white/40 text-sm font-light">Busca tiendas, productos o servicios</p>
+                </div>
+              )
+            ) : (loadingGlobalSearch && globalSearchResults.length === 0 && globalSearchStores.length === 0) ? (
               <div className="text-center py-12">
-                <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                 <p className="text-white/40 text-sm">Buscando...</p>
               </div>
-            ) : globalSearchResults.length === 0 ? (
+            ) : globalSearchResults.length === 0 && globalSearchStores.length === 0 ? (
               <div className="text-center py-12">
                 <Search className="w-12 h-12 text-white/10 mx-auto mb-4" />
                 <p className="text-white/40 text-sm font-light">No se encontraron resultados para &quot;{globalSearchQuery}&quot;</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {globalSearchResults.map(product => {
+              <div className="space-y-5">
+                {/* Stores */}
+                {globalSearchStores.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/20 mb-3 font-light">Tiendas</p>
+                    <div className="flex flex-col gap-1">
+                      {globalSearchStores.map(store => (
+                        <button
+                          key={store.id}
+                          onClick={() => { setSelectedStore(store.slug); setShowStoresView(false); setMobileActiveTab('tienda'); setGlobalSearchQuery(''); setGlobalSearchResults([]); setGlobalSearchStores([]); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                          className="group flex items-center gap-4 px-1 py-3 border-b border-white/5 active:bg-white/4 transition-all text-left w-full"
+                        >
+                          <div className="shrink-0 w-11 h-11 rounded-sm overflow-hidden border border-white/8 bg-white/3 flex items-center justify-center">
+                            {store.logoUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={ensureAbsoluteUrl(store.logoUrl)} alt={store.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <Store className="w-4 h-4 text-white/20" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-light text-white/90 tracking-wide truncate">
+                              {store.name}
+                            </p>
+                            {store.businessType && (
+                              <p className="text-[11px] text-white/50 uppercase tracking-widest font-light mt-0.5 truncate">
+                                {store.businessType}
+                              </p>
+                            )}
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-white/15 shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Products */}
+                {globalSearchResults.length > 0 && (
+                  <div>
+                    {globalSearchStores.length > 0 && <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Productos</p>}
+                    <div className="grid grid-cols-2 gap-3">
+                      {globalSearchResults.map(product => {
                   const isOffer = product.isOnOffer && product.offerPrice
                   const inCart = carrito.find(c => c.id === product.id)
+                  const openFromSearch = () => {
+                    setMobileActiveTab(null)
+                    setGlobalSearchQuery('')
+                    setGlobalSearchResults([])
+                    setGlobalSearchStores([])
+                    openProductModal(product)
+                  }
                   return (
-                    <div key={product.id} className={`group relative bg-white/5 border ${isOffer ? 'border-orange-500/30' : 'border-white/10'} overflow-hidden`}>
-                      <div data-dark className="relative aspect-square bg-black/50 overflow-hidden cursor-pointer" onClick={() => openProductModal(product)}>
+                    <div key={product.id} className={`group relative bg-white/5 border ${isOffer ? 'border-orange-500/30' : 'border-white/10'} overflow-hidden cursor-pointer`} onClick={openFromSearch}>
+                      <div data-dark className="relative aspect-square bg-black/50 overflow-hidden">
                         {product.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover" />
@@ -6227,7 +8793,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-8 h-8 text-white/10" /></div>
                         )}
                         <div className="absolute top-2 right-2 z-10">
-                          <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-amber-500 hover:text-black transition-all">
+                          <button onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }} className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 hover:text-white transition-all">
                             <ShoppingCart className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -6237,7 +8803,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                           </div>
                         )}
                         {inCart && (
-                          <div className="absolute bottom-2 right-2 z-10 bg-amber-500 text-black text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{inCart.cantidad}</div>
+                          <div className="absolute bottom-2 right-2 z-10 bg-white text-black text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{inCart.cantidad}</div>
                         )}
                       </div>
                       <div className="p-3 space-y-1">
@@ -6248,12 +8814,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             <span className="text-white/30 text-[10px] line-through">{formatCOP(product.salePrice)}</span>
                           </div>
                         ) : (
-                          <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                          <span className="text-white font-light text-sm">{formatCOP(product.salePrice)}</span>
                         )}
                       </div>
                     </div>
                   )
                 })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -6263,84 +8832,227 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       {/* ========== MOBILE: MI CUENTA VIEW ========== */}
       {mobileActiveTab === 'cuenta' && (
         <div className="fixed inset-0 z-[60] overflow-y-auto md:hidden" style={{ backgroundColor: effectiveBgColor, top: storeConfig?.announcementBar?.isActive ? '104px' : '64px', bottom: '64px' }}>
-          <div className="px-4 py-6">
-            {isAuthenticated && authUser ? (
-              <div className="space-y-6">
-                {/* User Info */}
-                <div className="text-center space-y-3">
-                  <div className="w-20 h-20 rounded-full bg-amber-500/10 border-2 border-amber-500/30 flex items-center justify-center mx-auto">
-                    <User className="w-10 h-10 text-amber-400" />
+          {isAuthenticated && authUser ? (
+            <div className="flex flex-col">
+
+              {/* ── Profile hero header ── */}
+              <div className="relative overflow-hidden px-5 pt-6 pb-5">
+                {/* Decorative blobs */}
+                <div className="absolute top-0 left-0 w-48 h-48 rounded-full bg-blue-600/10 blur-3xl -translate-x-12 -translate-y-12 pointer-events-none" />
+                <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-purple-600/10 blur-2xl translate-x-8 -translate-y-8 pointer-events-none" />
+
+                {/* Avatar + info */}
+                <div className="relative flex items-center gap-4">
+                  {/* Avatar */}
+                  <div className="relative shrink-0">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/40 to-indigo-600/30 border border-white/[0.12] flex items-center justify-center shadow-lg">
+                      <User className="w-7 h-7 text-white/80" />
+                    </div>
+                    <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-black flex items-center justify-center shadow-sm ${authUser.profileCompleted ? 'bg-emerald-500' : 'bg-amber-500'}`}>
+                      {authUser.profileCompleted
+                        ? <CheckCircle className="w-3 h-3 text-white" />
+                        : <span className="text-white text-[8px] font-bold leading-none">!</span>
+                      }
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-light text-white">{authUser.name}</h2>
-                    <p className="text-sm text-white/40">{authUser.email}</p>
+
+                  {/* Name + email + status */}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-base font-semibold text-white leading-tight truncate">{authUser.name}</p>
+                    <p className="text-[11px] text-white/40 truncate mt-0.5">{authUser.email}</p>
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${authUser.profileCompleted ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                      <span className={`text-[10px] font-medium ${authUser.profileCompleted ? 'text-emerald-400/80' : 'text-amber-400/80'}`}>
+                        {authUser.profileCompleted ? 'Perfil de entrega completo' : 'Completa tu perfil de entrega'}
+                      </span>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Menu Options */}
-                <div className="space-y-2">
-                  {/* Mis Pedidos */}
-                  <button
-                    onClick={() => { fetchClientOrders(); setShowMyOrders(true) }}
-                    className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/10 hover:border-amber-500/30 transition-all"
-                  >
-                    <Package className="w-5 h-5 text-amber-400" />
-                    <div className="text-left flex-1">
-                      <span className="text-sm text-white">Mis Pedidos</span>
-                      <p className="text-[11px] text-white/40">Ver historial de pedidos</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-white/20" />
-                  </button>
+              {/* ── Divider ── */}
+              <div className="h-px bg-white/[0.07] mx-5" />
 
-                  {/* Ubicación */}
+              {/* ── Quick-action cards ── */}
+              <div className="px-4 pt-4 pb-2 grid grid-cols-3 gap-2.5">
+                {[
+                  { label: 'Pedidos', icon: <Package className="w-5 h-5" />, action: () => { fetchClientOrders(); setShowMyOrders(true) }, sub: 'Historial' },
+                  { label: 'Dirección', icon: <MapPin className="w-5 h-5" />, action: () => { const el = document.getElementById('cuenta-location-picker'); if (el) el.scrollIntoView({ behavior: 'smooth' }) }, sub: 'Entrega GPS' },
+                  { label: 'Favoritos', icon: <Heart className="w-5 h-5" />, action: () => { const el = document.getElementById('mobile-favorites-section'); if (el) el.scrollIntoView({ behavior: 'smooth' }) }, sub: `${favorites.size} guardados` },
+                ].map(item => (
                   <button
-                    onClick={() => {
-                      // Open location picker (scroll to show it)
-                      const el = document.getElementById('cuenta-location-picker')
-                      if (el) el.scrollIntoView({ behavior: 'smooth' })
-                    }}
-                    className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/10 hover:border-amber-500/30 transition-all"
+                    key={item.label}
+                    onClick={item.action}
+                    className="flex flex-col items-center gap-2 py-4 rounded-2xl bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.09] hover:border-white/[0.14] active:scale-95 transition-all"
                   >
-                    <MapPin className="w-5 h-5 text-amber-400" />
-                    <div className="text-left flex-1">
-                      <span className="text-sm text-white">Mi Ubicación</span>
-                      <p className="text-[11px] text-white/40">Configurar dirección de entrega</p>
+                    <span className="text-white/60">{item.icon}</span>
+                    <div className="text-center">
+                      <p className="text-[11px] font-semibold text-white/80 leading-tight">{item.label}</p>
+                      <p className="text-[9px] text-white/30 leading-tight mt-0.5">{item.sub}</p>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-white/20" />
                   </button>
+                ))}
+              </div>
 
-                  {/* Favoritos */}
-                  <button
-                    onClick={() => { setMobileActiveTab('tienda'); setShowCatalog(true) }}
-                    className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/10 hover:border-amber-500/30 transition-all"
-                  >
-                    <Heart className="w-5 h-5 text-amber-400" />
-                    <div className="text-left flex-1">
-                      <span className="text-sm text-white">Favoritos</span>
-                      <p className="text-[11px] text-white/40">{favorites.size} productos guardados</p>
+              <div className="px-4 space-y-6 pb-6 pt-2">
+
+                {/* ── Mis Favoritos ── */}
+                <div id="mobile-favorites-section" className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Heart className="w-4 h-4 text-red-400/70" />
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/50 font-medium">Mis Favoritos</p>
                     </div>
-                    <ChevronRight className="w-4 h-4 text-white/20" />
-                  </button>
+                    {favorites.size > 0 && (
+                      <span className="text-[10px] text-white/30 bg-white/[0.06] px-2 py-0.5 rounded-full">{favorites.size}</span>
+                    )}
+                  </div>
+
+                  {favorites.size === 0 ? (
+                    <div className="flex items-center gap-3 py-4 px-4 rounded-2xl border border-dashed border-white/[0.08]">
+                      <Heart className="w-8 h-8 text-white/10 shrink-0" />
+                      <div>
+                        <p className="text-sm text-white/30 font-light">Sin favoritos aún</p>
+                        <p className="text-[11px] text-white/20 mt-0.5">Toca ♡ en cualquier producto para guardarlo</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {products.filter(p => favorites.has(p.id)).map(product => {
+                        const isOffer = product.isOnOffer && product.offerPrice
+                        return (
+                          <button
+                            key={product.id}
+                            onClick={() => setSelectedProduct(product)}
+                            className="group relative rounded-2xl overflow-hidden border border-white/[0.08] bg-white/[0.04] hover:border-white/[0.15] active:scale-95 transition-all text-left"
+                          >
+                            {/* Image */}
+                            <div className="aspect-square w-full bg-black/30 overflow-hidden">
+                              {product.imageUrl
+                                ? <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                : <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-6 h-6 text-white/10" /></div>
+                              }
+                              {isOffer && (
+                                <div className="absolute top-2 left-2 bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">OFERTA</div>
+                              )}
+                            </div>
+                            {/* Info */}
+                            <div className="px-2.5 py-2.5 space-y-1">
+                              <p className="text-[11px] font-medium text-white/85 leading-tight line-clamp-2">{product.name}</p>
+                              {isOffer ? (
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-xs font-semibold text-orange-400">{formatCOP(product.offerPrice!)}</span>
+                                  <span className="text-[9px] text-white/25 line-through">{formatCOP(product.salePrice)}</span>
+                                </div>
+                              ) : (
+                                <span className="text-xs font-semibold text-white/70">{formatCOP(product.salePrice)}</span>
+                              )}
+                            </div>
+                            {/* Actions row */}
+                            <div className="absolute top-2 right-2 flex flex-col gap-1.5">
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleFavorite(product.id) }}
+                                className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm border border-white/10 flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all"
+                              >
+                                <Heart className="w-3 h-3 fill-current" />
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); agregarAlCarrito(product) }}
+                                className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm border border-white/10 flex items-center justify-center text-white/60 hover:bg-white/20 transition-all"
+                              >
+                                <ShoppingCart className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Mis Direcciones (mobile) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-light text-white/70 uppercase tracking-wider">Mis Direcciones</h3>
+                    <button
+                      onClick={() => openAddressForm()}
+                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Nueva
+                    </button>
+                  </div>
+                  {loadingAddresses ? (
+                    <div className="flex justify-center py-3"><div className="w-5 h-5 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" /></div>
+                  ) : savedAddresses.length === 0 ? (
+                    <button
+                      onClick={() => openAddressForm()}
+                      className="w-full flex items-center gap-4 p-4 bg-white/5 border border-dashed border-white/15 hover:border-white/30 transition-all"
+                    >
+                      <MapPin className="w-5 h-5 text-white/30" />
+                      <div className="text-left flex-1">
+                        <span className="text-sm text-white/50">Agregar dirección</span>
+                        <p className="text-[11px] text-white/30">Mi casa, trabajo, etc.</p>
+                      </div>
+                      <Plus className="w-4 h-4 text-white/20" />
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      {savedAddresses.map((addr: any) => (
+                        <div key={addr.id} className={`border p-3 ${addr.isDefault ? 'border-blue-500/40 bg-blue-500/5' : 'border-white/10 bg-white/5'}`}>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <MapPin className="w-3.5 h-3.5 text-white/40 shrink-0" />
+                              <span className="text-sm font-medium text-white truncate">{addr.label}</span>
+                              {addr.isDefault && <span className="text-[9px] text-blue-400 border border-blue-400/30 px-1.5 py-0.5 uppercase tracking-wider shrink-0">predeterminada</span>}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!addr.isDefault && (
+                                <button onClick={() => handleSetDefaultAddress(addr.id)} className="p-1 text-white/30 hover:text-blue-400 transition-colors">
+                                  <Star className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button onClick={() => openAddressForm(addr)} className="p-1 text-white/30 hover:text-white transition-colors">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDeleteAddress(addr.id)} className="p-1 text-white/30 hover:text-red-400 transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-xs text-white/40 pl-5">
+                            {[addr.address, addr.neighborhood, addr.municipality].filter(Boolean).join(', ')}
+                          </p>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => openAddressForm()}
+                        className="w-full text-xs text-blue-400 hover:text-blue-300 border border-blue-400/20 hover:border-blue-400/40 py-2 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Agregar otra dirección
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Location Picker */}
                 <div id="cuenta-location-picker" className="space-y-3">
                   <h3 className="text-sm font-light text-white/70 uppercase tracking-wider">Mi Ubicación de Entrega</h3>
-                  <div className="border border-white/10 p-4 bg-white/5">
-                    {deliveryLat && deliveryLng ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-white/60">
-                          <MapPin className="w-4 h-4 text-amber-400" />
-                          <span>Lat: {deliveryLat.toFixed(4)}, Lng: {deliveryLng.toFixed(4)}</span>
-                        </div>
-                        <button
-                          onClick={() => { setDeliveryLat(null); setDeliveryLng(null) }}
-                          className="text-xs text-red-400 hover:text-red-300"
-                        >
-                          Cambiar ubicación
-                        </button>
-                      </div>
-                    ) : (
+                  {deliveryLat && deliveryLng ? (
+                    <div className="space-y-2">
+                      <MiniMap
+                        latitude={deliveryLat}
+                        longitude={deliveryLng}
+                        height={160}
+                      />
+                      <button
+                        onClick={() => { setDeliveryLat(null); setDeliveryLng(null) }}
+                        className="text-xs text-red-400/70 hover:text-red-400 transition-colors flex items-center gap-1"
+                      >
+                        <X className="w-3 h-3" /> Quitar ubicación GPS
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="border border-white/10 p-4 bg-white/5">
                       <button
                         onClick={() => {
                           if (navigator.geolocation) {
@@ -6350,42 +9062,42 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                             )
                           }
                         }}
-                        className="w-full py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm flex items-center justify-center gap-2 hover:bg-amber-500/20 transition-colors"
+                        className="w-full py-3 bg-white/10 border border-white/20 text-white text-sm flex items-center justify-center gap-2 hover:bg-white/15 transition-colors"
                       >
                         <MapPin className="w-4 h-4" />
                         Establecer mi ubicación
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Logout */}
                 <button
                   onClick={handleClientLogout}
-                  className="w-full flex items-center justify-center gap-2 p-4 bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
+                  className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl bg-red-500/8 border border-red-500/20 text-red-400 hover:bg-red-500/15 transition-all text-sm font-medium"
                 >
-                  <LogOut className="w-5 h-5" />
-                  <span className="text-sm">Cerrar Sesión</span>
+                  <LogOut className="w-4 h-4" />
+                  Cerrar Sesión
                 </button>
               </div>
-            ) : (
-              <div className="text-center space-y-6 py-12">
-                <div className="w-20 h-20 rounded-full bg-white/5 border-2 border-white/10 flex items-center justify-center mx-auto">
-                  <User className="w-10 h-10 text-white/20" />
-                </div>
-                <div className="space-y-2">
-                  <h2 className="text-lg font-light text-white">Inicia Sesión</h2>
-                  <p className="text-sm text-white/40 max-w-xs mx-auto">Accede a tu cuenta para ver tus pedidos, guardar favoritos y más</p>
-                </div>
-                <button
-                  onClick={() => { setShowClientLogin(true); setClientLoginTab('login'); setClientLoginError('') }}
-                  className="px-8 py-3 bg-amber-500 text-black text-sm font-medium uppercase tracking-wider hover:bg-amber-400 transition-colors"
-                >
-                  Iniciar Sesión
-                </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-5 py-16 px-8">
+              <div className="w-20 h-20 rounded-full bg-white/5 border-2 border-white/10 flex items-center justify-center">
+                <User className="w-10 h-10 text-white/20" />
               </div>
-            )}
-          </div>
+              <div className="text-center space-y-1.5">
+                <h2 className="text-lg font-semibold text-white">Inicia Sesión</h2>
+                <p className="text-sm text-white/40 max-w-xs mx-auto">Accede a tu cuenta para ver tus pedidos, guardar favoritos y más</p>
+              </div>
+              <button
+                onClick={() => { setShowClientLogin(true); setClientLoginTab('login'); setClientLoginError('') }}
+                className="px-8 py-3 rounded-xl bg-white text-black text-sm font-semibold uppercase tracking-wider hover:bg-white/90 active:scale-95 transition-all"
+              >
+                Iniciar Sesión
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -6393,7 +9105,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
       <div className="fixed bottom-0 left-0 right-0 z-[55] md:hidden border-t border-white/10 landing-nav" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="flex items-center justify-around h-16">
           <button
-            onClick={() => { setShowCart(false); setMobileActiveTab('cuenta') }}
+            onClick={() => { setShowCart(false); setMobileActiveTab('cuenta'); if (isAuthenticated) fetchSavedAddresses() }}
             className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${mobileActiveTab === 'cuenta' ? 'text-white' : 'text-white/40'}`}
           >
             <User className="w-6 h-6" />
@@ -6402,10 +9114,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
           <button
             onClick={() => { setShowCart(false); setMobileActiveTab('ofertas'); fetchAllStoreOffers() }}
-            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${mobileActiveTab === 'ofertas' ? 'text-orange-400' : 'text-white/40'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${mobileActiveTab === 'ofertas' ? (isLightBg ? 'text-black' : 'text-white') : 'text-white/40'}`}
           >
             <Percent className="w-6 h-6" />
-            <span className={`text-[10px] leading-tight font-bold ${mobileActiveTab === 'ofertas' ? 'text-orange-400' : 'text-white/40'}`}>Ofertas</span>
+            <span className={`text-[10px] leading-tight font-bold ${mobileActiveTab === 'ofertas' ? (isLightBg ? 'text-black' : 'text-white') : 'text-white/40'}`}>Ofertas</span>
           </button>
 
           <button
@@ -6417,7 +9129,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
           <button
             onClick={() => setShowCart(true)}
-            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors relative text-white/40`}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors relative ${isLightBg ? 'text-black/30' : 'text-white/40'}`}
           >
             <div className="relative">
               <ShoppingCart className="w-6 h-6" />
@@ -6432,13 +9144,25 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
           <button
             onClick={() => { setShowCart(false); setMobileActiveTab('tienda'); setShowCatalog(false); setShowDrop(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${mobileActiveTab === 'tienda' ? 'text-amber-400' : 'text-white/40'}`}
+            className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${mobileActiveTab === 'tienda' ? (isLightBg ? 'text-black' : 'text-white') : 'text-white/40'}`}
           >
             <Store className="w-6 h-6" />
             <span className="text-[10px] leading-tight">Tienda</span>
           </button>
+
+          {isAuthenticated && (
+            <button
+              onClick={() => setShowRutina(true)}
+              className="flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors text-white/40 hover:text-amber-400"
+            >
+              <Sparkles className="w-6 h-6" />
+              <span className="text-[10px] leading-tight">Rutina</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {showRutina && <ConsumerRoutine onClose={() => setShowRutina(false)} />}
 
       {/* ====== DELIVERY LOGIN ALERT MODAL ====== */}
       {showDeliveryLoginAlert && (
@@ -6591,16 +9315,20 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     </button>
                     {profileLat && profileLng && (
                       <span className="text-xs text-green-600 flex items-center gap-1 px-2">
-                        ✓ {profileLat.toFixed(4)}, {profileLng.toFixed(4)}
+                        ✓ {Number(profileLat).toFixed(4)}, {Number(profileLng).toFixed(4)}
                       </span>
                     )}
                   </div>
                 </div>
               </div>
 
+              {profileSaveError && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{profileSaveError}</p>
+              )}
+
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => setShowProfileModal(false)}
+                  onClick={() => { setShowProfileModal(false); setProfileSaveError('') }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                 >
                   Ahora no
@@ -6618,6 +9346,147 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         </>
       )}
 
+      {/* ========== ADDRESS FORM MODAL ========== */}
+      {showAddressForm && isAuthenticated && (
+        <>
+          <div className="fixed inset-0 z-[210] bg-black/75 backdrop-blur-md" onClick={() => setShowAddressForm(false)} />
+          <div className="fixed inset-0 z-[211] flex items-end sm:items-center justify-center sm:p-4">
+            <div className="bg-zinc-950 border border-white/10 w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+
+              {/* drag handle (mobile) */}
+              <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                <div className="w-10 h-1 rounded-full bg-white/20" />
+              </div>
+
+              {/* header */}
+              <div className="flex items-center justify-between px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/15 flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">{editingAddressId ? 'Editar dirección' : 'Nueva dirección'}</h3>
+                    <p className="text-[11px] text-white/35">Guarda para usarla rápido al pedir</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAddressForm(false)} className="w-7 h-7 rounded-full bg-white/[0.06] hover:bg-white/10 flex items-center justify-center text-white/40 hover:text-white transition-all">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="px-6 pb-6 space-y-4">
+                {/* Label / Nombre */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Nombre de la dirección *</label>
+                  <input
+                    type="text"
+                    placeholder="Mi casa, Trabajo, Casa mamá..."
+                    value={addressForm.label}
+                    onChange={e => setAddressForm(p => ({ ...p, label: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder-white/20 focus:border-blue-500/60 focus:bg-white/[0.08] outline-none transition-all"
+                  />
+                  {/* Quick label chips */}
+                  <div className="flex gap-1.5 flex-wrap mt-2">
+                    {['Mi casa', 'Trabajo', 'Casa familia', 'Apartamento'].map(preset => (
+                      <button
+                        key={preset}
+                        onClick={() => setAddressForm(p => ({ ...p, label: preset }))}
+                        className={`text-[10px] px-2.5 py-1 rounded-full border transition-all ${
+                          addressForm.label === preset
+                            ? 'border-blue-500/60 bg-blue-500/15 text-blue-400'
+                            : 'border-white/10 text-white/35 hover:border-white/25 hover:text-white/60'
+                        }`}
+                      >{preset}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dept + Municipio */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Departamento *</label>
+                    <select
+                      value={addressForm.department}
+                      onChange={e => setAddressForm(p => ({ ...p, department: e.target.value, municipality: '' }))}
+                      className="w-full px-3 py-3 rounded-xl border border-white/10 bg-zinc-900 text-sm text-white focus:border-blue-500/60 outline-none transition-all"
+                    >
+                      <option value="">Selecciona</option>
+                      {Object.keys(departamentosMunicipios).map(dep => (
+                        <option key={dep} value={dep}>{dep}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Municipio *</label>
+                    <select
+                      value={addressForm.municipality}
+                      onChange={e => setAddressForm(p => ({ ...p, municipality: e.target.value }))}
+                      disabled={!addressForm.department}
+                      className="w-full px-3 py-3 rounded-xl border border-white/10 bg-zinc-900 text-sm text-white focus:border-blue-500/60 outline-none transition-all disabled:opacity-40"
+                    >
+                      <option value="">{addressForm.department ? 'Selecciona' : '—'}</option>
+                      {addressForm.department && departamentosMunicipios[addressForm.department]?.map(mun => (
+                        <option key={mun} value={mun}>{mun}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Dirección */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Dirección *</label>
+                  <input
+                    type="text"
+                    placeholder="Calle 10 #5-20, Edificio..."
+                    value={addressForm.address}
+                    onChange={e => setAddressForm(p => ({ ...p, address: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder-white/20 focus:border-blue-500/60 focus:bg-white/[0.08] outline-none transition-all"
+                  />
+                </div>
+
+                {/* Barrio */}
+                <div>
+                  <label className="block text-[11px] font-medium text-white/50 mb-1.5 uppercase tracking-wider">Barrio <span className="text-white/25 normal-case tracking-normal font-normal">(opcional)</span></label>
+                  <input
+                    type="text"
+                    placeholder="Barrio o sector"
+                    value={addressForm.neighborhood}
+                    onChange={e => setAddressForm(p => ({ ...p, neighborhood: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-white/10 bg-white/[0.05] text-sm text-white placeholder-white/20 focus:border-blue-500/60 focus:bg-white/[0.08] outline-none transition-all"
+                  />
+                </div>
+
+                {addressFormError && (
+                  <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2.5">
+                    <X className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                    <p className="text-xs text-red-400">{addressFormError}</p>
+                  </div>
+                )}
+
+                {/* Buttons */}
+                <div className="flex gap-2.5 pt-1">
+                  <button
+                    onClick={() => setShowAddressForm(false)}
+                    className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-sm text-white/50 hover:text-white hover:border-white/20 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSaveAddress}
+                    disabled={savingAddress || !addressForm.label || !addressForm.department || !addressForm.municipality || !addressForm.address}
+                    className="flex-1 px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:text-white/25 disabled:cursor-not-allowed text-white text-sm font-medium transition-all"
+                  >
+                    {savingAddress ? (
+                      <span className="flex items-center justify-center gap-2"><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Guardando</span>
+                    ) : editingAddressId ? 'Actualizar' : 'Guardar dirección'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ========== SERVICE BOOKING MODAL ========== */}
       {bookingService && selectedStore && selectedStore !== 'all' && (
         <ServiceBookingModal
@@ -6625,6 +9494,70 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           storeSlug={selectedStore}
           onClose={() => setBookingService(null)}
         />
+      )}
+
+      {/* ========== AGE GATE MODAL ========== */}
+      {showAgeGate && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-black/8 dark:border-white/8 animate-in fade-in zoom-in-95 duration-300">
+            {/* Top accent */}
+            <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-rose-400 to-rose-600" />
+
+            {/* Icon + header */}
+            <div className="flex flex-col items-center text-center px-8 pt-8 pb-5">
+              <div className="h-14 w-14 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 flex items-center justify-center mb-4">
+                <span className="text-2xl font-bold text-rose-600 leading-none select-none">18+</span>
+              </div>
+              <h2 className="text-lg font-semibold tracking-tight text-black dark:text-white leading-snug">
+                Verificación de edad
+              </h2>
+              <p className="text-xs text-black/40 dark:text-white/40 mt-1.5 font-medium uppercase tracking-widest">
+                {storeConfig?.storeInfo?.name || 'Tienda'}
+              </p>
+            </div>
+
+            {/* Divider */}
+            <div className="h-px mx-8 bg-black/6 dark:bg-white/6" />
+
+            {/* Description */}
+            <div className="px-8 py-5">
+              <p className="text-sm text-black/60 dark:text-white/60 leading-relaxed text-center">
+                {storeConfig?.storeInfo?.ageGateDescription?.trim() ||
+                  'Este sitio contiene contenido exclusivo para mayores de 18 años. Al ingresar confirmas que eres mayor de edad y aceptas los términos y condiciones.'}
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="px-8 pb-8 space-y-2.5">
+              <button
+                onClick={() => {
+                  sessionStorage.setItem(`age_verified_${selectedStore}`, '1')
+                  setShowAgeGate(false)
+                }}
+                className="w-full py-3 rounded-xl bg-black dark:bg-white text-white dark:text-black text-sm font-semibold tracking-wide hover:bg-black/80 dark:hover:bg-white/80 transition-colors"
+              >
+                Soy mayor de edad — Entrar
+              </button>
+              <button
+                onClick={() => {
+                  setShowAgeGate(false)
+                  setSelectedStore('all')
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
+                className="w-full py-3 rounded-xl border border-black/10 dark:border-white/10 text-black/50 dark:text-white/50 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              >
+                No soy mayor de edad
+              </button>
+            </div>
+
+            {/* Footer note */}
+            <div className="px-8 pb-6 text-center">
+              <p className="text-[10px] text-black/25 dark:text-white/25 leading-relaxed">
+                Al entrar confirmas que eres mayor de 18 años y aceptas los términos de uso del sitio.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ========== LEGAL CONTENT MODAL ========== */}
@@ -6646,28 +9579,34 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
       {/* ========== LOCATION MODAL ========== */}
       {showLocationModal && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-background rounded-2xl shadow-2xl p-6 w-full max-w-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="h-10 w-10 rounded-full bg-blue-500/15 flex items-center justify-center">
-                <MapPin className="h-5 w-5 text-blue-500" />
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 backdrop-blur-sm bg-black/40">
+          <div className="bg-white dark:bg-black border border-black/10 dark:border-white/10 rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden">
+            {/* Header */}
+            <div className="flex flex-col items-center text-center px-7 pt-8 pb-6">
+              <div className="h-12 w-12 rounded-full bg-black dark:bg-white flex items-center justify-center mb-4">
+                <MapPin className="h-5 w-5 text-white dark:text-black" />
               </div>
-              <div>
-                <h2 className="font-semibold text-base">¿Dónde estás?</h2>
-                <p className="text-xs text-muted-foreground">Para mostrarte tiendas y domicilios disponibles en tu zona.</p>
-              </div>
+              <h2 className="font-semibold text-lg tracking-tight text-black dark:text-white">¿Dónde estás?</h2>
+              <p className="text-xs text-black/50 dark:text-white/50 mt-1 leading-relaxed">
+                Para mostrarte tiendas y domicilios disponibles en tu zona.
+              </p>
             </div>
-            <div className="space-y-3 mb-5">
+
+            {/* Divider */}
+            <div className="h-px bg-black/8 dark:bg-white/8" />
+
+            {/* Body */}
+            <div className="px-7 py-5 space-y-3">
               {detectedModalCity ? (
-                <div className="flex items-center justify-between px-4 py-3 border border-green-300 bg-green-50 rounded-lg">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <MapPin className="h-4 w-4 text-green-600 flex-shrink-0" />
-                    <span className="text-sm text-green-800 truncate">{detectedModalCity}</span>
+                <div className="flex items-center justify-between px-4 py-3 bg-black/5 dark:bg-white/5 rounded-xl">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <MapPin className="h-4 w-4 text-black/40 dark:text-white/40 flex-shrink-0" />
+                    <span className="text-sm font-medium text-black dark:text-white truncate">{detectedModalCity}</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => { setDetectedModalCity(''); setLocationMun(''); setLocationDept('') }}
-                    className="ml-3 text-xs text-green-600 hover:text-red-500 transition-colors flex-shrink-0"
+                    className="ml-3 text-xs text-black/40 dark:text-white/40 hover:text-black dark:hover:text-white transition-colors flex-shrink-0 font-medium"
                   >
                     Cambiar
                   </button>
@@ -6677,36 +9616,78 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   type="button"
                   onClick={handleModalLocation}
                   disabled={isLocatingModal}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-60 rounded-lg transition-colors"
+                  className="w-full flex items-center justify-center gap-2.5 px-4 py-3 border border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 rounded-xl transition-colors"
                 >
                   {isLocatingModal ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin text-black dark:text-white" />
                   ) : (
-                    <Navigation className="h-5 w-5" />
+                    <Navigation className="h-4 w-4 text-black dark:text-white" />
                   )}
-                  <span className="font-medium text-sm">
+                  <span className="font-medium text-sm text-black dark:text-white">
                     {isLocatingModal ? 'Detectando ubicación...' : 'Usar mi ubicación'}
                   </span>
                 </button>
               )}
-              {locationModalError && <p className="text-xs text-red-500">{locationModalError}</p>}
+              {locationModalError && (
+                <p className="text-xs text-red-500 dark:text-red-400 text-center">{locationModalError}</p>
+              )}
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="flex-1" onClick={skipClientLocation}>
-                Continuar sin ubicación
-              </Button>
-              <Button size="sm" className="flex-1" disabled={!locationMun} onClick={saveClientLocation}>
+
+            {/* Footer */}
+            <div className="px-7 pb-7 flex gap-2.5">
+              <button
+                className="flex-1 py-2.5 px-4 text-sm font-medium border border-black/10 dark:border-white/10 rounded-xl text-black/60 dark:text-white/60 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                onClick={skipClientLocation}
+              >
+                Omitir
+              </button>
+              <button
+                className="flex-1 py-2.5 px-4 text-sm font-medium rounded-xl bg-black dark:bg-white text-white dark:text-black disabled:opacity-30 transition-opacity hover:opacity-80"
+                disabled={!locationMun}
+                onClick={saveClientLocation}
+              >
                 Confirmar
-              </Button>
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* ========== FLOATING BACK TO STORES BUTTON ==========
+          Móvil: pill inferior centrado. Escritorio: pestaña flotante pegada al
+          borde derecho, centrada verticalmente, con deslizamiento suave al hover. */}
+      {selectedStore !== 'all' && stores.length > 1 && !showProductModal && (
+        <button
+          onClick={() => { setSelectedStore('all'); setShowStoresView(true); setShowCatalog(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+          aria-label="Ver todas las tiendas"
+          className={[
+            'group fixed z-[55] inline-flex items-center gap-2 font-semibold uppercase tracking-widest',
+            'whitespace-nowrap transition-all duration-300 ease-out',
+            // Móvil: pill flotante a la derecha (no centrado, para no tapar el contenido)
+            'bottom-[max(5.5rem,calc(env(safe-area-inset-bottom)+4.5rem))] right-4 px-4 py-2.5 rounded-full text-[11px]',
+            // Escritorio: pestaña al borde derecho, centrada
+            'md:bottom-auto md:top-1/2 md:-translate-y-1/2 md:right-0',
+            'md:rounded-l-2xl md:rounded-r-none md:pl-5 md:pr-4 md:py-4 md:text-xs md:translate-x-1 md:hover:translate-x-0',
+          ].join(' ')}
+          style={{
+            backgroundColor: isLightBg ? '#0f172a' : '#ffffff',
+            color: isLightBg ? '#ffffff' : '#0f172a',
+            boxShadow: isLightBg
+              ? '0 8px 24px rgba(2,6,23,0.30), -4px 0 16px rgba(2,6,23,0.12)'
+              : '0 8px 24px rgba(0,0,0,0.45)',
+          }}
+        >
+          {/* Barra de acento que toma el color de la paleta/tema */}
+          <span className="hidden md:block absolute left-0 top-0 h-full w-1 rounded-l-2xl" style={{ background: 'var(--primary, #007BFF)' }} />
+          <ArrowLeft className="w-4 h-4 flex-shrink-0 transition-transform duration-300 group-hover:-translate-x-0.5" />
+          <span>Todas las tiendas</span>
+        </button>
+      )}
+
       {/* ========== LOCATION CHANGE BUTTON (bottom of header) ========== */}
       {clientMunicipality && (
         <button
-          className="fixed top-20 left-4 z-50 flex items-center gap-1.5 bg-background/90 border rounded-full px-3 py-1.5 text-xs text-muted-foreground shadow hover:shadow-md transition-shadow"
+          className="fixed top-20 right-4 z-50 flex items-center gap-1.5 bg-background/90 border rounded-full px-3 py-1.5 text-xs text-muted-foreground shadow hover:shadow-md transition-shadow"
           onClick={() => {
             setLocationDept('')
             setLocationMun('')
@@ -6781,7 +9762,7 @@ function CountUpStat({ value, suffix = '', label }: { value: number; suffix?: st
 
   return (
     <div ref={ref} className="text-center">
-      <p className="text-3xl font-light text-amber-400">{count}{suffix}</p>
+      <p className="text-3xl font-light text-white">{count}{suffix}</p>
       <p className="text-xs text-white/40 uppercase tracking-widest mt-1">{label}</p>
     </div>
   )
@@ -6817,7 +9798,7 @@ function CatalogSidebar({
       <div className="flex items-center justify-between">
         <h3 className="text-xs text-white/60 uppercase tracking-widest font-medium">Filtros</h3>
         {hasFilters && (
-          <button onClick={onClear} className="text-[10px] text-amber-400 hover:text-amber-300 uppercase tracking-wider">Limpiar</button>
+          <button onClick={onClear} className="text-[10px] text-white hover:text-white/80 uppercase tracking-wider">Limpiar</button>
         )}
       </div>
 
@@ -6826,9 +9807,9 @@ function CatalogSidebar({
         <h4 className="text-[11px] text-white/40 uppercase tracking-widest mb-4">Precio</h4>
         {/* Range values */}
         <div className="flex items-center justify-between mb-5">
-          <span className="text-xs text-amber-400 font-light tabular-nums">{formatCOP(priceMin)}</span>
+          <span className="text-xs text-white font-light tabular-nums">{formatCOP(priceMin)}</span>
           <span className="text-[10px] text-white/20">—</span>
-          <span className="text-xs text-amber-400 font-light tabular-nums">
+          <span className="text-xs text-white font-light tabular-nums">
             {priceMax > 0 ? formatCOP(priceMax) : '$500k+'}
           </span>
         </div>
@@ -6838,7 +9819,7 @@ function CatalogSidebar({
           <div className="h-[3px] bg-white/10 rounded-full">
             {/* Active fill */}
             <div
-              className="absolute h-[3px] bg-amber-500 rounded-full top-2"
+              className="absolute h-[3px] bg-white rounded-full top-2"
               style={{
                 left: `${(priceMin / 500000) * 100}%`,
                 right: `${100 - ((priceMax || 500000) / 500000) * 100}%`,
@@ -6847,12 +9828,12 @@ function CatalogSidebar({
           </div>
           {/* Min thumb indicator */}
           <div
-            className="absolute top-2 w-3.5 h-3.5 bg-amber-500 rounded-full border-2 border-black shadow-lg -translate-y-1/2 -translate-x-1/2 pointer-events-none ring-1 ring-amber-500/40"
+            className="absolute top-2 w-3.5 h-3.5 bg-white rounded-full border-2 border-black shadow-lg -translate-y-1/2 -translate-x-1/2 pointer-events-none ring-1 ring-white/40"
             style={{ left: `${(priceMin / 500000) * 100}%` }}
           />
           {/* Max thumb indicator */}
           <div
-            className="absolute top-2 w-3.5 h-3.5 bg-amber-500 rounded-full border-2 border-black shadow-lg -translate-y-1/2 -translate-x-1/2 pointer-events-none ring-1 ring-amber-500/40"
+            className="absolute top-2 w-3.5 h-3.5 bg-white rounded-full border-2 border-black shadow-lg -translate-y-1/2 -translate-x-1/2 pointer-events-none ring-1 ring-white/40"
             style={{ left: `${((priceMax || 500000) / 500000) * 100}%` }}
           />
           {/* Inputs overlay */}
@@ -6885,7 +9866,7 @@ function CatalogSidebar({
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {categories.map(cat => (
               <label key={cat} className="flex items-center gap-2.5 cursor-pointer group">
-                <span className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${selectedCategories.has(cat) ? 'bg-amber-500 border-amber-500' : 'border-white/20 group-hover:border-white/40'}`}>
+                <span className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${selectedCategories.has(cat) ? 'bg-white border-white' : 'border-white/20 group-hover:border-white/40'}`}>
                   {selectedCategories.has(cat) && <svg className="w-3 h-3 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                 </span>
                 <button onClick={() => toggle(cat, selectedCategories, setSelectedCategories)} className="text-xs text-white/60 group-hover:text-white transition-colors text-left">{cat}</button>
@@ -6902,7 +9883,7 @@ function CatalogSidebar({
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {availableBrands.map(brand => (
               <label key={brand} className="flex items-center gap-2.5 cursor-pointer group">
-                <span className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${selectedBrands.has(brand) ? 'bg-amber-500 border-amber-500' : 'border-white/20 group-hover:border-white/40'}`}>
+                <span className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${selectedBrands.has(brand) ? 'bg-white border-white' : 'border-white/20 group-hover:border-white/40'}`}>
                   {selectedBrands.has(brand) && <svg className="w-3 h-3 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                 </span>
                 <button onClick={() => toggle(brand, selectedBrands, setSelectedBrands)} className="text-xs text-white/60 group-hover:text-white transition-colors text-left">{brand}</button>
@@ -6919,7 +9900,7 @@ function CatalogSidebar({
           <div className="space-y-2">
             {availableGenders.map(g => (
               <label key={g} className="flex items-center gap-2.5 cursor-pointer group">
-                <span className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${selectedGenders.has(g) ? 'bg-amber-500 border-amber-500' : 'border-white/20 group-hover:border-white/40'}`}>
+                <span className={`w-4 h-4 border flex items-center justify-center shrink-0 transition-colors ${selectedGenders.has(g) ? 'bg-white border-white' : 'border-white/20 group-hover:border-white/40'}`}>
                   {selectedGenders.has(g) && <svg className="w-3 h-3 text-black" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                 </span>
                 <button onClick={() => toggle(g, selectedGenders, setSelectedGenders)} className="text-xs text-white/60 group-hover:text-white transition-colors text-left capitalize">{g}</button>
@@ -6936,7 +9917,7 @@ function CatalogSidebar({
           <div className="flex flex-wrap gap-2">
             {availableSizes.map(size => (
               <button key={size} onClick={() => toggle(size, selectedSizes, setSelectedSizes)}
-                className={`px-3 py-1.5 text-xs border transition-colors ${selectedSizes.has(size) ? 'bg-amber-500 text-black border-amber-500' : 'bg-white/5 text-white/60 border-white/10 hover:border-white/30'}`}>
+                className={`px-3 py-1.5 text-xs border transition-colors ${selectedSizes.has(size) ? 'bg-white text-black border-white' : 'bg-white/5 text-white/60 border-white/10 hover:border-white/30'}`}>
                 {size}
               </button>
             ))}
@@ -6950,9 +9931,9 @@ function CatalogSidebar({
 /* ========== FilterPill ========== */
 function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1.5 bg-amber-500/15 border border-amber-500/30 px-2.5 py-1 text-[11px] text-amber-400">
+    <span className="inline-flex items-center gap-1.5 bg-white/10 border border-white/20 px-2.5 py-1 text-[11px] text-white">
       {label}
-      <button onClick={onRemove} className="hover:text-amber-200 transition-colors"><svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+      <button onClick={onRemove} className="hover:text-white transition-colors"><svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
     </span>
   )
 }

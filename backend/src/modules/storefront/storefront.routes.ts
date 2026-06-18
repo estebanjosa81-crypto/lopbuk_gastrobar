@@ -2,9 +2,24 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { query, param, body } from 'express-validator';
 import { validateRequest } from '../../utils/validators';
 import pool from '../../config/database';
-import { authenticate } from '../../common/middleware';
+import { authenticate, requirePlan } from '../../common/middleware';
+import { computeOpenState, computeNextOpen } from '../../utils/store-hours';
+import { themePaletteService } from './theme-palette.service';
 
 const router: ReturnType<typeof Router> = Router();
+
+const THEME_COLORS_KEY = (tenantId: string) => `store_theme_colors:${tenantId}`;
+
+async function readThemeColors(tenantId: string): Promise<any | null> {
+  try {
+    const [rows] = await pool.query(
+      'SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1',
+      [THEME_COLORS_KEY(tenantId)]
+    ) as any;
+    if (rows[0]?.setting_value) return JSON.parse(rows[0].setting_value);
+  } catch { /* noop */ }
+  return null;
+}
 
 /** Normaliza el campo images: MySQL puede devolver JSON column como string */
 function parseImages(row: any): any {
@@ -67,10 +82,10 @@ router.get(
       const params: any[] = [];
 
       if (showAll || !tenantId) {
-        // Show products from all active tenants
-        whereClause = `WHERE p.stock > 0 AND p.published_in_store = 1 AND p.tenant_id IN (SELECT id FROM tenants WHERE status = 'activo')`;
+        // Show products from all active tenants (preorder products bypass stock check)
+        whereClause = `WHERE (p.stock > 0 OR p.is_preorder = 1) AND p.published_in_store = 1 AND p.tenant_id IN (SELECT id FROM tenants WHERE status = 'activo')`;
       } else {
-        whereClause = 'WHERE p.tenant_id = ? AND p.stock > 0 AND p.published_in_store = 1';
+        whereClause = 'WHERE p.tenant_id = ? AND (p.stock > 0 OR p.is_preorder = 1) AND p.published_in_store = 1';
         params.push(tenantId);
       }
 
@@ -139,18 +154,27 @@ router.get(
             IF(p.available_for_delivery, 1, 0) as availableForDelivery,
             p.delivery_type as deliveryType,
             p.sede_id as sedeId,
-            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug
+            p.product_type as productType,
+            p.weight as weight,
+            p.hardware_weight_unit as hardwareWeightUnit,
+            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug,
+            IF(p.is_preorder, 1, 0) as isPreorder,
+            p.preorder_window_end as preorderWindowEnd,
+            p.preorder_ship_start as preorderShipStart,
+            p.preorder_ship_end as preorderShipEnd,
+            p.preorder_badge_text as preorderBadgeText,
+            p.preorder_policy_text as preorderPolicyText
           FROM products p
           LEFT JOIN tenants t ON t.id = p.tenant_id
           ${joinStoreInfo}
           ${whereClause}
-          ORDER BY p.is_on_offer DESC, p.name ASC
+          ORDER BY p.is_on_offer DESC, p.is_preorder DESC, p.name ASC
           LIMIT ? OFFSET ?`,
           [...params, limit, offset]
         ) as any;
         rows = r;
       } catch {
-        // Fallback: delivery_type / municipality columns may not exist in running DB yet
+        // Fallback: delivery_type / municipality / preorder columns may not exist in running DB yet
         const [r] = await pool.query(
           `SELECT
             p.id, p.name, p.category, p.brand, p.description,
@@ -162,7 +186,16 @@ router.get(
             IF(p.available_for_delivery, 1, 0) as availableForDelivery,
             NULL as deliveryType,
             NULL as sedeId,
-            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug
+            p.product_type as productType,
+            p.weight as weight,
+            NULL as hardwareWeightUnit,
+            p.tenant_id as tenantId, t.name as storeName, t.slug as storeSlug,
+            0 as isPreorder,
+            NULL as preorderWindowEnd,
+            NULL as preorderShipStart,
+            NULL as preorderShipEnd,
+            'Pre-orden' as preorderBadgeText,
+            NULL as preorderPolicyText
           FROM products p
           LEFT JOIN tenants t ON t.id = p.tenant_id
           ${fallbackWhereClause}
@@ -173,10 +206,50 @@ router.get(
         rows = r;
       }
 
+      // Adjuntar variantes con stock > 0 para productos que las tengan
+      const productIds = (rows as any[]).map((r: any) => r.id);
+      let variantsByProduct: Map<string, any[]> = new Map();
+      if (productIds.length > 0) {
+        try {
+          const placeholders = productIds.map(() => '?').join(',');
+          const [variantRows] = await pool.query(
+            `SELECT pv.id, pv.product_id, pv.sku, pv.color, pv.color_hex AS colorHex, pv.size, pv.material,
+                    pv.stock, pv.reserved_stock, pv.cost_price, pv.price_override,
+                    pv.images, pv.sort_order,
+                    (SELECT MIN(vpt.price) FROM variant_price_tiers vpt
+                     WHERE vpt.variant_id = pv.id AND vpt.is_active = 1) AS min_price,
+                    (SELECT JSON_ARRAYAGG(
+                       JSON_OBJECT('minQty', vpt.min_qty, 'price', vpt.price, 'marginPct', vpt.tenant_margin_pct)
+                     ) FROM variant_price_tiers vpt
+                     WHERE vpt.variant_id = pv.id AND vpt.is_active = 1
+                     ORDER BY vpt.min_qty ASC) AS price_tiers
+             FROM product_variants pv
+             WHERE pv.product_id IN (${placeholders})
+               AND pv.is_active = 1
+               AND (pv.stock - pv.reserved_stock) > 0
+             ORDER BY pv.sort_order ASC`,
+            productIds
+          ) as any;
+          for (const vr of variantRows) {
+            if (!variantsByProduct.has(vr.product_id)) variantsByProduct.set(vr.product_id, []);
+            variantsByProduct.get(vr.product_id)!.push({
+              ...vr,
+              images: vr.images ? (typeof vr.images === 'string' ? JSON.parse(vr.images) : vr.images) : null,
+              priceTiers: vr.price_tiers ? (typeof vr.price_tiers === 'string' ? JSON.parse(vr.price_tiers) : vr.price_tiers) : [],
+            });
+          }
+        } catch { /* tabla puede no existir aún */ }
+      }
+
+      const productsWithVariants = (rows as any[]).map((p: any) => {
+        const variants = variantsByProduct.get(p.id) || [];
+        return { ...parseImages(p), variants, hasVariants: variants.length > 0 };
+      });
+
       res.json({
         success: true,
         data: {
-          products: (rows as any[]).map(parseImages),
+          products: productsWithVariants,
           pagination: {
             total,
             page,
@@ -277,16 +350,51 @@ router.get('/stores', async (req: Request, res: Response) => {
       `SELECT t.id, t.name, t.slug, t.business_type as businessType,
               si.logo_url as logoUrl, si.address, si.latitude, si.longitude,
               si.municipality, si.department,
+              si.municipality as city,
+              si.card_cover_url as coverUrl,
+              si.card_description as cardDescription,
+              COALESCE(si.is_verified, 0) as isVerified,
+              COALESCE(si.store_theme, 'theme1') as theme,
+              si.business_hours as businessHours,
+              COALESCE(si.open_state, 'open') as openStateFallback,
+              (SELECT COUNT(*) FROM sedes s WHERE s.tenant_id = t.id) as sedeCount,
               (SELECT COUNT(*) FROM products p WHERE p.tenant_id = t.id AND p.stock > 0 AND p.published_in_store = 1) as productCount
        FROM tenants t
        LEFT JOIN store_info si ON si.tenant_id = t.id
        WHERE t.status = 'activo'
+         AND (si.marketplace_visible IS NULL OR si.marketplace_visible = 1)
        ${municipalityFilter}
-       ORDER BY t.name ASC`,
+       ORDER BY COALESCE(si.marketplace_order, 0) ASC, t.name ASC`,
       params
     ) as any;
 
-    res.json({ success: true, data: stores });
+    // Estado abierto/cerrado calculado automáticamente desde el horario
+    const data = (stores as any[]).map((s) => {
+      const openState = computeOpenState(s.businessHours, (s.openStateFallback === 'closed' ? 'closed' : 'open'));
+      const nextOpenLabel = openState === 'closed' ? computeNextOpen(s.businessHours) : null;
+      const { businessHours, openStateFallback, ...rest } = s;
+      return { ...rest, openState, nextOpenLabel };
+    });
+
+    // Tarjetas externas (comercios fuera del aplicativo): redirigen a un link externo.
+    // Tolerante si la tabla aún no existe.
+    let externalCards: any[] = [];
+    try {
+      const [ext] = await pool.query(
+        `SELECT id, name, slug, logo_url AS logoUrl, cover_url AS coverUrl, description AS cardDescription,
+                external_url AS externalUrl, city, COALESCE(is_verified, 0) AS isVerified, COALESCE(sort_order, 0) AS marketplaceOrder
+           FROM marketplace_external_cards WHERE is_visible = 1 ORDER BY sort_order ASC, name ASC`
+      ) as any;
+      externalCards = (ext as any[]).map((e) => ({
+        id: e.id, name: e.name, slug: e.slug || '', businessType: null,
+        logoUrl: e.logoUrl, coverUrl: e.coverUrl, cardDescription: e.cardDescription,
+        city: e.city, address: null, isVerified: Boolean(e.isVerified), theme: 'external',
+        externalUrl: e.externalUrl, productCount: 1, openState: 'open', nextOpenLabel: null,
+        marketplaceOrder: Number(e.marketplaceOrder) || 0,
+      }));
+    } catch { /* tabla aún no creada */ }
+
+    res.json({ success: true, data: [...data, ...externalCards] });
   } catch (error) {
     console.error('Storefront stores error:', error);
     res.status(500).json({ success: false, error: 'Error al obtener tiendas' });
@@ -317,6 +425,7 @@ router.get('/platform-settings', async (_req: Request, res: Response) => {
 router.put(
   '/publish/:productId',
   authenticate,
+  requirePlan('empresarial'),
   async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).user.tenantId;
@@ -354,6 +463,7 @@ router.put(
 router.put(
   '/delivery/:productId',
   authenticate,
+  requirePlan('empresarial'),
   async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).user.tenantId;
@@ -388,6 +498,7 @@ router.put(
 router.put(
   '/publish-bulk',
   authenticate,
+  requirePlan('empresarial'),
   [
     body('productIds').isArray({ min: 1 }).withMessage('Se requiere al menos un producto'),
     body('published').isBoolean().withMessage('Estado de publicación requerido'),
@@ -419,13 +530,14 @@ router.put(
 router.get(
   '/my-published',
   authenticate,
+  requirePlan('empresarial'),
   async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).user.tenantId;
 
       let rows: any[];
       try {
-        // Full query with all new columns (delivery_type, is_new_launch, launch_date)
+        // Full query with all new columns (delivery_type, is_new_launch, launch_date, preorder)
         const [r] = await pool.query(
           `SELECT id, name, category, brand, sale_price as salePrice, image_url as imageUrl,
                   stock, IF(published_in_store, 1, 0) as publishedInStore,
@@ -433,7 +545,12 @@ router.get(
                   offer_price as offerPrice, offer_label as offerLabel, offer_end as offerEnd,
                   IF(available_for_delivery, 1, 0) as availableForDelivery,
                   delivery_type as deliveryType,
-                  IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate
+                  IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate,
+                  IF(is_preorder, 1, 0) as isPreorder,
+                  preorder_window_end as preorderWindowEnd,
+                  preorder_ship_start as preorderShipStart,
+                  preorder_ship_end as preorderShipEnd,
+                  preorder_badge_text as preorderBadgeText
            FROM products
            WHERE tenant_id = ?
            ORDER BY name ASC`,
@@ -450,7 +567,12 @@ router.get(
                     offer_price as offerPrice, offer_label as offerLabel, offer_end as offerEnd,
                     IF(available_for_delivery, 1, 0) as availableForDelivery,
                     NULL as deliveryType,
-                    IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate
+                    IF(is_new_launch, 1, 0) as isNewLaunch, launch_date as launchDate,
+                    IF(is_preorder, 1, 0) as isPreorder,
+                    preorder_window_end as preorderWindowEnd,
+                    preorder_ship_start as preorderShipStart,
+                    preorder_ship_end as preorderShipEnd,
+                    preorder_badge_text as preorderBadgeText
              FROM products
              WHERE tenant_id = ?
              ORDER BY name ASC`,
@@ -458,7 +580,7 @@ router.get(
           ) as any;
           rows = r;
         } catch {
-          // Fallback 2: without delivery_type, is_new_launch, or launch_date
+          // Fallback 2: without delivery_type, is_new_launch, launch_date, or preorder
           const [r] = await pool.query(
             `SELECT id, name, category, brand, sale_price as salePrice, image_url as imageUrl,
                     stock, IF(published_in_store, 1, 0) as publishedInStore,
@@ -466,7 +588,10 @@ router.get(
                     offer_price as offerPrice, offer_label as offerLabel, offer_end as offerEnd,
                     IF(available_for_delivery, 1, 0) as availableForDelivery,
                     NULL as deliveryType,
-                    0 as isNewLaunch, NULL as launchDate
+                    0 as isNewLaunch, NULL as launchDate,
+                    0 as isPreorder, NULL as preorderWindowEnd,
+                    NULL as preorderShipStart, NULL as preorderShipEnd,
+                    NULL as preorderBadgeText
              FROM products
              WHERE tenant_id = ?
              ORDER BY name ASC`,
@@ -483,6 +608,7 @@ router.get(
         isOnOffer: Number(r.isOnOffer) === 1,
         availableForDelivery: Number(r.availableForDelivery) === 1,
         isNewLaunch: Number(r.isNewLaunch) === 1,
+        isPreorder: Number(r.isPreorder) === 1,
       }));
 
       res.json({ success: true, data });
@@ -501,6 +627,7 @@ router.get(
 router.put(
   '/offer/:productId',
   authenticate,
+  requirePlan('empresarial'),
   async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).user.tenantId;
@@ -607,7 +734,7 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
     const { storeSlug } = req.params;
 
     const [tenants] = await pool.query(
-      'SELECT id, bg_color FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
+      'SELECT id, bg_color, public_menu_enabled FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
       ['activo', storeSlug]
     ) as any;
 
@@ -618,6 +745,7 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
 
     const tenantId = tenants[0].id;
     const tenantBgColor = tenants[0].bg_color || '#000000';
+    const publicMenuEnabled = !!tenants[0].public_menu_enabled;
 
     // Banners (table may not exist if migration not run yet)
     let banners: any[] = [];
@@ -710,6 +838,9 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
                 si.social_instagram as socialInstagram, si.social_facebook as socialFacebook,
                 si.social_tiktok as socialTiktok, si.social_whatsapp as socialWhatsapp,
                 si.product_card_style as productCardStyle,
+                si.store_theme as theme,
+                si.card_cover_url as cardCoverUrl,
+                si.card_description as cardDescription,
                 si.show_info_module as showInfoModule,
                 si.info_module_description as infoModuleDescription
          FROM store_info si
@@ -730,11 +861,51 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
       } catch { /* ignore */ }
     }
 
+    // Contact page fields (separate query — columns may not exist yet)
+    if (storeInfoData) {
+      try {
+        const [contactRows] = await pool.query(
+          `SELECT contact_page_enabled as contactPageEnabled,
+                  contact_page_title as contactPageTitle,
+                  contact_page_description as contactPageDescription,
+                  contact_page_image as contactPageImage,
+                  contact_page_links as contactPageLinks
+           FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (contactRows[0]) Object.assign(storeInfoData, contactRows[0]);
+      } catch { /* columns not migrated yet — skip */ }
+      try {
+        const [themeRows] = await pool.query(
+          `SELECT contact_page_link_theme as contactPageLinkTheme FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (themeRows[0]) Object.assign(storeInfoData, themeRows[0]);
+      } catch { /* column not yet added */ }
+
+      // Age gate fields
+      try {
+        const [ageGateRows] = await pool.query(
+          `SELECT age_gate_enabled as ageGateEnabled, age_gate_description as ageGateDescription FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (ageGateRows[0]) Object.assign(storeInfoData, ageGateRows[0]);
+      } catch { /* columns not yet added */ }
+      // Meta Pixel
+      try {
+        const [pixelRows] = await pool.query(
+          `SELECT meta_pixel_id as metaPixelId FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (pixelRows[0]) Object.assign(storeInfoData, pixelRows[0]);
+      } catch { /* column not yet added */ }
+    }
+
     // Announcement bar
     let announcementBar: any = null;
     try {
       const [rows] = await pool.query(
-        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive
+        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive, scroll_speed as scrollSpeed
          FROM store_announcement_bar WHERE tenant_id = ? AND is_active = 1`,
         [tenantId]
       ) as any;
@@ -804,11 +975,62 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
       if (psRows.length > 0) platformBgColor = psRows[0].setting_value;
     } catch { /* table may not exist */ }
 
+    // Active custom HTML sections
+    let customSections: any[] = [];
+    try {
+      const [csRows] = await pool.query(
+        'SELECT id, name, slug, html_content as htmlContent FROM store_custom_sections WHERE tenant_id = ? AND is_active = 1 ORDER BY created_at ASC',
+        [tenantId]
+      ) as any;
+      customSections = csRows || [];
+    } catch { /* table may not exist yet */ }
+
+    // Cart settings (public — needed for progress bar and delivery fee in landing page)
+    let cartMinPurchase = 0;
+    let cartDeliveryFee = 0;
+    try {
+      const [cartRows] = await pool.query(
+        'SELECT cart_min_purchase as cartMinPurchase FROM store_info WHERE tenant_id = ?',
+        [tenantId]
+      ) as any;
+      if (cartRows.length > 0 && cartRows[0].cartMinPurchase != null) {
+        cartMinPurchase = Number(cartRows[0].cartMinPurchase);
+      }
+    } catch { /* column not yet added */ }
+    try {
+      const [feeRows] = await pool.query(
+        'SELECT cart_delivery_fee as cartDeliveryFee FROM store_info WHERE tenant_id = ?',
+        [tenantId]
+      ) as any;
+      if (feeRows.length > 0 && feeRows[0].cartDeliveryFee != null) {
+        cartDeliveryFee = Number(feeRows[0].cartDeliveryFee);
+      }
+    } catch { /* column not yet added */ }
+
+    // Estado abierto/cerrado de la tienda (calculado del horario, para el Tema 2)
+    let openState: 'open' | 'closed' = 'open';
+    let nextOpenLabel: string | null = null;
+    try {
+      const [bhRows] = await pool.query(
+        'SELECT business_hours FROM store_info WHERE tenant_id = ? LIMIT 1',
+        [tenantId]
+      ) as any;
+      const bh = (bhRows as any[])[0]?.business_hours ?? null;
+      openState = computeOpenState(bh, 'open');
+      if (openState === 'closed') nextOpenLabel = computeNextOpen(bh);
+    } catch { /* business_hours may not exist yet */ }
+
+    // Paleta de tema generada por IA (si el comerciante la guardó)
+    const themeColors = await readThemeColors(tenantId);
+
     res.json({
       success: true,
       data: {
         banners,
         categories,
+        openState,
+        nextOpenLabel,
+        themeColors,
         featuredProducts: (featured as any[]).map(parseImages),
         trendingProducts: (trending as any[]).map(parseImages),
         newLaunches: (newLaunches as any[]).map(parseImages),
@@ -819,6 +1041,10 @@ router.get('/store-config/:storeSlug', async (req: Request, res: Response) => {
           : null,
         bgColor: tenantBgColor,
         platformBgColor,
+        publicMenuEnabled,
+        customSections,
+        cartMinPurchase,
+        cartDeliveryFee,
       },
     });
   } catch (error) {
@@ -897,8 +1123,228 @@ router.get('/payment-config/:storeSlug', async (req: Request, res: Response) => 
   }
 });
 
+// GET /api/storefront/card-config — Authenticated: tarjeta de presentación del comercio propio
+router.get('/card-config', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const [rows] = await pool.query(
+      `SELECT card_cover_url AS coverUrl, card_description AS cardDescription, business_hours AS businessHours, store_theme AS theme
+       FROM store_info WHERE tenant_id = ? LIMIT 1`,
+      [tenantId]
+    ) as any;
+    const row = (rows as any[])[0] || {};
+    let businessHours = row.businessHours ?? null;
+    if (typeof businessHours === 'string') {
+      try { businessHours = JSON.parse(businessHours); } catch { businessHours = null; }
+    }
+    res.json({
+      success: true,
+      data: {
+        coverUrl: row.coverUrl ?? null,
+        cardDescription: row.cardDescription ?? null,
+        businessHours: businessHours ?? null,
+        theme: ['theme2', 'theme3', 'theme4'].includes(row.theme) ? row.theme : 'theme1',
+      },
+    });
+  } catch (error) {
+    console.error('Get card-config error:', error);
+    res.status(500).json({ success: false, error: 'Error al obtener la configuración de la tarjeta' });
+  }
+});
+
+// PUT /api/storefront/card-config — Authenticated: actualizar portada, descripción y horario
+router.put(
+  '/card-config',
+  authenticate,
+  [
+    body('coverUrl').optional({ nullable: true }).isString().isLength({ max: 500 }),
+    body('cardDescription').optional({ nullable: true }).isString().isLength({ max: 300 }),
+    body('businessHours').optional({ nullable: true }),
+    body('theme').optional().isIn(['theme1', 'theme2', 'theme3', 'theme4']).withMessage('Tema inválido'),
+    validateRequest,
+  ],
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).user.tenantId;
+      const { coverUrl, cardDescription, businessHours, theme } = req.body;
+
+      const fields: string[] = [];
+      const values: any[] = [];
+      if (coverUrl !== undefined)        { fields.push('card_cover_url = ?');  values.push(coverUrl || null); }
+      if (cardDescription !== undefined) { fields.push('card_description = ?'); values.push(cardDescription || null); }
+      if (businessHours !== undefined)   { fields.push('business_hours = ?');  values.push(businessHours ? JSON.stringify(businessHours) : null); }
+      if (theme !== undefined)           { fields.push('store_theme = ?');     values.push(['theme2', 'theme3', 'theme4'].includes(theme) ? theme : 'theme1'); }
+
+      if (fields.length === 0) {
+        res.json({ success: true, message: 'Sin cambios' });
+        return;
+      }
+
+      const [result] = await pool.query(
+        `UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`,
+        [...values, tenantId]
+      ) as any;
+
+      if (result.affectedRows === 0) {
+        // affectedRows = 0 puede significar (a) no existe la fila, o (b) la fila
+        // existe pero los valores no cambiaron. Solo creamos si realmente no existe;
+        // si existe, no hacemos nada (evita un INSERT que falla por clave duplicada).
+        const [existing] = await pool.query(
+          'SELECT 1 FROM store_info WHERE tenant_id = ? LIMIT 1',
+          [tenantId]
+        ) as any;
+        if ((existing as any[]).length === 0) {
+          const [tRows] = await pool.query('SELECT name FROM tenants WHERE id = ? LIMIT 1', [tenantId]) as any;
+          const name = (tRows as any[])[0]?.name || 'Mi tienda';
+          await pool.query('INSERT INTO store_info (tenant_id, name) VALUES (?, ?)', [tenantId, name]);
+          await pool.query(`UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`, [...values, tenantId]);
+        }
+      }
+
+      res.json({ success: true, message: 'Tarjeta actualizada' });
+    } catch (error) {
+      console.error('Update card-config error:', error);
+      res.status(500).json({ success: false, error: 'Error al actualizar la tarjeta' });
+    }
+  }
+);
+
+// ── Secciones HTML personalizadas ───────────────────────────────────────────
+function slugify(text: string): string {
+  return String(text || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 200) || 'seccion';
+}
+
+async function uniqueSlug(tenantId: string, base: string, excludeId?: number): Promise<string> {
+  let slug = base; let n = 1;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const [rows] = await pool.query(
+      `SELECT id FROM store_custom_sections WHERE tenant_id = ? AND slug = ?${excludeId ? ' AND id <> ?' : ''} LIMIT 1`,
+      excludeId ? [tenantId, slug, excludeId] : [tenantId, slug]
+    ) as any;
+    if ((rows as any[]).length === 0) return slug;
+    n += 1; slug = `${base}-${n}`;
+  }
+}
+
+// GET /api/storefront/custom-sections — Authenticated: lista del comercio
+router.get('/custom-sections', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const [rows] = await pool.query(
+      'SELECT id, name, slug, is_active AS isActive FROM store_custom_sections WHERE tenant_id = ? ORDER BY created_at DESC',
+      [tenantId]
+    ) as any;
+    res.json({ success: true, data: (rows as any[]).map(r => ({ ...r, isActive: !!r.isActive })) });
+  } catch (error) {
+    console.error('List custom sections error:', error);
+    res.status(500).json({ success: false, error: 'Error al listar secciones' });
+  }
+});
+
+// POST /api/storefront/custom-sections — Authenticated: crear
+router.post('/custom-sections', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const { name, htmlContent, isActive } = req.body || {};
+    if (!name || !String(name).trim()) { res.status(400).json({ success: false, error: 'El nombre es requerido' }); return; }
+    if (!htmlContent || !String(htmlContent).trim()) { res.status(400).json({ success: false, error: 'El contenido HTML es requerido' }); return; }
+    const slug = await uniqueSlug(tenantId, slugify(name));
+    const [result] = await pool.query(
+      'INSERT INTO store_custom_sections (tenant_id, name, slug, html_content, is_active) VALUES (?, ?, ?, ?, ?)',
+      [tenantId, String(name).slice(0, 255), slug, String(htmlContent), isActive ? 1 : 0]
+    ) as any;
+    res.json({ success: true, data: { id: result.insertId, name, slug, htmlContent, isActive: !!isActive }, message: 'Sección creada' });
+  } catch (error) {
+    console.error('Create custom section error:', error);
+    res.status(500).json({ success: false, error: 'Error al crear la sección' });
+  }
+});
+
+// PUT /api/storefront/custom-sections/:id — Authenticated: actualizar
+router.put('/custom-sections/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const id = Number(req.params.id);
+    const { name, htmlContent, isActive } = req.body || {};
+    const [own] = await pool.query('SELECT id FROM store_custom_sections WHERE id = ? AND tenant_id = ? LIMIT 1', [id, tenantId]) as any;
+    if ((own as any[]).length === 0) { res.status(404).json({ success: false, error: 'Sección no encontrada' }); return; }
+    await pool.query(
+      'UPDATE store_custom_sections SET name = ?, html_content = ?, is_active = ? WHERE id = ? AND tenant_id = ?',
+      [String(name).slice(0, 255), String(htmlContent), isActive ? 1 : 0, id, tenantId]
+    );
+    res.json({ success: true, message: 'Sección actualizada' });
+  } catch (error) {
+    console.error('Update custom section error:', error);
+    res.status(500).json({ success: false, error: 'Error al actualizar la sección' });
+  }
+});
+
+// POST /api/storefront/custom-sections/:id/toggle — Authenticated: activar/desactivar
+router.post('/custom-sections/:id/toggle', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const id = Number(req.params.id);
+    const isActive = !!req.body?.isActive;
+    const [result] = await pool.query(
+      'UPDATE store_custom_sections SET is_active = ? WHERE id = ? AND tenant_id = ?',
+      [isActive ? 1 : 0, id, tenantId]
+    ) as any;
+    if (result.affectedRows === 0) { res.status(404).json({ success: false, error: 'Sección no encontrada' }); return; }
+    res.json({ success: true, message: isActive ? 'Sección activada' : 'Sección desactivada' });
+  } catch (error) {
+    console.error('Toggle custom section error:', error);
+    res.status(500).json({ success: false, error: 'Error al cambiar el estado' });
+  }
+});
+
+// DELETE /api/storefront/custom-sections/:id — Authenticated: eliminar
+router.delete('/custom-sections/:id', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const id = Number(req.params.id);
+    const [result] = await pool.query(
+      'DELETE FROM store_custom_sections WHERE id = ? AND tenant_id = ?',
+      [id, tenantId]
+    ) as any;
+    if (result.affectedRows === 0) { res.status(404).json({ success: false, error: 'Sección no encontrada' }); return; }
+    res.json({ success: true, message: 'Sección eliminada' });
+  } catch (error) {
+    console.error('Delete custom section error:', error);
+    res.status(500).json({ success: false, error: 'Error al eliminar la sección' });
+  }
+});
+
+// GET /api/storefront/custom-sections/public/:storeSlug/:sectionSlug — Público: ver sección por link
+router.get('/custom-sections/public/:storeSlug/:sectionSlug', async (req: Request, res: Response) => {
+  try {
+    const { storeSlug, sectionSlug } = req.params;
+    const [tenants] = await pool.query(
+      "SELECT id, name FROM tenants WHERE status = 'activo' AND slug = ? LIMIT 1",
+      [storeSlug]
+    ) as any;
+    if (!tenants || (tenants as any[]).length === 0) { res.status(404).json({ success: false, error: 'Tienda no encontrada' }); return; }
+    const tenant = (tenants as any[])[0];
+    const [rows] = await pool.query(
+      'SELECT id, name, slug, html_content AS htmlContent, is_active AS isActive FROM store_custom_sections WHERE tenant_id = ? AND slug = ? LIMIT 1',
+      [tenant.id, sectionSlug]
+    ) as any;
+    if ((rows as any[]).length === 0) { res.status(404).json({ success: false, error: 'Sección no encontrada' }); return; }
+    const section = (rows as any[])[0];
+    res.json({ success: true, data: { ...section, isActive: !!section.isActive, storeName: tenant.name } });
+  } catch (error) {
+    console.error('Public custom section error:', error);
+    res.status(500).json({ success: false, error: 'Error al obtener la sección' });
+  }
+});
+
 // GET /api/storefront/customization — Authenticated: config para admin
-router.get('/customization', authenticate, async (req: Request, res: Response) => {
+router.get('/customization', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
 
@@ -970,6 +1416,69 @@ router.get('/customization', authenticate, async (req: Request, res: Response) =
       } catch { /* ignore */ }
     }
 
+    // Contact page fields (separate — columns may not exist yet)
+    if (storeInfoRow) {
+      try {
+        const [contactRows] = await pool.query(
+          `SELECT contact_page_enabled as contactPageEnabled,
+                  contact_page_title as contactPageTitle,
+                  contact_page_description as contactPageDescription,
+                  contact_page_image as contactPageImage,
+                  contact_page_products as contactPageProducts,
+                  contact_page_links as contactPageLinks
+           FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (contactRows[0]) Object.assign(storeInfoRow, contactRows[0]);
+      } catch { /* columns not migrated yet */ }
+      try {
+        const [themeRows] = await pool.query(
+          `SELECT contact_page_link_theme as contactPageLinkTheme FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (themeRows[0]) Object.assign(storeInfoRow, themeRows[0]);
+      } catch { /* column not yet added */ }
+
+      // Age gate fields
+      try {
+        const [ageGateRows] = await pool.query(
+          `SELECT age_gate_enabled as ageGateEnabled, age_gate_description as ageGateDescription FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (ageGateRows[0]) Object.assign(storeInfoRow, ageGateRows[0]);
+      } catch { /* columns not yet added */ }
+      // Meta Pixel
+      try {
+        const [pixelRows] = await pool.query(
+          `SELECT meta_pixel_id as metaPixelId FROM store_info WHERE tenant_id = ?`,
+          [tenantId]
+        ) as any;
+        if (pixelRows[0]) Object.assign(storeInfoRow, pixelRows[0]);
+      } catch { /* column not yet added */ }
+    }
+
+    // Cart settings
+    let cartMinPurchase = 0;
+    let cartDeliveryFee = 0;
+    try {
+      const [cartRows] = await pool.query(
+        'SELECT cart_min_purchase as cartMinPurchase FROM store_info WHERE tenant_id = ?',
+        [tenantId]
+      ) as any;
+      if (cartRows.length > 0 && cartRows[0].cartMinPurchase != null) {
+        cartMinPurchase = Number(cartRows[0].cartMinPurchase);
+      }
+    } catch { /* column not yet added */ }
+    try {
+      const [feeRows] = await pool.query(
+        'SELECT cart_delivery_fee as cartDeliveryFee FROM store_info WHERE tenant_id = ?',
+        [tenantId]
+      ) as any;
+      if (feeRows.length > 0 && feeRows[0].cartDeliveryFee != null) {
+        cartDeliveryFee = Number(feeRows[0].cartDeliveryFee);
+      }
+    } catch { /* column not yet added */ }
+
     // Published products for featured selection (stock filter removed so admins can feature any published product)
     const [publishedProducts] = await pool.query(
       `SELECT id, name, image_url as imageUrl, sale_price as salePrice, category
@@ -982,7 +1491,7 @@ router.get('/customization', authenticate, async (req: Request, res: Response) =
     let announcementBar: any = null;
     try {
       const [abRows] = await pool.query(
-        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive
+        `SELECT text, link_url as linkUrl, bg_color as bgColor, text_color as textColor, is_active as isActive, scroll_speed as scrollSpeed
          FROM store_announcement_bar WHERE tenant_id = ?`,
         [tenantId]
       ) as any;
@@ -1027,6 +1536,8 @@ router.get('/customization', authenticate, async (req: Request, res: Response) =
         publishedProducts,
         announcementBar,
         drops,
+        cartMinPurchase,
+        cartDeliveryFee,
       },
     });
   } catch (error) {
@@ -1036,7 +1547,7 @@ router.get('/customization', authenticate, async (req: Request, res: Response) =
 });
 
 // PUT /api/storefront/banners — Create/update banner
-router.put('/banners', authenticate, async (req: Request, res: Response) => {
+router.put('/banners', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     // Superadmin can pass tenantId in body; regular users use their own
@@ -1088,7 +1599,7 @@ router.put('/banners', authenticate, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/storefront/banners/:id — Delete banner
-router.delete('/banners/:id', authenticate, async (req: Request, res: Response) => {
+router.delete('/banners/:id', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const tenantId = user.role === 'superadmin' ? (req.body.tenantId || user.tenantId) : user.tenantId;
@@ -1112,7 +1623,7 @@ router.delete('/banners/:id', authenticate, async (req: Request, res: Response) 
 });
 
 // PUT /api/storefront/categories/:id/image — Update category image
-router.put('/categories/:id/image', authenticate, async (req: Request, res: Response) => {
+router.put('/categories/:id/image', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const { id } = req.params;
@@ -1136,7 +1647,7 @@ router.put('/categories/:id/image', authenticate, async (req: Request, res: Resp
 });
 
 // PUT /api/storefront/categories/:id/visibility — Toggle hidden_in_store
-router.put('/categories/:id/visibility', authenticate, async (req: Request, res: Response) => {
+router.put('/categories/:id/visibility', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const { id } = req.params;
@@ -1155,7 +1666,7 @@ router.put('/categories/:id/visibility', authenticate, async (req: Request, res:
 });
 
 // POST /api/storefront/featured-products — Add featured product
-router.post('/featured-products', authenticate, async (req: Request, res: Response) => {
+router.post('/featured-products', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const { productId } = req.body;
@@ -1198,7 +1709,7 @@ router.post('/featured-products', authenticate, async (req: Request, res: Respon
 });
 
 // DELETE /api/storefront/featured-products/:productId — Remove featured product
-router.delete('/featured-products/:productId', authenticate, async (req: Request, res: Response) => {
+router.delete('/featured-products/:productId', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const { productId } = req.params;
@@ -1220,15 +1731,76 @@ router.delete('/featured-products/:productId', authenticate, async (req: Request
   }
 });
 
+// POST /api/storefront/theme/generate — Genera paleta desde el logo con IA
+router.post('/theme/generate', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    let { imageBase64, mimeType, logoUrl } = req.body as { imageBase64?: string; mimeType?: string; logoUrl?: string };
+
+    if (!imageBase64 && logoUrl) {
+      const r = await fetch(logoUrl);
+      if (!r.ok) { res.status(400).json({ success: false, error: 'No se pudo descargar el logo' }); return; }
+      mimeType = r.headers.get('content-type') || 'image/png';
+      const buf = Buffer.from(await r.arrayBuffer());
+      imageBase64 = buf.toString('base64');
+    }
+    if (!imageBase64) { res.status(400).json({ success: false, error: 'Falta el logo (imageBase64 o logoUrl)' }); return; }
+
+    const m = /^data:(.+?);base64,(.*)$/.exec(imageBase64);
+    if (m) { mimeType = mimeType || m[1]; imageBase64 = m[2]; }
+    mimeType = mimeType || 'image/png';
+
+    const result = await themePaletteService.generateFromImage(imageBase64, mimeType);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/storefront/theme/colors — Paleta guardada del tenant actual (panel)
+router.get('/theme/colors', authenticate, async (req: Request, res: Response) => {
+  const tenantId = (req as any).user.tenantId;
+  const palette = await readThemeColors(tenantId);
+  res.json({ success: true, data: palette });
+});
+
+// PUT /api/storefront/theme/colors — Guarda la paleta del tenant actual
+router.put('/theme/colors', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const palette = req.body?.palette ?? req.body;
+    if (!palette || !palette.colors) { res.status(400).json({ success: false, error: 'Paleta inválida' }); return; }
+    const value = JSON.stringify(palette);
+    await pool.query(
+      `INSERT INTO platform_settings (setting_key, setting_value) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE setting_value = ?`,
+      [THEME_COLORS_KEY(tenantId), value, value]
+    );
+    res.json({ success: true, message: 'Tema guardado' });
+  } catch {
+    res.status(500).json({ success: false, error: 'Error al guardar el tema' });
+  }
+});
+
+// DELETE /api/storefront/theme/colors — Restablece el tema (vuelve al diseño base)
+router.delete('/theme/colors', authenticate, async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    await pool.query('DELETE FROM platform_settings WHERE setting_key = ?', [THEME_COLORS_KEY(tenantId)]);
+    res.json({ success: true, message: 'Tema restablecido' });
+  } catch {
+    res.status(500).json({ success: false, error: 'Error al restablecer' });
+  }
+});
+
 // PUT /api/storefront/store-extended-info — Update extended store info
-router.put('/store-extended-info', authenticate, async (req: Request, res: Response) => {
+router.put('/store-extended-info', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const {
       logoUrl, schedule, locationMapUrl, termsContent, privacyContent, shippingTerms, paymentMethods,
       socialInstagram, socialFacebook, socialTiktok, socialWhatsapp,
       department, municipality, productCardStyle, allowContraentrega,
-      showInfoModule, infoModuleDescription,
+      showInfoModule, infoModuleDescription, metaPixelId,
     } = req.body;
 
     const allowCod = allowContraentrega === false ? 0 : 1;
@@ -1236,35 +1808,35 @@ router.put('/store-extended-info', authenticate, async (req: Request, res: Respo
 
     let result: any;
     try {
-      // Full update with all columns
       [result] = await pool.query(
         `UPDATE store_info SET
           logo_url = ?, schedule = ?, location_map_url = ?, terms_url = ?, privacy_url = ?, shipping_terms = ?,
           payment_methods = ?, social_instagram = ?, social_facebook = ?,
           social_tiktok = ?, social_whatsapp = ?,
           department = ?, municipality = ?, product_card_style = ?, allow_contraentrega = ?,
-          show_info_module = ?, info_module_description = ?
+          show_info_module = ?, info_module_description = ?, meta_pixel_id = ?
          WHERE tenant_id = ?`,
         [
           logoUrl || null, schedule || null, locationMapUrl || null, termsContent || null, privacyContent || null, shippingTerms || null,
           paymentMethods || null, socialInstagram || null, socialFacebook || null,
           socialTiktok || null, socialWhatsapp || null,
           department || null, municipality || null, productCardStyle || 'style1', allowCod,
-          infoModule, infoModuleDescription || null, tenantId,
+          infoModule, infoModuleDescription || null, metaPixelId || null,
+          tenantId,
         ]
       ) as any;
     } catch {
-      // Fallback: some columns may not exist in running DB yet
+      // Fallback: some columns may not exist
       try {
         [result] = await pool.query(
           `UPDATE store_info SET
-            logo_url = ?, schedule = ?, location_map_url = ?, terms_url = ?, privacy_url = ?,
+            logo_url = ?, schedule = ?, location_map_url = ?, terms_url = ?, privacy_url = ?, shipping_terms = ?,
             payment_methods = ?, social_instagram = ?, social_facebook = ?,
             social_tiktok = ?, social_whatsapp = ?,
             department = ?, municipality = ?
            WHERE tenant_id = ?`,
           [
-            logoUrl || null, schedule || null, locationMapUrl || null, termsContent || null, privacyContent || null,
+            logoUrl || null, schedule || null, locationMapUrl || null, termsContent || null, privacyContent || null, shippingTerms || null,
             paymentMethods || null, socialInstagram || null, socialFacebook || null,
             socialTiktok || null, socialWhatsapp || null,
             department || null, municipality || null, tenantId,
@@ -1299,14 +1871,144 @@ router.put('/store-extended-info', authenticate, async (req: Request, res: Respo
 });
 
 // =============================================
+// PUT /api/storefront/contact-page — Update contact page fields only
+// =============================================
+router.put('/contact-page', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const { contactPageEnabled, contactPageTitle, contactPageDescription, contactPageImage, contactPageProducts, contactPageLinks, contactPageLinkTheme, socialInstagram, socialFacebook, socialTiktok, socialWhatsapp, socialX, socialSnapchat } = req.body;
+
+    const values = [
+      contactPageEnabled ? 1 : 0,
+      contactPageTitle || null,
+      contactPageDescription || null,
+      contactPageImage || null,
+      contactPageProducts ? JSON.stringify(contactPageProducts) : null,
+      contactPageLinks ? JSON.stringify(contactPageLinks) : null,
+      contactPageLinkTheme || 'theme1',
+      socialInstagram || null,
+      socialFacebook || null,
+      socialTiktok || null,
+      socialWhatsapp || null,
+      tenantId,
+    ];
+
+    try {
+      await pool.query(
+        `UPDATE store_info SET
+          contact_page_enabled = ?,
+          contact_page_title = ?,
+          contact_page_description = ?,
+          contact_page_image = ?,
+          contact_page_products = ?,
+          contact_page_links = ?,
+          contact_page_link_theme = ?,
+          social_instagram = ?,
+          social_facebook = ?,
+          social_tiktok = ?,
+          social_whatsapp = ?
+         WHERE tenant_id = ?`,
+        values
+      );
+    } catch {
+      // Columns don't exist yet — add each one individually (IF NOT EXISTS not supported in MySQL < 8.0.3)
+      const alterCols = [
+        `ALTER TABLE store_info ADD COLUMN contact_page_enabled    TINYINT(1)   NOT NULL DEFAULT 0`,
+        `ALTER TABLE store_info ADD COLUMN contact_page_title      VARCHAR(255)          DEFAULT NULL`,
+        `ALTER TABLE store_info ADD COLUMN contact_page_description TEXT                 DEFAULT NULL`,
+        `ALTER TABLE store_info ADD COLUMN contact_page_image      VARCHAR(500)          DEFAULT NULL`,
+        `ALTER TABLE store_info ADD COLUMN contact_page_products   TEXT                  DEFAULT NULL`,
+        `ALTER TABLE store_info ADD COLUMN contact_page_links      TEXT                  DEFAULT NULL`,
+        `ALTER TABLE store_info ADD COLUMN contact_page_link_theme VARCHAR(20)           DEFAULT 'theme1'`,
+      ];
+      for (const sql of alterCols) {
+        try { await pool.query(sql); } catch (e: any) { if (e.errno !== 1060) throw e; }
+      }
+      await pool.query(
+        `UPDATE store_info SET
+          contact_page_enabled = ?,
+          contact_page_title = ?,
+          contact_page_description = ?,
+          contact_page_image = ?,
+          contact_page_products = ?,
+          contact_page_links = ?,
+          contact_page_link_theme = ?,
+          social_instagram = ?,
+          social_facebook = ?,
+          social_tiktok = ?,
+          social_whatsapp = ?
+         WHERE tenant_id = ?`,
+        values
+      );
+    }
+
+    // X and Snapchat — newer columns added separately
+    if (socialX !== undefined || socialSnapchat !== undefined) {
+      for (const col of ['social_x VARCHAR(500)', 'social_snapchat VARCHAR(500)']) {
+        try { await pool.query(`ALTER TABLE store_info ADD COLUMN ${col} DEFAULT NULL`); } catch (e: any) { if (e.errno !== 1060) { /* ignore */ } }
+      }
+      try {
+        await pool.query(
+          `UPDATE store_info SET social_x = ?, social_snapchat = ? WHERE tenant_id = ?`,
+          [socialX || null, socialSnapchat || null, tenantId]
+        );
+      } catch { /* ignore */ }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Contact page update error:', error);
+    res.status(500).json({ success: false, error: 'Error al guardar página de contacto' });
+  }
+});
+
+// =============================================
+// AGE GATE
+// =============================================
+
+// PUT /api/storefront/age-gate — Update age gate verification settings only
+router.put('/age-gate', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const { ageGateEnabled, ageGateDescription } = req.body;
+
+    try {
+      await pool.query(
+        `UPDATE store_info SET age_gate_enabled = ?, age_gate_description = ? WHERE tenant_id = ?`,
+        [ageGateEnabled ? 1 : 0, ageGateDescription || null, tenantId]
+      );
+    } catch {
+      // Columns don't exist yet — auto-add them then retry
+      const alterCols = [
+        `ALTER TABLE store_info ADD COLUMN age_gate_enabled     TINYINT(1) NOT NULL DEFAULT 0`,
+        `ALTER TABLE store_info ADD COLUMN age_gate_description TEXT DEFAULT NULL`,
+      ];
+      for (const sql of alterCols) {
+        try { await pool.query(sql); } catch (e: any) { if (e.errno !== 1060) throw e; }
+      }
+      await pool.query(
+        `UPDATE store_info SET age_gate_enabled = ?, age_gate_description = ? WHERE tenant_id = ?`,
+        [ageGateEnabled ? 1 : 0, ageGateDescription || null, tenantId]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Age gate update error:', error);
+    res.status(500).json({ success: false, error: 'Error al guardar verificación de edad' });
+  }
+});
+
+// =============================================
 // ANNOUNCEMENT BAR
 // =============================================
 
 // PUT /api/storefront/announcement-bar — Update announcement bar
-router.put('/announcement-bar', authenticate, async (req: Request, res: Response) => {
+router.put('/announcement-bar', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
-    const { text, linkUrl, bgColor, textColor, isActive } = req.body;
+    const { text, linkUrl, bgColor, textColor, isActive, scrollSpeed } = req.body;
+    const speed = Math.min(5, Math.max(1, Number(scrollSpeed) || 3));
 
     // Upsert: try update first, then insert
     const [existing] = await pool.query(
@@ -1315,13 +2017,13 @@ router.put('/announcement-bar', authenticate, async (req: Request, res: Response
 
     if (existing.length > 0) {
       await pool.query(
-        `UPDATE store_announcement_bar SET text = ?, link_url = ?, bg_color = ?, text_color = ?, is_active = ? WHERE tenant_id = ?`,
-        [text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0, tenantId]
+        `UPDATE store_announcement_bar SET text = ?, link_url = ?, bg_color = ?, text_color = ?, is_active = ?, scroll_speed = ? WHERE tenant_id = ?`,
+        [text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0, speed, tenantId]
       );
     } else {
       await pool.query(
-        `INSERT INTO store_announcement_bar (tenant_id, text, link_url, bg_color, text_color, is_active) VALUES (?, ?, ?, ?, ?, ?)`,
-        [tenantId, text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0]
+        `INSERT INTO store_announcement_bar (tenant_id, text, link_url, bg_color, text_color, is_active, scroll_speed) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [tenantId, text, linkUrl || null, bgColor || '#f59e0b', textColor || '#000000', isActive ? 1 : 0, speed]
       );
     }
 
@@ -1337,7 +2039,7 @@ router.put('/announcement-bar', authenticate, async (req: Request, res: Response
 // =============================================
 
 // GET /api/storefront/drops — List drops (superadmin: all; merchant: own)
-router.get('/drops', authenticate, async (req: Request, res: Response) => {
+router.get('/drops', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const isSuperadmin = user.role === 'superadmin';
@@ -1370,7 +2072,7 @@ router.get('/drops', authenticate, async (req: Request, res: Response) => {
 });
 
 // POST /api/storefront/drops — Create drop
-router.post('/drops', authenticate, async (req: Request, res: Response) => {
+router.post('/drops', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const tenantId = user.role === 'superadmin' ? null : user.tenantId;
@@ -1390,7 +2092,7 @@ router.post('/drops', authenticate, async (req: Request, res: Response) => {
 });
 
 // PUT /api/storefront/drops/:id — Update drop
-router.put('/drops/:id', authenticate, async (req: Request, res: Response) => {
+router.put('/drops/:id', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const isSuperadmin = user.role === 'superadmin';
@@ -1419,7 +2121,7 @@ router.put('/drops/:id', authenticate, async (req: Request, res: Response) => {
 });
 
 // DELETE /api/storefront/drops/:id — Delete drop
-router.delete('/drops/:id', authenticate, async (req: Request, res: Response) => {
+router.delete('/drops/:id', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     if (user.role === 'superadmin') {
@@ -1435,7 +2137,7 @@ router.delete('/drops/:id', authenticate, async (req: Request, res: Response) =>
 });
 
 // POST /api/storefront/drops/:id/products — Add product to drop
-router.post('/drops/:id/products', authenticate, async (req: Request, res: Response) => {
+router.post('/drops/:id/products', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const dropId = req.params.id;
@@ -1459,7 +2161,7 @@ router.post('/drops/:id/products', authenticate, async (req: Request, res: Respo
 });
 
 // DELETE /api/storefront/drops/:id/products/:productId — Remove product from drop
-router.delete('/drops/:id/products/:productId', authenticate, async (req: Request, res: Response) => {
+router.delete('/drops/:id/products/:productId', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const { id: dropId, productId } = req.params;
@@ -1512,11 +2214,63 @@ router.get('/drop/:dropId', async (req: Request, res: Response) => {
 });
 
 // =============================================
+// CART SETTINGS: Mínimo de compra para domicilio con flota
+// =============================================
+
+// PUT /api/storefront/cart-settings — Authenticated: save cart_min_purchase
+router.put('/cart-settings', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+
+    if (!tenantId) {
+      res.status(400).json({ success: false, error: 'Esta configuración aplica solo a tiendas de comerciantes' });
+      return;
+    }
+
+    const { cartMinPurchase, cartDeliveryFee } = req.body;
+    const safeMin = Math.max(0, parseInt(cartMinPurchase) || 0);
+    const safeFee = Math.max(0, parseInt(cartDeliveryFee) || 0);
+
+    // Ensure columns exist (migration for existing DBs)
+    try {
+      await pool.query(
+        `ALTER TABLE store_info ADD COLUMN cart_min_purchase INT NOT NULL DEFAULT 0 COMMENT 'Monto mínimo COP para domicilio con flota'`
+      );
+    } catch { /* column already exists — ignore */ }
+    try {
+      await pool.query(
+        `ALTER TABLE store_info ADD COLUMN cart_delivery_fee INT NOT NULL DEFAULT 0 COMMENT 'Tarifa de domicilio COP cuando no alcanza el mínimo'`
+      );
+    } catch { /* column already exists — ignore */ }
+
+    // Try UPDATE first (row already exists)
+    const [updateResult] = await pool.query(
+      `UPDATE store_info SET cart_min_purchase = ?, cart_delivery_fee = ? WHERE tenant_id = ?`,
+      [safeMin, safeFee, tenantId]
+    ) as any;
+
+    // If no row existed yet, create it pulling the name from tenants
+    if (updateResult.affectedRows === 0) {
+      await pool.query(
+        `INSERT INTO store_info (tenant_id, name, cart_min_purchase, cart_delivery_fee)
+         SELECT ?, t.name, ?, ? FROM tenants t WHERE t.id = ?`,
+        [tenantId, safeMin, safeFee, tenantId]
+      );
+    }
+
+    res.json({ success: true, data: { cartMinPurchase: safeMin, cartDeliveryFee: safeFee } });
+  } catch (error) {
+    console.error('Update cart settings error:', error);
+    res.status(500).json({ success: false, error: 'Error al guardar configuración del carrito' });
+  }
+});
+
+// =============================================
 // ORDER BUMP / CROSS-SELL: Configuración y productos sugeridos
 // =============================================
 
 // GET /api/storefront/order-bump-config — Authenticated: get merchant config
-router.get('/order-bump-config', authenticate, async (req: Request, res: Response) => {
+router.get('/order-bump-config', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
 
@@ -1570,7 +2324,7 @@ router.get('/order-bump-config', authenticate, async (req: Request, res: Respons
 });
 
 // PUT /api/storefront/order-bump-config — Authenticated: save config
-router.put('/order-bump-config', authenticate, async (req: Request, res: Response) => {
+router.put('/order-bump-config', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user.tenantId;
     const { isEnabled, mode, title, maxItems, productIds } = req.body;
@@ -1752,6 +2506,7 @@ router.get('/order-bump', async (req: Request, res: Response) => {
 router.put(
   '/new-launch/:productId',
   authenticate,
+  requirePlan('empresarial'),
   async (req: Request, res: Response) => {
     try {
       const tenantId = (req as any).user.tenantId;
@@ -1986,4 +2741,302 @@ router.put('/platform-featured', authenticate, async (req: Request, res: Respons
   }
 });
 
-export const storefrontRoutes = router;
+// =============================================
+// GET /api/storefront/links/:slug — Public: link-in-bio page data
+// =============================================
+router.get('/links/:slug', async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params;
+
+    const [tenants] = await pool.query(
+      'SELECT id, reservations_enabled FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
+      ['activo', slug]
+    ) as any;
+
+    if (!tenants || tenants.length === 0) {
+      res.status(404).json({ success: false, error: 'Tienda no encontrada' });
+      return;
+    }
+
+    const tenantId = tenants[0].id;
+    const reservationsEnabled = !!tenants[0].reservations_enabled;
+
+    // Base store info
+    const [siRows] = await pool.query(
+      `SELECT si.name, si.email, si.phone,
+              si.logo_url as logoUrl,
+              si.social_instagram as socialInstagram,
+              si.social_facebook as socialFacebook,
+              si.social_tiktok as socialTiktok,
+              si.social_whatsapp as socialWhatsapp
+       FROM store_info si WHERE si.tenant_id = ? LIMIT 1`,
+      [tenantId]
+    ) as any;
+
+    const storeInfo = (siRows as any[])[0] || null;
+
+    // Contact page fields (may not exist yet) — query core columns first, then newer ones separately
+    let contactData: any = {};
+    try {
+      const [cRows] = await pool.query(
+        `SELECT contact_page_enabled as contactPageEnabled,
+                contact_page_title as contactPageTitle,
+                contact_page_description as contactPageDescription,
+                contact_page_image as contactPageImage,
+                contact_page_links as contactPageLinks,
+                contact_page_products as contactPageProducts
+         FROM store_info WHERE tenant_id = ? LIMIT 1`,
+        [tenantId]
+      ) as any;
+      contactData = (cRows as any[])[0] || {};
+    } catch { /* columns not migrated */ }
+    // Fetch newer columns separately so a missing column doesn't break core data
+    try {
+      const [themeRows] = await pool.query(
+        `SELECT contact_page_link_theme as contactPageLinkTheme FROM store_info WHERE tenant_id = ? LIMIT 1`,
+        [tenantId]
+      ) as any;
+      if ((themeRows as any[])[0]) contactData.contactPageLinkTheme = (themeRows as any[])[0].contactPageLinkTheme;
+    } catch { /* column not yet added */ }
+    // X / Snapchat socials (newer columns)
+    try {
+      const [xRows] = await pool.query(
+        `SELECT social_x as socialX, social_snapchat as socialSnapchat FROM store_info WHERE tenant_id = ? LIMIT 1`,
+        [tenantId]
+      ) as any;
+      if ((xRows as any[])[0]) {
+        contactData.socialX = (xRows as any[])[0].socialX;
+        contactData.socialSnapchat = (xRows as any[])[0].socialSnapchat;
+      }
+    } catch { /* columns not yet added */ }
+
+    // Shop products — use selected IDs or all published
+    let shopProducts: any[] = [];
+    try {
+      let productIds: number[] = [];
+      try {
+        productIds = contactData.contactPageProducts
+          ? JSON.parse(contactData.contactPageProducts).map(Number).filter((n: number) => !isNaN(n) && n > 0)
+          : [];
+      } catch { productIds = []; }
+
+      console.log(`[links/${slug}] contactPageProducts raw:`, contactData.contactPageProducts, '→ ids:', productIds);
+
+      const baseSelect = `SELECT id, name, category, brand, description,
+                  sale_price as salePrice, image_url as imageUrl,
+                  stock, color, size,
+                  is_on_offer as isOnOffer, offer_price as offerPrice, offer_label as offerLabel,
+                  product_type as productType, weight, hardware_weight_unit as hardwareWeightUnit`;
+
+      // Helper: try with image_urls, fallback without it
+      const queryProducts = async (where: string, params: any[]): Promise<any[]> => {
+        try {
+          const [r] = await pool.query(
+            `${baseSelect}, image_urls as images FROM products WHERE ${where}`,
+            params
+          ) as any;
+          return r as any[];
+        } catch {
+          const [r] = await pool.query(
+            `${baseSelect} FROM products WHERE ${where}`,
+            params
+          ) as any;
+          return r as any[];
+        }
+      };
+
+      if (productIds.length > 0) {
+        const placeholders = productIds.map(() => '?').join(',');
+        // When user explicitly selects products, show them regardless of published state
+        shopProducts = await queryProducts(
+          `tenant_id = ? AND id IN (${placeholders})`,
+          [tenantId, ...productIds]
+        );
+      } else {
+        // No selection → show all published products for this store
+        shopProducts = await queryProducts(
+          `tenant_id = ? AND published_in_store = 1 ORDER BY id DESC LIMIT 50`,
+          [tenantId]
+        );
+      }
+
+      console.log(`[links/${slug}] shopProducts count:`, shopProducts.length);
+    } catch (shopErr) {
+      console.error(`[links/${slug}] shop products error:`, shopErr);
+      shopProducts = [];
+    }
+
+    // Parse images for each product
+    shopProducts = (shopProducts || []).map((p: any) => {
+      let images: string[] = [];
+      try { images = p.images ? JSON.parse(p.images) : []; } catch { images = []; }
+      return { ...p, images };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        slug,
+        name: storeInfo?.name || '',
+        logoUrl: storeInfo?.logoUrl || null,
+        email: storeInfo?.email || null,
+        phone: storeInfo?.phone || null,
+        socialInstagram: storeInfo?.socialInstagram || null,
+        socialFacebook: storeInfo?.socialFacebook || null,
+        socialTiktok: storeInfo?.socialTiktok || null,
+        socialWhatsapp: storeInfo?.socialWhatsapp || null,
+        socialX: contactData.socialX || null,
+        socialSnapchat: contactData.socialSnapchat || null,
+        contactPageTitle: contactData.contactPageTitle || null,
+        contactPageDescription: contactData.contactPageDescription || null,
+        contactPageImage: contactData.contactPageImage || null,
+        contactPageLinks: contactData.contactPageLinks || null,
+        contactPageLinkTheme: contactData.contactPageLinkTheme || 'theme1',
+        reservationsEnabled,
+        shopProducts,
+      },
+    });
+  } catch (error) {
+    console.error('Links page error:', error);
+    res.status(500).json({ success: false, error: 'Error al cargar datos' });
+  }
+});
+
+// =============================================
+// CUSTOM HTML SECTIONS
+// =============================================
+
+function slugifySection(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 80) || 'seccion';
+}
+
+async function ensureCustomSectionsTable(tenantId: string): Promise<void> {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS store_custom_sections (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id    VARCHAR(36)  NOT NULL,
+        name         VARCHAR(255) NOT NULL,
+        slug         VARCHAR(255) NOT NULL,
+        html_content LONGTEXT     NOT NULL,
+        is_active    TINYINT(1)   NOT NULL DEFAULT 0,
+        created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY idx_tenant_slug (tenant_id, slug),
+        INDEX idx_tenant (tenant_id)
+      )
+    `);
+  } catch { /* ignore if already exists */ }
+}
+
+// GET /api/storefront/custom-sections — List all sections for the merchant
+router.get('/custom-sections', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    await ensureCustomSectionsTable(tenantId);
+    const [rows] = await pool.query(
+      'SELECT id, name, slug, is_active as isActive, created_at as createdAt, updated_at as updatedAt FROM store_custom_sections WHERE tenant_id = ? ORDER BY created_at DESC',
+      [tenantId]
+    ) as any;
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Custom sections list error:', error);
+    res.status(500).json({ success: false, error: 'Error al cargar secciones' });
+  }
+});
+
+// POST /api/storefront/custom-sections — Create a new section
+router.post('/custom-sections', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const { name, htmlContent, isActive } = req.body;
+    if (!name || !name.trim()) {
+      res.status(400).json({ success: false, error: 'El nombre es obligatorio' });
+      return;
+    }
+    await ensureCustomSectionsTable(tenantId);
+
+    // Generate unique slug
+    let baseSlug = slugifySection(name.trim());
+    let slug = baseSlug;
+    let attempt = 0;
+    while (true) {
+      const [existing] = await pool.query(
+        'SELECT id FROM store_custom_sections WHERE tenant_id = ? AND slug = ? LIMIT 1',
+        [tenantId, slug]
+      ) as any;
+      if (!existing || existing.length === 0) break;
+      attempt++;
+      slug = `${baseSlug}-${attempt}`;
+    }
+
+    const [result] = await pool.query(
+      'INSERT INTO store_custom_sections (tenant_id, name, slug, html_content, is_active) VALUES (?, ?, ?, ?, ?)',
+      [tenantId, name.trim(), slug, htmlContent || '', isActive ? 1 : 0]
+    ) as any;
+
+    res.json({ success: true, data: { id: result.insertId, slug } });
+  } catch (error) {
+    console.error('Custom sections create error:', error);
+    res.status(500).json({ success: false, error: 'Error al crear sección' });
+  }
+});
+
+// PUT /api/storefront/custom-sections/:id — Update a section
+router.put('/custom-sections/:id', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const { id } = req.params;
+    const { name, htmlContent, isActive } = req.body;
+    if (!name || !name.trim()) {
+      res.status(400).json({ success: false, error: 'El nombre es obligatorio' });
+      return;
+    }
+    await ensureCustomSectionsTable(tenantId);
+
+    const [existing] = await pool.query(
+      'SELECT id FROM store_custom_sections WHERE id = ? AND tenant_id = ? LIMIT 1',
+      [id, tenantId]
+    ) as any;
+    if (!existing || existing.length === 0) {
+      res.status(404).json({ success: false, error: 'Sección no encontrada' });
+      return;
+    }
+
+    await pool.query(
+      'UPDATE store_custom_sections SET name = ?, html_content = ?, is_active = ? WHERE id = ? AND tenant_id = ?',
+      [name.trim(), htmlContent || '', isActive ? 1 : 0, id, tenantId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Custom sections update error:', error);
+    res.status(500).json({ success: false, error: 'Error al actualizar sección' });
+  }
+});
+
+// PATCH /api/storefront/custom-sections/:id/toggle — Toggle active
+router.patch('/custom-sections/:id/toggle', authenticate, requirePlan('empresarial'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = (req as any).user.tenantId;
+    const { id } = req.params;
+    const { isActive } = req.body;
+    await pool.query(
+      'UPDATE store_custom_sections SET is_active = ? WHERE id = ? AND tenant_id = ?',
+      [isActive, id, tenantId]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Custom sections toggle error:', error);
+    res.status(500).json({ success: false, error: 'Error al actualizar sección' });
+  }
+});
+
+export default router;

@@ -1,5 +1,50 @@
 export type Category = string
 
+// ─── Variantes & Proveedores ──────────────────────────────────────────────────
+
+export interface VariantPriceTier {
+  id: string
+  variantId: string
+  minQty: number
+  price: number
+  tenantMarginPct: number
+  isActive: boolean
+}
+
+export interface ProductVariant {
+  id: string
+  productId: string
+  sku: string
+  barcode?: string
+  color?: string
+  colorHex?: string
+  size?: string
+  material?: string
+  stock: number
+  reservedStock: number
+  minStock: number
+  costPrice?: number
+  priceOverride?: number
+  supplierId?: string
+  images?: string[]
+  sortOrder: number
+  isActive: boolean
+  priceTiers?: VariantPriceTier[]
+  productName?: string
+  basePrice?: number
+  label?: string        // "Negro / M"
+  // storefront extras
+  minPrice?: number
+}
+
+export interface ResolvedPrice {
+  price: number
+  tenantMarginPct: number
+  source: 'tier' | 'override' | 'base'
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export type Size = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'XXXL'
 
 export type ProductType = 'general' | 'alimentos' | 'bebidas' | 'ropa' | 'electronica' | 'farmacia' | 'ferreteria' | 'libreria' | 'juguetes' | 'cosmetica' | 'perfumes' | 'deportes' | 'hogar' | 'mascotas' | 'otros'
@@ -74,6 +119,7 @@ export interface Product {
   // Ferreteria
   dimensions?: string
   weight?: number
+  hardwareWeightUnit?: string | null
   caliber?: string
   resistance?: string
   finish?: string
@@ -280,6 +326,41 @@ export interface CategoryItem {
   id: string
   name: string
   description?: string
+  isActive?: boolean
+  isHidden?: boolean
+  color?: string
+  sortOrder?: number
+}
+
+// ─── Daily closing report ────────────────────────────────────────────────────
+export interface ProductReportItem {
+  productId: string
+  productName: string
+  productSku: string
+  quantity: number
+  subtotal: number
+}
+
+export interface SedeReportData {
+  sedeId: string | null
+  sedeName?: string | null
+  salesCount: number
+  subtotal: number
+  tax: number
+  discount: number
+  total: number
+  byPaymentMethod: Record<string, { count: number; total: number; mixedEfectivo?: number; mixedSecondMethod?: string; mixedSecond?: number }>
+  products: ProductReportItem[]
+}
+
+export interface DailyReportData {
+  date: string
+  sedes: SedeReportData[]
+  totalSales: number
+  grandSubtotal: number
+  grandTax: number
+  grandDiscount: number
+  grandTotal: number
 }
 
 export const SIZES: Size[] = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL']
@@ -466,6 +547,7 @@ export interface ServiceBooking {
 
 // Auth Types
 export type UserRole = 'superadmin' | 'comerciante' | 'vendedor' | 'cliente' | 'repartidor' | 'auxiliar_bodega'
+  | 'administrador_rb' | 'cajero' | 'mesero' | 'cocinero' | 'bartender' | 'despachador' | 'comunidad_admin'
 
 export interface User {
   id: string
@@ -485,6 +567,14 @@ export interface User {
   deliveryLatitude?: number
   deliveryLongitude?: number
   profileCompleted?: boolean
+  // Tenant plan info (populated from JOIN on login/checkAuth)
+  tenantPlan?: TenantPlan
+  tenantName?: string
+  tenantSlug?: string
+  tenantMaxUsers?: number
+  tenantMaxProducts?: number
+  tenantTrialEndsAt?: string | null
+  enabledModules?: string[] | null
   createdAt: string
 }
 

@@ -4,6 +4,7 @@ import { db } from '../../config';
 import { AppError } from '../../common/middleware';
 import { PaginatedResponse } from '../../common/types';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { computeOpenState, parseBusinessHours, hasAnySchedule } from '../../utils/store-hours';
 
 interface TenantRow extends RowDataPacket {
   id: string;
@@ -31,6 +32,7 @@ interface TenantSummaryRow extends RowDataPacket {
   max_users: number;
   max_products: number;
   bg_color: string | null;
+  trial_ends_at: Date | null;
   total_users: number;
   total_products: number;
   total_sales: number;
@@ -60,6 +62,7 @@ export interface TenantWithSummary extends Tenant {
   ownerName?: string;
   ownerEmail?: string;
   bgColor?: string;
+  trialEndsAt?: string | null;
   totalUsers: number;
   totalProducts: number;
   totalSales: number;
@@ -95,6 +98,7 @@ export class TenantsService {
       status: row.status,
       maxUsers: row.max_users,
       maxProducts: row.max_products,
+      trialEndsAt: row.trial_ends_at ? new Date(row.trial_ends_at).toISOString() : null,
       totalUsers: Number(row.total_users) || 0,
       totalProducts: Number(row.total_products) || 0,
       totalSales: Number(row.total_sales) || 0,
@@ -129,7 +133,7 @@ export class TenantsService {
     const [rows] = await db.execute<TenantSummaryRow[]>(
       `SELECT
         t.id, t.name, t.slug, t.business_type, t.owner_id, t.plan, t.status,
-        t.max_users, t.max_products, t.bg_color, t.created_at, t.updated_at,
+        t.max_users, t.max_products, t.bg_color, t.trial_ends_at, t.created_at, t.updated_at,
         u.name as owner_name, u.email as owner_email,
         (SELECT COUNT(*) FROM users WHERE tenant_id = t.id) as total_users,
         (SELECT COUNT(*) FROM products WHERE tenant_id = t.id) as total_products,
@@ -157,7 +161,7 @@ export class TenantsService {
     const [rows] = await db.execute<TenantSummaryRow[]>(
       `SELECT
         t.id, t.name, t.slug, t.business_type, t.owner_id, t.plan, t.status,
-        t.max_users, t.max_products, t.bg_color, t.created_at, t.updated_at,
+        t.max_users, t.max_products, t.bg_color, t.trial_ends_at, t.created_at, t.updated_at,
         u.name as owner_name, u.email as owner_email,
         (SELECT COUNT(*) FROM users WHERE tenant_id = t.id) as total_users,
         (SELECT COUNT(*) FROM products WHERE tenant_id = t.id) as total_products,
@@ -261,6 +265,30 @@ export class TenantsService {
         [tenantId]
       );
 
+      // Create RestBar sequences for tenant
+      await connection.execute<ResultSetHeader>(
+        `INSERT INTO rb_order_sequence (tenant_id, prefix, current_number) VALUES (?, 'C', 0)`,
+        [tenantId]
+      );
+      await connection.execute<ResultSetHeader>(
+        `INSERT INTO rb_reservation_sequence (tenant_id, prefix, current_number) VALUES (?, 'R', 0)`,
+        [tenantId]
+      );
+
+      // Create singleton config tables for tenant
+      await connection.execute<ResultSetHeader>(
+        `INSERT IGNORE INTO store_announcement_bar (tenant_id, text, is_active) VALUES (?, '', FALSE)`,
+        [tenantId]
+      );
+      await connection.execute<ResultSetHeader>(
+        `INSERT IGNORE INTO store_order_bump (tenant_id, is_enabled) VALUES (?, FALSE)`,
+        [tenantId]
+      );
+      await connection.execute<ResultSetHeader>(
+        `INSERT IGNORE INTO chatbot_config (tenant_id, is_enabled) VALUES (?, 0)`,
+        [tenantId]
+      );
+
       // Create default categories for tenant
       const defaultCategories = [
         { id: 'general', name: 'General', description: 'Productos generales' },
@@ -295,6 +323,7 @@ export class TenantsService {
     id: string,
     data: {
       name?: string;
+      slug?: string;
       businessType?: string;
       plan?: string;
       status?: string;
@@ -311,6 +340,15 @@ export class TenantsService {
     if (data.name !== undefined) {
       updates.push('name = ?');
       values.push(data.name);
+    }
+    if (data.slug !== undefined) {
+      const [existing] = await db.execute<RowDataPacket[]>(
+        'SELECT id FROM tenants WHERE slug = ? AND id != ?',
+        [data.slug, id]
+      );
+      if ((existing as any[]).length > 0) throw new AppError('El slug ya está en uso por otro comercio', 409);
+      updates.push('slug = ?');
+      values.push(data.slug);
     }
     if (data.businessType !== undefined) {
       updates.push('business_type = ?');
@@ -414,6 +452,301 @@ export class TenantsService {
        ON DUPLICATE KEY UPDATE setting_value = ?, updated_at = CURRENT_TIMESTAMP`,
       [key, value, value]
     );
+  }
+
+  async activateTrial(id: string, days: number = 7): Promise<TenantWithSummary> {
+    await this.findById(id);
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + Math.max(1, Math.min(days, 365)));
+    await db.execute(
+      'UPDATE tenants SET plan = ?, trial_ends_at = ? WHERE id = ?',
+      ['empresarial', trialEnd, id]
+    );
+    return this.findById(id);
+  }
+
+  /** Desactiva el trial: limpia la fecha y revierte el plan a básico. */
+  async deactivateTrial(id: string, revertPlan: string = 'basico'): Promise<TenantWithSummary> {
+    await this.findById(id);
+    const plan = ['basico', 'profesional', 'empresarial'].includes(revertPlan) ? revertPlan : 'basico';
+    await db.execute(
+      'UPDATE tenants SET plan = ?, trial_ends_at = NULL WHERE id = ?',
+      [plan, id]
+    );
+    return this.findById(id);
+  }
+
+  /**
+   * Borrado DEFINITIVO de un comercio y TODOS sus datos (productos, ventas,
+   * pedidos, usuarios, etc.). Irreversible. Elimina en cascada todas las filas
+   * con `tenant_id` del tenant, más sus usuarios y el propio tenant.
+   */
+  async destroy(id: string): Promise<{ id: string; name: string; deletedRows: number }> {
+    const tenant = await this.findById(id);
+    const connection = await db.getConnection();
+    let deletedRows = 0;
+    try {
+      // Descubre solo las TABLAS BASE (no vistas) del esquema con columna tenant_id.
+      // Importante: excluir vistas (TABLE_TYPE='VIEW', p.ej. v_customer_balances)
+      // porque no son actualizables/borrables.
+      const [colRows] = await connection.query<RowDataPacket[]>(
+        `SELECT c.TABLE_NAME AS t
+           FROM information_schema.COLUMNS c
+           JOIN information_schema.TABLES tb
+             ON tb.TABLE_SCHEMA = c.TABLE_SCHEMA AND tb.TABLE_NAME = c.TABLE_NAME
+          WHERE c.TABLE_SCHEMA = DATABASE()
+            AND c.COLUMN_NAME = 'tenant_id'
+            AND tb.TABLE_TYPE = 'BASE TABLE'`
+      );
+      const tenantTables = colRows
+        .map(r => String(r.t))
+        .filter(t => t.toLowerCase() !== 'tenants'); // la tabla tenants se borra al final
+
+      await connection.beginTransaction();
+      // Desactiva FKs para no depender del orden de borrado
+      await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+
+      for (const table of tenantTables) {
+        // Nombre de tabla viene de information_schema (no de input del usuario)
+        const [res] = await connection.query<ResultSetHeader>(
+          `DELETE FROM \`${table}\` WHERE tenant_id = ?`,
+          [id]
+        );
+        deletedRows += res.affectedRows || 0;
+      }
+
+      // Usuarios del tenant (por si la columna se llama distinto o quedaron sueltos)
+      const [uRes] = await connection.query<ResultSetHeader>(
+        'DELETE FROM users WHERE tenant_id = ?',
+        [id]
+      );
+      deletedRows += uRes.affectedRows || 0;
+
+      // Finalmente, el tenant
+      await connection.query('DELETE FROM tenants WHERE id = ?', [id]);
+
+      await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      try { await connection.query('SET FOREIGN_KEY_CHECKS = 1'); } catch { /* noop */ }
+      throw error;
+    } finally {
+      connection.release();
+    }
+    return { id, name: tenant.name, deletedRows };
+  }
+
+  async getBusinessTypes(): Promise<string[]> {
+    try {
+      const [rows] = await db.execute<RowDataPacket[]>(
+        "SELECT setting_value FROM platform_settings WHERE setting_key = 'business_types'"
+      );
+      if (rows.length > 0 && rows[0].setting_value) {
+        return JSON.parse(rows[0].setting_value) as string[];
+      }
+    } catch {
+      // fallback to defaults
+    }
+    return ['Restaurante', 'Cafetería', 'Bar', 'Panadería', 'Tienda', 'Otro'];
+  }
+
+  async createBusinessType(name: string): Promise<string[]> {
+    const types = await this.getBusinessTypes();
+    const normalized = name.trim();
+    if (!normalized) throw new AppError('Nombre inválido', 400);
+    if (types.includes(normalized)) throw new AppError('La categoría ya existe', 409);
+    types.push(normalized);
+    await this.updatePlatformSetting('business_types', JSON.stringify(types));
+    return types;
+  }
+
+  async deleteBusinessType(name: string): Promise<string[]> {
+    const types = await this.getBusinessTypes();
+    const filtered = types.filter((t) => t !== name);
+    if (filtered.length === types.length) throw new AppError('Categoría no encontrada', 404);
+    await this.updatePlatformSetting('business_types', JSON.stringify(filtered));
+    return filtered;
+  }
+
+  async getModules(tenantId: string): Promise<{ enabledModules: string[] | null; businessType: string | null }> {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT enabled_modules, business_type FROM tenants WHERE id = ?',
+      [tenantId]
+    );
+    if (rows.length === 0) throw new AppError('Tenant no encontrado', 404);
+    const row = rows[0];
+    const raw = row.enabled_modules;
+    const enabledModules: string[] | null = raw
+      ? (typeof raw === 'string' ? JSON.parse(raw) : raw)
+      : null;
+    return { enabledModules, businessType: row.business_type ?? null };
+  }
+
+  async updateModules(tenantId: string, modules: string[]): Promise<{ enabledModules: string[] }> {
+    const [rows] = await db.execute<RowDataPacket[]>('SELECT id FROM tenants WHERE id = ?', [tenantId]);
+    if (rows.length === 0) throw new AppError('Tenant no encontrado', 404);
+    await db.execute('UPDATE tenants SET enabled_modules = ? WHERE id = ?', [JSON.stringify(modules), tenantId]);
+    return { enabledModules: modules };
+  }
+
+  // ── Tarjetas del marketplace (página principal) ─────────────────────────────
+  async getMarketplaceCards(): Promise<any[]> {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      `SELECT t.id, t.name, t.slug, t.business_type AS businessType, t.status,
+              si.logo_url        AS logoUrl,
+              si.card_cover_url  AS coverUrl,
+              si.card_description AS cardDescription,
+              si.municipality    AS city,
+              si.business_hours   AS businessHours,
+              COALESCE(si.is_verified, 0)          AS isVerified,
+              COALESCE(si.open_state, 'open')      AS openStateFallback,
+              COALESCE(si.marketplace_visible, 1)  AS marketplaceVisible,
+              COALESCE(si.marketplace_order, 0)    AS marketplaceOrder,
+              (SELECT COUNT(*) FROM sedes s WHERE s.tenant_id = t.id) AS sedeCount,
+              (SELECT COUNT(*) FROM products p WHERE p.tenant_id = t.id AND p.stock > 0 AND p.published_in_store = 1) AS productCount
+       FROM tenants t
+       LEFT JOIN store_info si ON si.tenant_id = t.id
+       WHERE t.status = 'activo'
+       ORDER BY COALESCE(si.marketplace_order, 0) ASC, t.name ASC`
+    );
+    return rows.map((r) => {
+      const { businessHours, openStateFallback, ...rest } = r as any;
+      return {
+        ...rest,
+        isVerified: Boolean(r.isVerified),
+        marketplaceVisible: Boolean(r.marketplaceVisible),
+        hasSchedule: hasAnySchedule(parseBusinessHours(businessHours)),
+        openState: computeOpenState(businessHours, openStateFallback === 'closed' ? 'closed' : 'open'),
+      };
+    });
+  }
+
+  async updateMarketplaceCard(
+    tenantId: string,
+    data: {
+      coverUrl?: string | null;
+      cardDescription?: string | null;
+      isVerified?: boolean;
+      openState?: 'open' | 'closed';
+      marketplaceVisible?: boolean;
+      marketplaceOrder?: number;
+    }
+  ): Promise<void> {
+    const [tRows] = await db.execute<RowDataPacket[]>('SELECT id, name FROM tenants WHERE id = ?', [tenantId]);
+    if (tRows.length === 0) throw new AppError('Tenant no encontrado', 404);
+
+    // Construye SET dinámico solo con los campos provistos
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (data.coverUrl !== undefined)         { fields.push('card_cover_url = ?');     values.push(data.coverUrl || null); }
+    if (data.cardDescription !== undefined)  { fields.push('card_description = ?');    values.push(data.cardDescription || null); }
+    if (data.isVerified !== undefined)       { fields.push('is_verified = ?');        values.push(data.isVerified ? 1 : 0); }
+    if (data.openState !== undefined)        { fields.push('open_state = ?');         values.push(data.openState === 'closed' ? 'closed' : 'open'); }
+    if (data.marketplaceVisible !== undefined){ fields.push('marketplace_visible = ?'); values.push(data.marketplaceVisible ? 1 : 0); }
+    if (data.marketplaceOrder !== undefined) { fields.push('marketplace_order = ?');   values.push(Number(data.marketplaceOrder) || 0); }
+
+    if (fields.length === 0) return;
+
+    const [result] = await db.execute<ResultSetHeader>(
+      `UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`,
+      [...values, tenantId]
+    );
+
+    // Tenant legacy sin fila en store_info: la creamos y reintentamos
+    if (result.affectedRows === 0) {
+      await db.execute(
+        'INSERT INTO store_info (tenant_id, name) VALUES (?, ?)',
+        [tenantId, tRows[0].name]
+      );
+      await db.execute(
+        `UPDATE store_info SET ${fields.join(', ')} WHERE tenant_id = ?`,
+        [...values, tenantId]
+      );
+    }
+  }
+
+  // ── Tarjetas externas (comercios fuera del aplicativo) ──────────────────────
+  // Tarjetas de la página principal que NO son tenants: redirigen a un link externo.
+  private externalEnsured = false;
+  async ensureExternalCardsTable(): Promise<void> {
+    if (this.externalEnsured) return;
+    await db.execute(
+      `CREATE TABLE IF NOT EXISTS marketplace_external_cards (
+        id           VARCHAR(36) PRIMARY KEY,
+        name         VARCHAR(255) NOT NULL,
+        slug         VARCHAR(255) NULL,
+        logo_url     VARCHAR(800) NULL,
+        cover_url    VARCHAR(800) NULL,
+        description  VARCHAR(500) NULL,
+        external_url VARCHAR(1000) NOT NULL,
+        city         VARCHAR(255) NULL,
+        is_verified  TINYINT(1) NOT NULL DEFAULT 0,
+        is_visible   TINYINT(1) NOT NULL DEFAULT 1,
+        sort_order   INT NOT NULL DEFAULT 0,
+        created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_mec_visible (is_visible, sort_order)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    );
+    this.externalEnsured = true;
+  }
+
+  private mapExternalCard = (r: any) => ({
+    id: r.id, name: r.name, slug: r.slug, logoUrl: r.logo_url, coverUrl: r.cover_url,
+    cardDescription: r.description, externalUrl: r.external_url, city: r.city,
+    isVerified: Boolean(r.is_verified), marketplaceVisible: Boolean(r.is_visible),
+    marketplaceOrder: Number(r.sort_order) || 0,
+  });
+
+  async listExternalCards(): Promise<any[]> {
+    await this.ensureExternalCardsTable();
+    const [rows] = await db.execute<RowDataPacket[]>(
+      'SELECT * FROM marketplace_external_cards ORDER BY sort_order ASC, name ASC'
+    );
+    return rows.map(this.mapExternalCard);
+  }
+
+  async createExternalCard(data: any): Promise<any> {
+    await this.ensureExternalCardsTable();
+    if (!String(data?.name || '').trim()) throw new AppError('El nombre es requerido', 400);
+    if (!String(data?.externalUrl || '').trim()) throw new AppError('El link externo es requerido', 400);
+    const id = uuidv4();
+    await db.execute(
+      `INSERT INTO marketplace_external_cards
+         (id, name, slug, logo_url, cover_url, description, external_url, city, is_verified, is_visible, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, String(data.name).trim(), data.slug || null, data.logoUrl || null, data.coverUrl || null,
+       data.cardDescription || null, String(data.externalUrl).trim(), data.city || null,
+       data.isVerified ? 1 : 0, data.marketplaceVisible === false ? 0 : 1, Number(data.marketplaceOrder) || 0]
+    );
+    return { id };
+  }
+
+  async updateExternalCard(id: string, data: any): Promise<void> {
+    await this.ensureExternalCardsTable();
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (data.name !== undefined)              { fields.push('name = ?');         values.push(String(data.name).trim()); }
+    if (data.slug !== undefined)              { fields.push('slug = ?');         values.push(data.slug || null); }
+    if (data.logoUrl !== undefined)           { fields.push('logo_url = ?');     values.push(data.logoUrl || null); }
+    if (data.coverUrl !== undefined)          { fields.push('cover_url = ?');    values.push(data.coverUrl || null); }
+    if (data.cardDescription !== undefined)   { fields.push('description = ?');  values.push(data.cardDescription || null); }
+    if (data.externalUrl !== undefined)       { fields.push('external_url = ?'); values.push(String(data.externalUrl).trim()); }
+    if (data.city !== undefined)              { fields.push('city = ?');         values.push(data.city || null); }
+    if (data.isVerified !== undefined)        { fields.push('is_verified = ?');  values.push(data.isVerified ? 1 : 0); }
+    if (data.marketplaceVisible !== undefined){ fields.push('is_visible = ?');   values.push(data.marketplaceVisible ? 1 : 0); }
+    if (data.marketplaceOrder !== undefined)  { fields.push('sort_order = ?');   values.push(Number(data.marketplaceOrder) || 0); }
+    if (fields.length === 0) return;
+    const [result] = await db.execute<ResultSetHeader>(
+      `UPDATE marketplace_external_cards SET ${fields.join(', ')} WHERE id = ?`, [...values, id]
+    );
+    if (result.affectedRows === 0) throw new AppError('Tarjeta externa no encontrada', 404);
+  }
+
+  async deleteExternalCard(id: string): Promise<void> {
+    await this.ensureExternalCardsTable();
+    await db.execute('DELETE FROM marketplace_external_cards WHERE id = ?', [id]);
   }
 }
 

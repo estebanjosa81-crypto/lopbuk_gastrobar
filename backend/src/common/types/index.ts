@@ -1,12 +1,118 @@
 // Tipos base
 export type Category = string;
+
+// ─── Variantes & Tiers ────────────────────────────────────────────────────────
+
+export type InventoryMovementType =
+  | 'entrada' | 'salida' | 'ajuste' | 'merma' | 'transferencia' | 'reserva' | 'liberacion';
+
+export interface ProductVariant {
+  id: string;
+  tenantId: string;
+  productId: string;
+  sku: string;
+  barcode?: string;
+  color?: string;
+  size?: string;
+  material?: string;
+  stock: number;
+  reservedStock: number;
+  minStock: number;
+  costPrice?: number;
+  priceOverride?: number;
+  supplierId?: string;
+  images?: string[];
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  // Eager-loaded
+  priceTiers?: VariantPriceTier[];
+  productName?: string;
+  basePrice?: number;
+  label?: string; // "Negro / M"
+}
+
+export interface VariantPriceTier {
+  id: string;
+  tenantId: string;
+  variantId: string;
+  minQty: number;
+  price: number;
+  tenantMarginPct: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ResolvedPrice {
+  price: number;
+  tenantMarginPct: number;
+  source: 'tier' | 'override' | 'base';
+}
+
+export interface Supplier {
+  id: string;
+  tenantId: string;
+  name: string;
+  contactInfo?: string;
+  phone?: string;
+  email?: string;
+  paymentTerms?: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SupplierProduct {
+  id: string;
+  tenantId: string;
+  supplierId: string;
+  productId: string;
+  supplierSku?: string;
+  supplierPrice?: number;
+  leadTimeDays?: number;
+  isPreferred: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface InventoryMovement {
+  id: string;
+  tenantId: string;
+  variantId?: string;
+  productId: string;
+  type: InventoryMovementType;
+  quantity: number;
+  reason: string;
+  referenceType?: string;
+  referenceId?: string;
+  createdBy?: string;
+  createdAt: Date;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 export type Size = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL' | 'XXXL';
 export type PaymentMethod = 'efectivo' | 'tarjeta' | 'transferencia' | 'fiado' | 'addi' | 'sistecredito' | 'mixto';
 export type StockStatus = 'suficiente' | 'bajo' | 'agotado';
 export type SaleStatus = 'completada' | 'anulada';
 export type CreditStatus = 'pendiente' | 'parcial' | 'pagado';
 export type StockMovementType = 'entrada' | 'salida' | 'ajuste' | 'venta' | 'devolucion';
-export type UserRole = 'superadmin' | 'comerciante' | 'vendedor' | 'cliente' | 'repartidor' | 'auxiliar_bodega';
+export type UserRole =
+  | 'superadmin'
+  | 'comerciante'
+  | 'vendedor'
+  | 'cliente'
+  | 'repartidor'
+  | 'auxiliar_bodega'
+  | 'administrador_rb'
+  | 'cajero'
+  | 'mesero'
+  | 'cocinero'
+  | 'bartender'
+  | 'despachador'
+  | 'comunidad_admin';
 export type TenantStatus = 'activo' | 'suspendido' | 'cancelado';
 export type TenantPlan = 'basico' | 'profesional' | 'empresarial';
 export type ProductType = 'general' | 'alimentos' | 'bebidas' | 'ropa' | 'electronica' | 'farmacia' | 'ferreteria' | 'libreria' | 'juguetes' | 'cosmetica' | 'perfumes' | 'deportes' | 'hogar' | 'mascotas' | 'otros';
@@ -40,6 +146,7 @@ export interface User {
   role: UserRole;
   avatar?: string;
   isActive: boolean;
+  canLogin?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -129,6 +236,8 @@ export interface Product {
   packageDimensions?: string;
   packageContents?: string;
   safetyWarnings?: string;
+  // Sede / sucursal
+  sedeId?: string;
   // Timestamps
   createdAt: Date;
   updatedAt: Date;
@@ -174,8 +283,12 @@ export interface Sale {
   paymentMethod: PaymentMethod;
   amountPaid: number;
   change: number;
+  mixedEfectivoAmount?: number;
+  mixedSecondMethod?: string;
+  mixedSecondAmount?: number;
   sellerId?: string;
   sellerName: string;
+  sedeId?: string;
   status: SaleStatus;
   creditStatus?: CreditStatus;
   dueDate?: Date;
@@ -216,27 +329,27 @@ export interface DashboardMetrics {
   monthlySales: number;
   lowStockProducts: number;
   outOfStockProducts: number;
-  topSellingProducts: Array<{
-    id: string;
-    name: string;
-    category: string;
-    totalSold: number;
-    totalRevenue: number;
-  }>;
-  salesByCategory: Array<{
-    category: string;
-    totalQuantity: number;
-    totalRevenue: number;
-  }>;
-  recentSales: Sale[];
+  accountsReceivable?: number;
+  topSellingProducts: Array<{ id: string; name: string; category: string; totalSold: number; totalRevenue: number }>;
+  salesByCategory: Array<{ category: string; totalQuantity: number; totalRevenue: number }>;
+  recentSales: any[];
 }
 
-// Interfaces de request/response
-export interface PaginationParams {
-  page?: number;
-  limit?: number;
+// ─── Auth ──────────────────────────────────────────────────────────────────────
+export interface JWTPayload {
+  userId: string;
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  tenantId: string | null;
+  /** Plan del comercio, cargado por el middleware de autenticación. */
+  tenantPlan?: TenantPlan;
+  /** Permisos del cargo, cargados por el middleware de autenticación. */
+  permissions?: string[];
 }
 
+// ─── Respuesta paginada genérica ────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   data: T[];
   pagination: {
@@ -247,17 +360,9 @@ export interface PaginatedResponse<T> {
   };
 }
 
-export interface ApiResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  message?: string;
-  error?: string;
-}
-
-// Cash Sessions
-export type CashSessionStatus = 'abierta' | 'cerrada';
+// ─── Caja (cash sessions) ───────────────────────────────────────────────────────
+export type CashSessionStatus = 'abierta' | 'cerrada' | 'completada';
 export type ClosingStatus = 'cuadrado' | 'sobrante' | 'faltante';
-export type CashMovementType = 'entrada' | 'salida';
 
 export interface CashSession {
   id: string;
@@ -272,6 +377,9 @@ export interface CashSession {
   totalCardSales: number;
   totalTransferSales: number;
   totalFiadoSales: number;
+  totalCreditPaymentsEfectivo: number;
+  totalCreditPaymentsTarjeta: number;
+  totalCreditPaymentsTransferencia: number;
   totalSalesCount: number;
   totalChangeGiven: number;
   totalCashEntries: number;
@@ -289,23 +397,11 @@ export interface CashSession {
 export interface CashMovement {
   id: string;
   sessionId: string;
-  type: CashMovementType;
+  type: 'entrada' | 'salida';
   amount: number;
   reason: string;
   notes?: string;
   createdBy: string;
   createdByName: string;
   createdAt: Date;
-}
-
-// JWT Payload
-export interface JWTPayload {
-  userId: string;
-  id: string;
-  email: string;
-  name: string;
-  role: UserRole;
-  tenantId: string | null;
-  /** Permisos del cargo asignado. Cargados desde la BD en cada request (no en el JWT). */
-  permissions?: string[];
 }

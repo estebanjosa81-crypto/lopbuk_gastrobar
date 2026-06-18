@@ -1,11 +1,21 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { MiniMap } from '@/components/MiniMap'
+import { OrdersMap, type OrderPoint } from '@/components/OrdersMap'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog'
 import {
   ClipboardList,
   Search,
@@ -27,6 +37,10 @@ import {
   AlertCircle,
   Receipt,
   FileText,
+  TriangleAlert,
+  Map,
+  List,
+  Navigation,
 } from 'lucide-react'
 
 interface OrderItem {
@@ -104,6 +118,17 @@ export function Pedidos() {
   const [drivers, setDrivers] = useState<{ id: string; name: string; email: string }[]>([])
   const [assigningOrderId, setAssigningOrderId] = useState<string | null>(null)
 
+  const [viewMode, setViewMode] = useState<'list' | 'map'>('list')
+  const [focusOrderId, setFocusOrderId] = useState<string | null>(null)
+
+  // Custom modal state (replaces window.confirm / window.alert)
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean; type: 'entregado' | 'cancelado'; orderId: string
+  }>({ open: false, type: 'entregado', orderId: '' })
+  const [successModal, setSuccessModal] = useState<{
+    open: boolean; invoiceNumber: string
+  }>({ open: false, invoiceNumber: '' })
+
   // Fetch drivers list
   useEffect(() => {
     const fetchDrivers = async () => {
@@ -172,23 +197,7 @@ export function Pedidos() {
     fetchOrders()
   }, [fetchOrders])
 
-  const updateStatus = async (orderId: string, newStatus: string) => {
-    // Confirmation for "entregado" — generates sale & deducts stock
-    if (newStatus === 'entregado') {
-      const confirmed = window.confirm(
-        '⚠️ Al marcar como ENTREGADO se generará automáticamente:\n\n' +
-        '• Una factura de venta en el sistema\n' +
-        '• Se descontará el stock del inventario\n' +
-        '• Se registrará en el historial de ventas\n\n' +
-        '¿Deseas continuar?'
-      )
-      if (!confirmed) return
-    }
-    if (newStatus === 'cancelado') {
-      const confirmed = window.confirm('¿Estás seguro de cancelar este pedido?')
-      if (!confirmed) return
-    }
-
+  const doUpdateStatus = async (orderId: string, newStatus: string) => {
     setUpdatingOrderId(orderId)
     try {
       const result = await api.updateOrderStatus(orderId, newStatus)
@@ -201,12 +210,10 @@ export function Pedidos() {
             paymentMethod: invoiceNumber ? `Factura: ${invoiceNumber}` : o.paymentMethod
           } : o))
         )
-        // Refresh stats
         const statsResult = await api.getOrderStats()
         if (statsResult.success && statsResult.data) setStats(statsResult.data)
-
         if (invoiceNumber) {
-          alert(`✅ Pedido entregado exitosamente\n\n📄 Factura generada: ${invoiceNumber}\n📦 Stock descontado del inventario\n\nPuedes ver esta venta en el módulo de Historial.`)
+          setSuccessModal({ open: true, invoiceNumber })
         }
       }
     } catch (error) {
@@ -216,6 +223,33 @@ export function Pedidos() {
     }
   }
 
+  const updateStatus = (orderId: string, newStatus: string) => {
+    if (newStatus === 'entregado' || newStatus === 'cancelado') {
+      setConfirmModal({ open: true, type: newStatus as 'entregado' | 'cancelado', orderId })
+      return
+    }
+    doUpdateStatus(orderId, newStatus)
+  }
+
+  const mapPoints = useMemo<OrderPoint[]>(() =>
+    orders
+      .filter(o => o.deliveryLatitude != null && o.deliveryLongitude != null)
+      .map(o => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        customerName: o.customerName,
+        customerPhone: o.customerPhone,
+        address: o.address || '',
+        municipality: o.municipality || '',
+        neighborhood: o.neighborhood || null,
+        status: o.status,
+        total: o.total,
+        latitude: Number(o.deliveryLatitude),
+        longitude: Number(o.deliveryLongitude),
+      })),
+    [orders]
+  )
+
   const getNextStatus = (current: string): string | null => {
     const idx = STATUS_FLOW.indexOf(current)
     if (idx >= 0 && idx < STATUS_FLOW.length - 1) return STATUS_FLOW[idx + 1]
@@ -224,6 +258,32 @@ export function Pedidos() {
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value)
+
+  // Mensaje de confirmación al cliente por WhatsApp, según el estado del pedido.
+  const confirmWhatsApp = (order: Order) => {
+    const phone = order.customerPhone.replace(/\D/g, '')
+    const statusLine: Record<string, string> = {
+      pendiente: 'Recibimos tu pedido y lo estamos confirmando. ✅',
+      confirmado: '¡Tu pedido fue confirmado! Ya lo estamos preparando. 👨‍🍳',
+      preparando: 'Tu pedido se está preparando. 👨‍🍳',
+      enviado: '¡Tu pedido va en camino! 🛵',
+      entregado: '¡Tu pedido fue entregado! Gracias por tu compra. 🙌',
+      cancelado: 'Lamentamos informarte que tu pedido fue cancelado. Escríbenos si tienes dudas.',
+    }
+    const lines = [
+      `¡Hola ${order.customerName}! 👋`,
+      statusLine[order.status] || 'Te escribimos sobre tu pedido.',
+      '',
+      `*Pedido #${order.orderNumber}*`,
+      ...order.items.map(it => `• ${it.quantity}× ${it.productName} — ${formatCurrency(it.totalPrice)}`),
+      '',
+      `*Total: ${formatCurrency(order.total)}*`,
+      order.address ? `Entrega: ${order.address}` : '',
+      order.paymentMethod ? `Pago: ${order.paymentMethod}` : '',
+    ].filter(Boolean)
+    const text = encodeURIComponent(lines.join('\n'))
+    window.open(phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`, '_blank')
+  }
 
   const formatDate = (date: string) => {
     const d = new Date(date)
@@ -321,10 +381,40 @@ export function Pedidos() {
             Gestiona los pedidos recibidos desde tu tienda online
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={fetchOrders} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center rounded-lg border bg-muted/40 p-0.5">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                viewMode === 'list'
+                  ? 'bg-background shadow-sm text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <List className="h-3.5 w-3.5" /> Lista
+            </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                viewMode === 'map'
+                  ? 'bg-background shadow-sm text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Map className="h-3.5 w-3.5" /> Mapa
+              {mapPoints.length > 0 && (
+                <span className="ml-0.5 bg-primary/15 text-primary rounded-full px-1.5 text-[10px] font-bold">
+                  {mapPoints.length}
+                </span>
+              )}
+            </button>
+          </div>
+          <Button variant="outline" size="sm" onClick={fetchOrders} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -388,7 +478,7 @@ export function Pedidos() {
       </Card>
 
       {/* Bulk Print Button */}
-      {orders.length > 0 && (
+      {orders.length > 0 && viewMode === 'list' && (
         <div className="flex justify-end mb-2">
           <Button size="sm" variant="default" onClick={() => printAllOrderTickets(orders)}>
             <FileText className="h-4 w-4 mr-2" /> Imprimir todos los tickets
@@ -396,8 +486,63 @@ export function Pedidos() {
         </div>
       )}
 
-      {/* Orders List */}
-      {loading ? (
+      {/* ── MAP VIEW ── */}
+      {viewMode === 'map' && (
+        <div className="space-y-4">
+          <OrdersMap
+            orders={mapPoints}
+            height={520}
+            focusOrderId={focusOrderId}
+          />
+
+          {/* Orders without coordinates */}
+          {orders.filter(o => !o.deliveryLatitude).length > 0 && (
+            <Card>
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Sin ubicación exacta ({orders.filter(o => !o.deliveryLatitude).length})
+                  <span className="text-xs font-normal">— pedidos sin coordenadas GPS</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-0">
+                <div className="space-y-2">
+                  {orders.filter(o => !o.deliveryLatitude).map(order => {
+                    const statusConfig = STATUS_CONFIG[order.status]
+                    return (
+                      <div key={order.id} className="flex items-center gap-3 py-2 px-3 rounded-lg bg-muted/40 text-sm">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${statusConfig?.color}`}>
+                          {statusConfig?.label}
+                        </span>
+                        <span className="font-medium shrink-0">{order.orderNumber}</span>
+                        <span className="text-muted-foreground truncate">{order.customerName}</span>
+                        {order.address && (
+                          <span className="text-muted-foreground/60 text-xs truncate hidden sm:block">
+                            {order.address}, {order.municipality}
+                          </span>
+                        )}
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${order.address || ''} ${order.municipality || ''}`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-auto shrink-0"
+                        >
+                          <Button size="sm" variant="outline" className="h-7 text-xs">
+                            <Navigation className="h-3 w-3 mr-1" /> Buscar
+                          </Button>
+                        </a>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ── LIST VIEW ── */}
+      {viewMode === 'list' && (loading ? (
         <div className="flex items-center justify-center py-20">
           <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -511,17 +656,49 @@ export function Pedidos() {
                             )}
                             {order.address && <p>{order.address}</p>}
                             {order.neighborhood && <p>Barrio: {order.neighborhood}</p>}
-                            {order.deliveryLatitude && order.deliveryLongitude && (
-                              <a
-                                href={`https://www.google.com/maps/search/?api=1&query=${order.deliveryLatitude},${order.deliveryLongitude}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-500 mt-1"
-                              >
-                                <MapPin className="h-3 w-3" /> Ver en Google Maps
-                              </a>
-                            )}
                           </div>
+                          {order.deliveryLatitude && order.deliveryLongitude ? (
+                            <div className="space-y-2 mt-2">
+                              <MiniMap
+                                latitude={order.deliveryLatitude}
+                                longitude={order.deliveryLongitude}
+                                height={160}
+                              />
+                              <div className="flex gap-2">
+                                <a
+                                  href={`https://www.google.com/maps/dir/?api=1&destination=${order.deliveryLatitude},${order.deliveryLongitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex-1"
+                                >
+                                  <Button size="sm" variant="outline" className="w-full text-xs">
+                                    <Navigation className="h-3.5 w-3.5 mr-1.5" /> Ver ruta en Google Maps
+                                  </Button>
+                                </a>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-xs"
+                                  onClick={() => {
+                                    setViewMode('map')
+                                    setFocusOrderId(order.id)
+                                  }}
+                                >
+                                  <Map className="h-3.5 w-3.5 mr-1.5" /> Ver en mapa general
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${order.address || ''} ${order.municipality || ''}`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Button size="sm" variant="outline" className="w-full text-xs mt-1">
+                                <Navigation className="h-3.5 w-3.5 mr-1.5" /> Buscar dirección en Google Maps
+                              </Button>
+                            </a>
+                          )}
                         </div>
                       )}
                     </div>
@@ -678,16 +855,10 @@ export function Pedidos() {
                           Cancelar pedido
                         </Button>
                       )}
-                      <a
-                        href={`https://wa.me/${order.customerPhone.replace(/\D/g, '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button size="sm" variant="outline">
-                          <Phone className="h-4 w-4 mr-2" />
-                          WhatsApp
-                        </Button>
-                      </a>
+                      <Button size="sm" variant="outline" onClick={() => confirmWhatsApp(order)}>
+                        <Phone className="h-4 w-4 mr-2" />
+                        Confirmar por WhatsApp
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -720,7 +891,79 @@ export function Pedidos() {
             </div>
           )}
         </div>
-      )}
+      ))}
+
+      {/* Modal confirmación: Entregado / Cancelado */}
+      <Dialog open={confirmModal.open} onOpenChange={open => !open && setConfirmModal(m => ({ ...m, open: false }))}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TriangleAlert className={`h-5 w-5 ${confirmModal.type === 'cancelado' ? 'text-destructive' : 'text-amber-500'}`} />
+              {confirmModal.type === 'entregado' ? 'Confirmar entrega' : 'Cancelar pedido'}
+            </DialogTitle>
+            <DialogDescription asChild>
+              {confirmModal.type === 'entregado' ? (
+                <div className="space-y-3 pt-1">
+                  <p className="text-sm text-muted-foreground">Al marcar como <strong>ENTREGADO</strong> se generará automáticamente:</p>
+                  <ul className="space-y-1.5 text-sm">
+                    <li className="flex items-center gap-2"><Receipt className="h-4 w-4 text-primary shrink-0" /> Una factura de venta en el sistema</li>
+                    <li className="flex items-center gap-2"><Package className="h-4 w-4 text-primary shrink-0" /> Se descontará el stock del inventario</li>
+                    <li className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary shrink-0" /> Se registrará en el historial de ventas</li>
+                  </ul>
+                  <p className="text-sm font-medium">¿Deseas continuar?</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground pt-1">¿Estás seguro de cancelar este pedido? Esta acción no se puede deshacer.</p>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setConfirmModal(m => ({ ...m, open: false }))}>
+              Cancelar
+            </Button>
+            <Button
+              variant={confirmModal.type === 'cancelado' ? 'destructive' : 'default'}
+              onClick={() => {
+                const { orderId, type } = confirmModal
+                setConfirmModal(m => ({ ...m, open: false }))
+                doUpdateStatus(orderId, type)
+              }}
+            >
+              {confirmModal.type === 'entregado' ? 'Sí, marcar como entregado' : 'Sí, cancelar pedido'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal éxito: factura generada */}
+      <Dialog open={successModal.open} onOpenChange={open => !open && setSuccessModal(m => ({ ...m, open: false }))}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600 dark:text-green-400">
+              <CheckCircle className="h-5 w-5" />
+              Pedido entregado exitosamente
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2 text-sm">
+                  <Receipt className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span>Factura generada: <strong>{successModal.invoiceNumber}</strong></span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span>Stock descontado del inventario</span>
+                </div>
+                <p className="text-xs text-muted-foreground pt-1">Puedes ver esta venta en el módulo de Historial.</p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setSuccessModal(m => ({ ...m, open: false }))}>
+              Aceptar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -12,10 +12,21 @@ export interface ProductoCarrito {
   tallaSeleccionada?: string;
   colorSeleccionado?: string;
   perfumeSeleccionado?: string;
+  // Variante seleccionada (talla/color/peso/material)
+  variantId?: string;
+  variantLabel?: string;
   tenantId?: string;
   storeName?: string;
   availableForDelivery?: boolean;
   deliveryType?: 'domicilio' | 'envio' | 'ambos' | null;
+  // Peso del producto (ferretería) en kg para cálculo de flota
+  weightKg?: number | null;
+  productType?: string;
+  // Pre-orden
+  isPreorder?: boolean;
+  preorderShipStart?: string | null;
+  preorderShipEnd?: string | null;
+  preorderBadgeText?: string;
 }
 
 export interface PedidoForm {
@@ -36,6 +47,7 @@ export interface PedidoConfirmado {
   productos: ProductoCarrito[];
   total: number;
   fecha: string;
+  vehiculoAsignado?: { tipoVehiculo: string; pesoTotal: number } | null;
 }
 
 export interface CuponValidacion {

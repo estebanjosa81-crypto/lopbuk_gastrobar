@@ -108,11 +108,8 @@ function validateRow(
     const matched = categories.find(
       c => c.id === catInput || c.name.toLowerCase() === catInput.toLowerCase()
     )
-    if (matched) {
-      data.category = matched.id
-    } else {
-      errors.push(`Categoría "${catInput}" no encontrada`)
-    }
+    // Si no existe, se envía el nombre crudo: el backend la crea automáticamente.
+    data.category = matched ? matched.id : catInput
   }
 
   // Required: purchasePrice
@@ -144,13 +141,20 @@ function validateRow(
     else data.entryDate = d.substring(0, 10)
   }
 
-  // Optional: productType
+  // Optional: productType — normaliza sinónimos comunes y cae a 'general' si no es válido
   if (rawRow.productType?.trim()) {
-    if (VALID_PRODUCT_TYPES.includes(rawRow.productType.trim())) {
-      data.productType = rawRow.productType.trim()
-    } else {
-      errors.push(`Tipo "${rawRow.productType}" inválido`)
+    const raw = rawRow.productType.trim().toLowerCase()
+    const SYNONYMS: Record<string, string> = {
+      finished: 'alimentos', terminado: 'alimentos', plato: 'alimentos', comida: 'alimentos',
+      ingredient: 'alimentos', ingrediente: 'alimentos', insumo: 'alimentos', materia_prima: 'alimentos',
+      bebida: 'bebidas', drink: 'bebidas', licor: 'bebidas', cerveza: 'bebidas', coctel: 'bebidas',
     }
+    data.productType = VALID_PRODUCT_TYPES.includes(raw) ? raw : (SYNONYMS[raw] || 'general')
+  }
+
+  // Optional: articulo (inventario)
+  if (rawRow.articulo?.trim()) {
+    data.articulo = rawRow.articulo.trim()
   }
 
   // Optional string fields
@@ -164,7 +168,10 @@ function validateRow(
   // Pass through any extra columns (type-specific fields like expiryDate, size, color, etc.)
   const knownFields = new Set([...CSV_TEMPLATE_HEADERS, ...optionalFields])
   for (const [key, value] of Object.entries(rawRow)) {
-    if (!knownFields.has(key) && value?.trim()) {
+    // Skip PapaParse's __parsed_extra (array of surplus columns when a row
+    // has more values than headers) and any non-string value
+    if (key === '__parsed_extra') continue
+    if (!knownFields.has(key) && typeof value === 'string' && value.trim()) {
       data[key] = value.trim()
     }
   }
@@ -303,7 +310,16 @@ export function BulkUploadDialog({ open, onOpenChange }: BulkUploadDialogProps) 
         header: true,
         skipEmptyLines: true,
         delimiter,
-        transformHeader: (header: string) => header.trim(),
+        transformHeader: (header: string) => {
+          const trimmed = header.trim()
+          const normalized = trimmed
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+
+          if (normalized === 'articulo') return 'articulo'
+          return trimmed
+        },
         complete: (results) => {
           if (results.data.length === 0) {
             toast.error('El archivo está vacío')
@@ -430,10 +446,10 @@ export function BulkUploadDialog({ open, onOpenChange }: BulkUploadDialogProps) 
               <p className="font-medium text-foreground">Campos requeridos:</p>
               <p>name, category, sku, purchasePrice, salePrice, stock, reorderPoint, entryDate</p>
               <p className="font-medium text-foreground mt-2">Campos opcionales comunes:</p>
-              <p>productType, brand, model, description, barcode, supplier, locationInStore, notes</p>
+              <p>articulo, productType, brand, model, description, barcode, supplier, locationInStore, notes</p>
               <p className="font-medium text-foreground mt-2">Campos por tipo de producto:</p>
               <p>La plantilla incluye todos los campos posibles. Solo llena los que apliquen al tipo de producto.</p>
-              <p className="mt-2">La categoría puede ser el nombre o el ID. Las fechas en formato YYYY-MM-DD. El separador del CSV es punto y coma (;).</p>
+              <p className="mt-2">La categoría puede ser el nombre o el ID; si no existe, se crea automáticamente. Las fechas en formato YYYY-MM-DD. El separador del CSV es punto y coma (;).</p>
             </div>
           </div>
         )}
@@ -459,6 +475,7 @@ export function BulkUploadDialog({ open, onOpenChange }: BulkUploadDialogProps) 
                     <TableHead className="w-10">Estado</TableHead>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Categoría</TableHead>
+                    <TableHead>Artículo</TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead className="text-right">P. Compra</TableHead>
                     <TableHead className="text-right">P. Venta</TableHead>
@@ -484,6 +501,7 @@ export function BulkUploadDialog({ open, onOpenChange }: BulkUploadDialogProps) 
                         {row.data.name || '-'}
                       </TableCell>
                       <TableCell className="text-sm">{row.data.category || '-'}</TableCell>
+                      <TableCell className="text-sm">{row.data.articulo || '-'}</TableCell>
                       <TableCell className="text-sm font-mono">{row.data.sku || '-'}</TableCell>
                       <TableCell className="text-right text-sm">
                         {row.data.purchasePrice != null ? row.data.purchasePrice.toLocaleString() : '-'}

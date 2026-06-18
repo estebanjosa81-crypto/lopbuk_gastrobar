@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Upload, X, Loader2, Image as ImageIcon } from 'lucide-react'
+import { api } from '@/lib/api'
 
 interface CloudinaryUploadProps {
   value: string
@@ -18,23 +19,24 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
 // Module-level cache so we don't hit the API on every upload
 let _cloudinaryCache: { cloudName: string; uploadPreset: string } | null = null
 
-async function getCloudinaryConfig(): Promise<{ cloudName: string; uploadPreset: string }> {
+export async function getCloudinaryConfig(): Promise<{ cloudName: string; uploadPreset: string }> {
   // 1. Use module cache
   if (_cloudinaryCache?.cloudName && _cloudinaryCache?.uploadPreset) {
     return _cloudinaryCache
   }
   // 2. Try fetching from backend (platform_settings — set by superadmin)
   try {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null
-    const res = await fetch(`${API_URL}/chatbot/superadmin/integrations`, {
+    const token = api.getToken()
+    const res = await fetch(`${API_URL}/chatbot/cloudinary-config`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
     })
     if (res.ok) {
       const json = await res.json()
-      if (json.success && json.data?.cloudinaryCloudName) {
+      if (json.success && json.data?.cloudName) {
         _cloudinaryCache = {
-          cloudName: json.data.cloudinaryCloudName,
-          uploadPreset: json.data.cloudinaryUploadPreset,
+          cloudName: json.data.cloudName,
+          uploadPreset: json.data.uploadPreset,
         }
         return _cloudinaryCache
       }

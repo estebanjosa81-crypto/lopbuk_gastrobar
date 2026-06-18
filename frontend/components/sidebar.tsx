@@ -1,8 +1,13 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useStore } from '@/lib/store'
 import { useAuthStore } from '@/lib/auth-store'
 import { cn } from '@/lib/utils'
+import { BRAND } from '@/lib/brand'
+import { panelHref } from '@/lib/panel-sections'
+import { ChatDaimuzButton } from '@/components/chat-daimuz-button'
 import {
   LayoutDashboard,
   Package,
@@ -23,63 +28,154 @@ import {
   FlaskConical,
   ShoppingBag,
   Scissors,
+  Dumbbell,
   LogOut,
   ChevronRight,
+  ChevronDown,
   LayoutTemplate,
   Printer,
   Star,
+  UtensilsCrossed,
+  Wallet,
+  Paintbrush,
+  MessageSquarePlus,
+  Truck,
+  Building2,
+  Wrench,
+  Gauge,
+  Flame,
+  BookOpenText,
+  IdCard,
+  Briefcase,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { resolveActiveModules } from '@/lib/modules'
+import { GuideButton } from '@/components/AppGuide'
 
-const navigation = [
+interface NavChild {
+  id: string
+  name: string
+  icon: React.ElementType
+  adminOnly: boolean
+  superadminOnly: boolean
+  merchantOnly: boolean
+}
+
+interface NavItem {
+  id: string
+  name: string
+  icon: React.ElementType
+  adminOnly: boolean
+  superadminOnly: boolean
+  merchantOnly: boolean
+  group: string
+  children?: NavChild[]
+}
+
+const navigation: NavItem[] = [
   // superadmin-only
   { id: 'superadmin', name: 'Panel Admin', icon: Crown, adminOnly: true, superadminOnly: true, merchantOnly: false, group: 'admin' },
   { id: 'pagina-principal', name: 'Página Principal', icon: LayoutTemplate, adminOnly: true, superadminOnly: true, merchantOnly: false, group: 'admin' },
-  // core (merchant/vendedor only)
+  // core
+  // (DAIMUZ Chat ya no es ítem del menú: se abre desde el botón CHAT DAIMUZ del footer)
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'inventory', name: 'Inventario', icon: Package, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
-  { id: 'tienda', name: 'Tienda', icon: Store, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
-  { id: 'reviews', name: 'Reseñas', icon: Star, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
-  { id: 'pedidos', name: 'Pedidos', icon: ClipboardList, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
-  { id: 'cupones', name: 'Cupones', icon: Ticket, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'recipes', name: 'Recetas BOM', icon: FlaskConical, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
   { id: 'purchases', name: 'Compras', icon: ShoppingBag, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
-  { id: 'services', name: 'Servicios', icon: Scissors, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'core' },
-  // operations (merchant/vendedor only)
+  // Tienda — módulo inteligente con submenu
+  {
+    id: 'tienda',
+    name: 'Tienda',
+    icon: Store,
+    adminOnly: true,
+    superadminOnly: false,
+    merchantOnly: true,
+    group: 'core',
+    children: [
+      { id: 'tienda', name: 'Mi Tienda', icon: Paintbrush, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'pedidos', name: 'Pedidos', icon: ClipboardList, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'cupones', name: 'Cupones', icon: Ticket, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'reviews', name: 'Reseñas', icon: Star, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'services', name: 'Servicios', icon: Scissors, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'gym', name: 'Gimnasio', icon: Dumbbell, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'cartilla', name: 'Cartilla Digital', icon: BookOpenText, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'perfil', name: 'Perfil público', icon: IdCard, adminOnly: true, superadminOnly: false, merchantOnly: true },
+      { id: 'servicios-pro', name: 'Servicios Pro', icon: Briefcase, adminOnly: true, superadminOnly: false, merchantOnly: true },
+    ],
+  },
+  // gastrobar ops
+  { id: 'gastrobar-ops', name: 'Centro de Mando', icon: Gauge, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'gastrobar' },
+  { id: 'merma', name: 'Control de Merma', icon: Flame, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'gastrobar' },
+  // operations
+  { id: 'restbar', name: 'RestBar', icon: UtensilsCrossed, adminOnly: false, superadminOnly: false, merchantOnly: true, group: 'ops' },
   { id: 'pos', name: 'Punto de Venta', icon: ShoppingCart, adminOnly: false, superadminOnly: false, merchantOnly: true, group: 'ops' },
   { id: 'cash-register', name: 'Caja', icon: Vault, adminOnly: false, superadminOnly: false, merchantOnly: true, group: 'ops' },
   { id: 'invoices', name: 'Facturación', icon: Receipt, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
   { id: 'customers', name: 'Clientes', icon: Users, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
   { id: 'fiados', name: 'Fiados', icon: CreditCard, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
   { id: 'vendedores', name: 'Empleados', icon: UserCheck, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
-  // reports (merchant/vendedor only)
+  // flota ferretería
+  { id: 'fleet', name: 'Mi Flota', icon: Truck, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
+  // inmobiliaria
+  { id: 'realestate', name: 'Inmobiliaria', icon: Building2, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
+  { id: 'workorders', name: 'Tapicería', icon: Wrench, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'ops' },
+  // reports
   { id: 'history', name: 'Historial', icon: History, adminOnly: false, superadminOnly: false, merchantOnly: true, group: 'reports' },
   { id: 'analytics', name: 'Análisis', icon: TrendingUp, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'reports' },
-  // config (merchant only)
+  { id: 'finances', name: 'Finanzas', icon: Wallet, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'reports' },
+  // config
   { id: 'printers', name: 'Impresoras', icon: Printer, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'config' },
   { id: 'settings', name: 'Configuración', icon: Settings, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'config' },
+  // dev requests (comerciante only)
+  { id: 'dev-requests', name: 'Solicitudes Dev', icon: MessageSquarePlus, adminOnly: true, superadminOnly: false, merchantOnly: true, group: 'config' },
 ]
 
 const groups = [
-  { key: 'admin',   label: null },
-  { key: 'core',    label: 'Gestión' },
-  { key: 'ops',     label: 'Operaciones' },
-  { key: 'reports', label: 'Reportes' },
-  { key: 'config',  label: null },
+  { key: 'admin',     label: null },
+  { key: 'core',      label: 'Gestión' },
+  { key: 'gastrobar', label: 'Gastrobar' },
+  { key: 'ops',       label: 'Operaciones' },
+  { key: 'reports',   label: 'Reportes' },
+  { key: 'config',    label: null },
 ]
 
+// IDs that belong to the Tienda submenu (to detect active state for parent)
+const TIENDA_CHILD_IDS = ['tienda', 'pedidos', 'cupones', 'reviews', 'services', 'cartilla', 'perfil', 'servicios-pro']
+
 export function Sidebar() {
-  const { activeSection, setActiveSection, sidebarOpen, setSidebarOpen } = useStore()
+  const {
+    activeSection, setActiveSection,
+    sidebarOpen, setSidebarOpen,
+  } = useStore()
   const { user, logout } = useAuthStore()
+  const router = useRouter()
+
+  const [isHovered, setIsHovered] = useState(false)
+  // Expanded = hovering on desktop OR open overlay on mobile
+  const isExpanded = isHovered || sidebarOpen
+
   const isSuperadmin = user?.role === 'superadmin'
   const isAdmin = user?.role === 'comerciante' || isSuperadmin
 
-  const filteredNavigation = navigation.filter(item => {
+  // Tienda submenu open/closed — auto-opens when a child is active
+  const isTiendaActive = TIENDA_CHILD_IDS.includes(activeSection)
+  const [tiendaOpen, setTiendaOpen] = useState(isTiendaActive)
+
+  const isEmpresarial = user?.tenantPlan === 'empresarial'
+
+  const activeModules = isSuperadmin ? null : resolveActiveModules(user?.enabledModules)
+
+  const filterItem = (item: { adminOnly: boolean; superadminOnly: boolean; merchantOnly: boolean; id?: string }) => {
     if (item.superadminOnly && !isSuperadmin) return false
     if (item.merchantOnly && isSuperadmin) return false
     if (item.adminOnly && !isAdmin) return false
+    if (item.id === 'tienda' && !isSuperadmin && !isEmpresarial) return false
+    if (item.id === 'daimuz-chat') return isEmpresarial
+    if (activeModules && item.id && !activeModules.includes(item.id)) return false
     return true
-  })
+  }
+
+  const filteredNavigation = navigation.filter(filterItem)
 
   const roleLabel = isSuperadmin ? 'Super Admin' : isAdmin ? 'Comerciante' : 'Vendedor'
   const roleColor = isSuperadmin
@@ -87,6 +183,19 @@ export function Sidebar() {
     : isAdmin
     ? 'text-blue-400 bg-blue-400/10 border-blue-400/20'
     : 'text-green-400 bg-green-400/10 border-green-400/20'
+
+  const navigate = (id: string) => {
+    setSidebarOpen(false)
+    // DAIMUZ Chat abre el Modo Chat operativo a pantalla completa (no la sección vieja).
+    if (id === 'daimuz-chat') { router.push('/modo-chat'); return }
+    setActiveSection(id)
+    // Mantiene la URL en sync para que cada sección sea compartible (/panel/<slug>)
+    router.push(panelHref(id))
+  }
+
+  const handleTiendaClick = () => {
+    setTiendaOpen(prev => !prev)
+  }
 
   return (
     <>
@@ -98,71 +207,171 @@ export function Sidebar() {
         />
       )}
 
-      <aside className={cn(
-        "fixed left-0 top-0 z-50 flex h-screen w-60 flex-col border-r border-sidebar-border bg-sidebar transition-transform duration-300 ease-in-out",
-        "md:translate-x-0",
-        sidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
+      <aside
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className={cn(
+          "fixed left-4 top-1/2 z-50 flex flex-col rounded-[28px] max-h-[90vh] overflow-hidden",
+          "transition-all duration-300",
+          isExpanded
+            ? "w-[220px] shadow-[0_12px_48px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.08)]"
+            : "w-[58px] shadow-[0_4px_24px_rgba(0,0,0,0.10)]",
+          "-translate-y-1/2 md:translate-x-0",
+          sidebarOpen ? "translate-x-0" : "-translate-x-[calc(100%+16px)] md:translate-x-0"
+        )}
+        style={{ background: 'rgba(245, 246, 250, 0.98)', backdropFilter: 'blur(24px)' }}
+      >
 
         {/* ── Logo ── */}
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
-          <div className="flex items-center gap-2.5">
+        <div className="flex h-14 shrink-0 items-center border-b border-black/[0.06] px-3">
+          <div data-tour="sidebar-logo" className={cn("flex items-center gap-2.5 min-w-0", !isExpanded && "justify-center w-full")}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/image/lopbukicon.png" alt="Lopbuk" width={32} height={32} className="rounded-md" />
-            <div className="flex flex-col leading-none">
-              <span className="text-sm font-bold text-sidebar-foreground tracking-tight">Lopbuk</span>
-              <span className="text-[10px] text-muted-foreground">Gestión de Inventario</span>
-            </div>
+            <img src={BRAND.icon} alt={BRAND.name} width={30} height={30} className="rounded-md shrink-0 object-contain" />
+            {isExpanded && (
+              <div className="flex flex-col leading-none min-w-0">
+                <span className="text-sm font-bold text-gray-900 tracking-tight">{BRAND.name}</span>
+                <span className="text-[10px] text-gray-400">Gestión de Inventario</span>
+              </div>
+            )}
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden h-7 w-7 text-muted-foreground hover:text-sidebar-foreground"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <X className="h-4 w-4" />
-          </Button>
+
+          {/* Close on mobile only */}
+          {isExpanded && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden ml-auto h-7 w-7 text-gray-400 hover:text-gray-900 shrink-0"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         {/* ── Navigation ── */}
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 scrollbar-thin scrollbar-thumb-sidebar-border scrollbar-track-transparent">
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {groups.map(group => {
             const items = filteredNavigation.filter(i => i.group === group.key)
             if (items.length === 0) return null
             return (
               <div key={group.key} className="mb-1">
-                {group.label && (
-                  <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 select-none">
+                {group.label && isExpanded && (
+                  <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-gray-400/80 select-none">
                     {group.label}
                   </p>
                 )}
+                {group.label && !isExpanded && (
+                  <div className="mx-3 my-1 border-t border-black/[0.06]" />
+                )}
+
                 {items.map(item => {
+                  // Special handling for Tienda (has children)
+                  if (item.children) {
+                    const visibleChildren = item.children.filter(filterItem)
+                    if (visibleChildren.length === 0) return null
+                    const isParentActive = isTiendaActive
+
+                    return (
+                      <div key={item.id}>
+                        {/* Parent button */}
+                        <button
+                            data-tour="sidebar-tienda"
+                            onClick={handleTiendaClick}
+                            className={cn(
+                              "group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150",
+                              isParentActive
+                                ? "bg-[#141928] text-white"
+                                : !isExpanded ? "text-gray-400 hover:bg-black/[0.06] hover:text-gray-900" : "text-gray-600 hover:bg-black/[0.06] hover:text-gray-900",
+                              !isExpanded && "justify-center px-0"
+                            )}
+                          >
+                            {isParentActive && isExpanded && (
+                              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
+                            )}
+                            <item.icon className={cn(
+                              "h-4 w-4 shrink-0 transition-colors",
+                              isParentActive ? "text-primary" : "text-gray-400 group-hover:text-gray-900"
+                            )} />
+                            {isExpanded && (
+                              <>
+                                <span className="truncate flex-1 text-left">{item.name}</span>
+                                {tiendaOpen
+                                  ? <ChevronDown className="ml-auto h-3 w-3 opacity-60" />
+                                  : <ChevronRight className="ml-auto h-3 w-3 opacity-60" />
+                                }
+                              </>
+                            )}
+                        </button>
+
+                        {/* Children submenu — only when expanded */}
+                        {isExpanded && tiendaOpen && (
+                          <div className="mt-0.5 ml-3 pl-3 border-l border-black/[0.08] space-y-0.5">
+                            {visibleChildren.map(child => {
+                              const isChildActive = activeSection === child.id
+                              return (
+                                <div key={child.id}>
+                                  <button
+                                    onClick={() => navigate(child.id)}
+                                    className={cn(
+                                      "group relative flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-sm font-medium transition-all duration-150",
+                                      isChildActive
+                                        ? "bg-[#141928] text-white"
+                                        : "text-gray-600 hover:bg-black/[0.06] hover:text-gray-900"
+                                    )}
+                                  >
+                                    {isChildActive && (
+                                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-primary rounded-r-full" />
+                                    )}
+                                    <child.icon className={cn(
+                                      "h-3.5 w-3.5 shrink-0",
+                                      isChildActive ? "text-primary" : "text-gray-400 group-hover:text-gray-900"
+                                    )} />
+                                    <span className="truncate">{child.name}</span>
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  // Regular item
                   const isActive = activeSection === item.id
                   return (
-                    <button
-                      key={item.id}
-                      onClick={() => { setActiveSection(item.id); setSidebarOpen(false) }}
-                      className={cn(
-                        "group relative flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
-                        isActive
-                          ? "bg-primary/10 text-primary shadow-sm"
-                          : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                      )}
-                    >
-                      {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r-full" />
-                      )}
-                      <item.icon className={cn(
-                        "h-4 w-4 shrink-0 transition-colors",
-                        isActive ? "text-primary" : "text-muted-foreground/70 group-hover:text-sidebar-foreground"
-                      )} />
-                      <span className="truncate">{item.name}</span>
-                      {isActive && <ChevronRight className="ml-auto h-3 w-3 text-primary/60" />}
-                    </button>
+                    <div key={item.id}>
+                      <button
+                        data-tour={`sidebar-${item.id}`}
+                        onClick={() => navigate(item.id)}
+                        className={cn(
+                          "group relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-all duration-150",
+                          isActive
+                            ? "bg-[#141928] text-white shadow-sm"
+                            : !isExpanded ? "text-gray-400 hover:bg-black/[0.06] hover:text-gray-900" : "text-gray-600 hover:bg-black/[0.06] hover:text-gray-900",
+                          !isExpanded && "justify-center px-0"
+                        )}
+                      >
+                        {isActive && isExpanded && (
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-primary rounded-r-full" />
+                        )}
+                        <item.icon className={cn(
+                          "h-4 w-4 shrink-0 transition-colors",
+                          isActive ? "text-primary" : "text-gray-400 group-hover:text-gray-900"
+                        )} />
+                        {isExpanded && (
+                          <>
+                            <span className="truncate">{item.name}</span>
+                            {isActive && <ChevronRight className="ml-auto h-3 w-3 text-primary/60" />}
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )
                 })}
-                {group.key !== 'config' && items.length > 0 && (
-                  <div className="mx-3 mt-2 mb-1 border-t border-sidebar-border/40" />
+
+                {group.key !== 'config' && items.length > 0 && isExpanded && (
+                  <div className="mx-3 mt-2 mb-1 border-t border-black/[0.06]" />
                 )}
               </div>
             )
@@ -170,31 +379,56 @@ export function Sidebar() {
         </nav>
 
         {/* ── Footer ── */}
-        <div className="shrink-0 border-t border-sidebar-border p-3 space-y-2">
-          {/* User info */}
-          <div className="flex items-center gap-2.5 px-1">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold">
-              {user?.name?.charAt(0).toUpperCase() ?? '?'}
+        <div className={cn("shrink-0 border-t border-black/[0.06] p-3 space-y-2", !isExpanded && "px-2")}>
+          {isExpanded ? (
+            <>
+              {/* Entrada al Modo Chat Daimuz (solo plan empresarial) */}
+              {isEmpresarial && (
+                <div className="flex justify-center pb-1">
+                  <ChatDaimuzButton />
+                </div>
+              )}
+              {/* User info */}
+              <div className="flex items-center gap-2.5 px-1">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold">
+                  {user?.name?.charAt(0).toUpperCase() ?? '?'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-900 truncate">{user?.name ?? '—'}</p>
+                  <p className="text-[10px] text-gray-400 truncate">{user?.email ?? ''}</p>
+                </div>
+              </div>
+              {/* Role badge */}
+              <div className={cn('mx-1 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-center', roleColor)}>
+                {roleLabel}
+              </div>
+              {/* Guide + Logout row */}
+              <div className="flex items-center gap-1">
+                <GuideButton />
+                <button
+                  onClick={logout}
+                  className="flex flex-1 items-center gap-2 rounded-xl px-3 py-1.5 text-xs text-gray-400 hover:bg-black/[0.06] hover:text-red-500 transition-colors"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  Cerrar sesión
+                </button>
+              </div>
+            </>
+          ) : (
+            /* Collapsed footer — avatar + guide + logout */
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold cursor-default">
+                {user?.name?.charAt(0).toUpperCase() ?? '?'}
+              </div>
+              <GuideButton />
+              <button
+                onClick={logout}
+                className="flex items-center justify-center h-7 w-7 rounded-xl text-gray-400 hover:bg-black/[0.06] hover:text-red-500 transition-colors"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-sidebar-foreground truncate">{user?.name ?? '—'}</p>
-              <p className="text-[10px] text-muted-foreground truncate">{user?.email ?? ''}</p>
-            </div>
-          </div>
-
-          {/* Role badge */}
-          <div className={cn('mx-1 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-center', roleColor)}>
-            {roleLabel}
-          </div>
-
-          {/* Logout */}
-          <button
-            onClick={logout}
-            className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-red-400 transition-colors"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            Cerrar sesión
-          </button>
+          )}
         </div>
       </aside>
     </>

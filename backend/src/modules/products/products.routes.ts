@@ -209,6 +209,42 @@ router.put(
   productsController.update.bind(productsController)
 );
 
+// PUT /api/products/:id/preorder — Configurar pre-orden de un producto
+router.put(
+  '/:id/preorder',
+  [
+    param('id').notEmpty().withMessage('ID requerido'),
+    body('isPreorder').isBoolean().withMessage('isPreorder debe ser boolean'),
+    body('preorderWindowEnd')
+      .optional({ values: 'null' })
+      .isISO8601()
+      .withMessage('Fecha de cierre inválida'),
+    body('preorderShipStart')
+      .optional({ values: 'null' })
+      .isISO8601()
+      .withMessage('Fecha inicio envío inválida'),
+    body('preorderShipEnd')
+      .optional({ values: 'null' })
+      .isISO8601()
+      .withMessage('Fecha fin envío inválida'),
+    body('preorderBadgeText')
+      .optional()
+      .isString()
+      .isLength({ max: 60 })
+      .withMessage('Badge máximo 60 caracteres'),
+    body('preorderPolicyText').optional({ values: 'null' }).isString(),
+    validateRequest,
+  ],
+  productsController.updatePreorder.bind(productsController)
+);
+
+// DELETE /api/products/bulk — eliminación múltiple (ANTES de /:id)
+router.delete(
+  '/bulk',
+  [body('ids').isArray({ min: 1 }).withMessage('ids requeridos'), validateRequest],
+  productsController.bulkDelete.bind(productsController)
+);
+
 // DELETE /api/products/:id
 router.delete(
   '/:id',

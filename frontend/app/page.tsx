@@ -3,36 +3,23 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '@/lib/store'
 import { useAuthStore } from '@/lib/auth-store'
-import { MainLayout } from '@/components/main-layout'
-import { Dashboard } from '@/components/dashboard'
-import { Analytics } from '@/components/analytics'
-import { InventoryList } from '@/components/inventory-list'
-import { PointOfSale } from '@/components/point-of-sale'
-import { SalesHistory } from '@/components/sales-history'
-import { Invoicing } from '@/components/invoicing'
-import { Settings } from '@/components/settings'
-import { Customers } from '@/components/customers'
-import { Fiados } from '@/components/fiados'
-import { CashRegister } from '@/components/cash-register'
-import { TenantManagement } from '@/components/tenant-management'
-import { SuperadminHome } from '@/components/superadmin-home'
 import { AuthForm } from '@/components/auth-form'
 import { LandingPage } from '@/components/landing-page'
-import { Tienda } from '@/components/tienda'
-import { Pedidos } from '@/components/pedidos'
-import { Cupones } from '@/components/cupones'
-import { Recipes } from '@/components/recipes'
-import { DriverPanel } from '@/components/driver-panel'
-import { PurchaseInvoices } from '@/components/purchase-invoices'
-import { ServicesManagement } from '@/components/services-management'
-import { PrintersConfig } from '@/components/printers'
-import { VendedoresPanel } from '@/components/vendedores-panel'
-import { ReviewsPanel } from '@/components/reviews-panel'
+import { MerchantPanel } from '@/components/merchant-panel'
+import { FullPageLoader } from '@/components/box-loader'
 
 export default function Home() {
   const { activeSection, setActiveSection } = useStore()
   const { isAuthenticated, checkAuth, user, isCheckingAuth } = useAuthStore()
   const [showLogin, setShowLogin] = useState(false)
+  // Detecta si la URL pide la vista pública de la tienda (?store=slug),
+  // p.ej. el iframe de preview del Editor Visual. En ese caso renderizamos
+  // siempre la tienda pública aunque el admin esté autenticado.
+  const [isStorePreview, setIsStorePreview] = useState<boolean | undefined>(undefined)
+
+  useEffect(() => {
+    setIsStorePreview(new URLSearchParams(window.location.search).has('store'))
+  }, [])
 
   useEffect(() => {
     checkAuth()
@@ -66,6 +53,14 @@ export default function Home() {
     }
   }, [isAuthenticated, user?.role, activeSection, setActiveSection])
 
+  // Redirect restaurant roles to restbar on login
+  useEffect(() => {
+    const restaurantRoles = ['mesero', 'cocinero', 'cajero', 'bartender', 'administrador_rb']
+    if (isAuthenticated && restaurantRoles.includes(user?.role ?? '') && activeSection === 'dashboard') {
+      setActiveSection('restbar')
+    }
+  }, [isAuthenticated, user?.role, activeSection, setActiveSection])
+
   // Prevent non-superadmin users from seeing superadmin section (stale localStorage)
   useEffect(() => {
     if (isAuthenticated && user?.role !== 'superadmin' && activeSection === 'superadmin') {
@@ -73,26 +68,27 @@ export default function Home() {
     }
   }, [isAuthenticated, user?.role, activeSection, setActiveSection])
 
-  // Block render until token is verified — prevents blocked users from seeing the UI
-  if (isCheckingAuth) {
+  // Espera a saber si es preview de tienda (evita parpadeo del dashboard en el iframe)
+  // y bloquea el render hasta verificar el token.
+  if (isStorePreview === undefined || isCheckingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
+      <FullPageLoader />
     )
   }
 
-  // Repartidor gets their own full-screen panel (no sidebar)
-  if (isAuthenticated && user?.role === 'repartidor') {
-    return <DriverPanel />
+  // Vista pública de la tienda (?store=slug): se renderiza siempre, incluso si el
+  // admin está autenticado. Esto hace que el preview del Editor Visual muestre la
+  // página real de la tienda y no el dashboard.
+  if (isStorePreview) {
+    return <LandingPage onGoToLogin={() => setShowLogin(true)} />
   }
 
-  // Cliente gets LandingPage with active session
+  // Cliente: LandingPage con sesión activa
   if (isAuthenticated && user?.role === 'cliente') {
     return <LandingPage onGoToLogin={() => {}} />
   }
 
-  // Show login if not authenticated
+  // Sin sesión: landing pública y, al pulsar acceder, el formulario de login
   if (!isAuthenticated) {
     if (!showLogin) {
       return <LandingPage onGoToLogin={() => setShowLogin(true)} />
@@ -100,66 +96,7 @@ export default function Home() {
     return <AuthForm onGoBack={() => setShowLogin(false)} />
   }
 
-  const renderSection = () => {
-    switch (activeSection) {
-      case 'superadmin':
-        return user?.role === 'superadmin' ? <TenantManagement /> : <Dashboard />
-      case 'pagina-principal':
-        return user?.role === 'superadmin' ? <SuperadminHome /> : <Dashboard />
-      case 'dashboard':
-        return <Dashboard />
-      case 'inventory':
-        return <InventoryList />
-      case 'tienda':
-        return <Tienda />
-      case 'pedidos':
-        return <Pedidos />
-      case 'cupones':
-        return <Cupones />
-      case 'recipes':
-        return <Recipes />
-      case 'pos':
-        return <PointOfSale />
-      case 'cash-register':
-        return <CashRegister />
-      case 'history':
-        return <SalesHistory />
-      case 'invoices':
-        return <Invoicing />
-      case 'customers':
-        return <Customers />
-      case 'fiados':
-        return <Fiados />
-      case 'purchases':
-        return <PurchaseInvoices />
-      case 'services':
-        return <ServicesManagement />
-      case 'analytics':
-        return <Analytics />
-      case 'settings':
-        return <Settings />
-      case 'printers':
-        return <PrintersConfig />
-      case 'vendedores':
-        return <VendedoresPanel />
-      case 'reviews':
-        return (
-          <div className="p-6 space-y-4">
-            <div>
-              <h1 className="text-2xl font-bold">Reseñas de productos</h1>
-              <p className="text-gray-500 text-sm">Gestiona las reseñas que los clientes dejan en tu tienda</p>
-            </div>
-            <ReviewsPanel />
-          </div>
-        )
-      default:
-        return <Dashboard />
-    }
-  }
-
-  return (
-    <MainLayout>
-      {renderSection()}
-    </MainLayout>
-  )
+  // Autenticado (comerciante, vendedor, staff de restaurante, etc.):
+  // el panel del comerciante decide qué mostrar según el rol y la sección activa.
+  return <MerchantPanel />
 }

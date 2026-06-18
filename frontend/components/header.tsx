@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useStore } from '@/lib/store'
 import { useAuthStore } from '@/lib/auth-store'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle, Bell, ExternalLink, Menu, PackageX, Search, ShoppingBag, User, Package, Receipt, Users, X } from 'lucide-react'
+import { AlertTriangle, Bell, ExternalLink, Menu, PackageX, Search, ShoppingBag, User, Package, Receipt, Users, X, BookOpen } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +16,12 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/lib/api'
 import { SyncStatusBar } from '@/components/sync-status-bar'
+import { NotificationsBell } from '@/components/notifications-bell'
+import { ProfileModal } from '@/components/profile-modal'
+import { ThemeSwitch } from '@/components/theme-switch'
+import { PreferencesModal } from '@/components/preferences-modal'
+import { AppGuide } from '@/components/AppGuide'
+import { ProductTour } from '@/components/ProductTour'
 
 const sectionTitles: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -109,6 +115,7 @@ function GlobalSearch() {
       <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
       <Input
         ref={inputRef}
+        data-tour="header-search"
         type="search"
         value={query}
         placeholder="Buscar productos, facturas, clientes…"
@@ -214,12 +221,36 @@ function GlobalSearch() {
 
 export function Header() {
   const { activeSection, products, toggleSidebar, navigateToInventory, pendingOrdersCount, fetchPendingOrdersCount, navigateToPedidos } = useStore()
-  const { logout } = useAuthStore()
+  const { user, logout } = useAuthStore()
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [preferencesOpen, setPreferencesOpen] = useState(false)
+  const [guideOpen, setGuideOpen]   = useState(false)
+  const [tourOpen,  setTourOpen]    = useState(false)
+
+  // Auto-show interactive tour on first visit
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const seen = localStorage.getItem('lopbuk_guide_seen_v1')
+    if (!seen) {
+      setTimeout(() => setTourOpen(true), 800) // small delay so the UI renders first
+      localStorage.setItem('lopbuk_guide_seen_v1', '1')
+    }
+  }, [])
   const lowStockProducts = products.filter(p => p.stock <= p.reorderPoint && p.stock > 0).sort((a, b) => a.stock - b.stock)
   const outOfStockProducts = products.filter(p => p.stock === 0)
   const lowStockCount = lowStockProducts.length
   const outOfStockCount = outOfStockProducts.length
   const alertCount = lowStockCount + outOfStockCount + Number(pendingOrdersCount)
+
+  const trialDaysLeft = useMemo(() => {
+    if (user?.role !== 'comerciante' || !user?.tenantTrialEndsAt) return null
+    const endsAt = new Date(user.tenantTrialEndsAt)
+    if (Number.isNaN(endsAt.getTime())) return null
+    const msLeft = endsAt.getTime() - Date.now()
+    return Math.ceil(msLeft / (1000 * 60 * 60 * 24))
+  }, [user?.role, user?.tenantTrialEndsAt])
+
+  const trialExpired = trialDaysLeft !== null && trialDaysLeft <= 0
 
   useEffect(() => {
     fetchPendingOrdersCount()
@@ -238,22 +269,54 @@ export function Header() {
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <h1 className="text-lg font-semibold text-foreground sm:text-xl lg:text-2xl">
-          {sectionTitles[activeSection] || 'Dashboard'}
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold text-foreground sm:text-xl lg:text-2xl">
+            {sectionTitles[activeSection] || 'Dashboard'}
+          </h1>
+          {trialDaysLeft !== null && (
+            trialExpired ? (
+              <span className="inline-flex items-center rounded-full border border-destructive/30 bg-destructive/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-destructive">
+                Periodo de prueba terminado. Para acceder al modulo Tienda, actualizate al plan empresarial
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-amber-500">
+                Prueba gratis: {trialDaysLeft} dia{trialDaysLeft === 1 ? '' : 's'} restantes
+              </span>
+            )
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-3 lg:gap-4">
         {/* Sync status (solo visible en instancias locales) */}
         <SyncStatusBar />
 
+        {/* Notificaciones del comercio */}
+        <NotificationsBell />
+
         {/* Search */}
         <GlobalSearch />
+
+        {/* Guide button */}
+        <Button
+          data-tour="header-guide"
+          variant="ghost"
+          size="sm"
+          onClick={() => setTourOpen(true)}
+          className="hidden sm:flex items-center gap-1.5 text-muted-foreground hover:text-foreground h-9 px-3"
+          title="Guía de uso"
+        >
+          <BookOpen className="h-4 w-4" />
+          <span className="text-xs font-medium hidden lg:inline">Guía</span>
+        </Button>
+
+        {/* Cambio de tema (claro/oscuro) con expansión dinámica */}
+        <ThemeSwitch size={16} />
 
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative h-10 w-10 lg:h-11 lg:w-11">
+            <Button data-tour="header-notifications" variant="ghost" size="icon" className="relative h-10 w-10 lg:h-11 lg:w-11">
               <Bell className="h-5 w-5 lg:h-5.5 lg:w-5.5 text-muted-foreground" />
               {alertCount > 0 && (
                 <span className="absolute -right-0.5 -top-0.5 flex h-5 w-5 lg:h-5.5 lg:w-5.5 items-center justify-center rounded-full bg-destructive text-[10px] lg:text-xs font-medium text-destructive-foreground">
@@ -376,13 +439,18 @@ export function Header() {
           <DropdownMenuContent align="end" className="w-48 lg:w-56">
             <DropdownMenuLabel className="text-sm lg:text-base">Mi Cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-sm lg:text-base">Perfil</DropdownMenuItem>
-            <DropdownMenuItem className="text-sm lg:text-base">Preferencias</DropdownMenuItem>
+            <DropdownMenuItem className="text-sm lg:text-base" onClick={() => setProfileOpen(true)}>Perfil</DropdownMenuItem>
+            <DropdownMenuItem className="text-sm lg:text-base" onClick={() => setPreferencesOpen(true)}>Preferencias</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout} className="text-sm lg:text-base">Cerrar Sesión</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
+      <PreferencesModal open={preferencesOpen} onClose={() => setPreferencesOpen(false)} />
+      <AppGuide open={guideOpen} onClose={() => setGuideOpen(false)} />
+      <ProductTour open={tourOpen} onClose={() => setTourOpen(false)} />
     </header>
   )
 }

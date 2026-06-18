@@ -1,47 +1,91 @@
-StockPro - Sistema de Gestión de Inventario
-Beneficios principales para el negocio
-1. Control total del inventario
+# Lopbuk
 
-Seguimiento en tiempo real del stock de cada producto
-Alertas automáticas de stock bajo y agotado
-Punto de reorden configurable por producto
-Historial completo de movimientos de inventario (entradas, salidas, ajustes, ventas, devoluciones)
-Ajuste masivo de inventario
-2. Punto de Venta (POS) integrado
+Plataforma integral y versatil para operar negocios de retail, gastrobar, restaurantes, servicios, ecommerce y mas. Centraliza inventario, ventas, finanzas, operacion y presencia digital en un solo flujo para acelerar la operacion y mejorar la rentabilidad.
 
-Búsqueda rápida de productos por nombre o SKU
-Carrito de compras con cantidades y descuentos por item
-Cálculo automático de IVA (19%)
-3 métodos de pago: efectivo (con cálculo de cambio), tarjeta y transferencia
-Generación automática de facturas con número consecutivo
-Impresión de facturas profesionales
-3. Dashboard con métricas clave
+## Beneficios clave
 
-Total de productos e inventario valorizado
-Ventas diarias, semanales y mensuales
-Tendencia de ventas (gráfico de 7 días)
-Top 5 productos más vendidos
-Ventas por categoría
-Alertas de reabastecimiento
-4. Historial de ventas completo
+- Control total y trazabilidad: stock, ventas y movimientos en tiempo real.
+- Operacion mas rapida: POS, caja, facturacion y paneles por rol.
+- Rentabilidad visible: costos, merma, food cost y reportes accionables.
+- Compras inteligentes: niveles PAR, sugerencias y reorden automatizado.
+- Escalabilidad: multi-sucursal, multi-rol, multi-negocio, multi-modulo.
+- Reduccion de fugas: alertas, auditorias y flujos cerrados de caja.
+- Experiencia cliente: ventas agiles, atencion por canales y fidelizacion.
 
-Filtros por fecha, método de pago y búsqueda
-Detalle de cada venta con factura
-Anulación de ventas (restaura stock automáticamente)
-Reimpresión de facturas
-5. Gestión de usuarios y roles
+## Funcionalidades completas
 
-Admin: acceso completo (inventario, dashboard, analytics, configuración, usuarios)
-Vendedor: solo POS e historial de ventas
-6. Diseñado para ropa masculina
+### Inventario y compras
 
-8 categorías: camisas, pantalones, zapatos, accesorios, ropa interior, abrigos, trajes, deportivo
-7 tallas: XS a XXXL
-Campos de marca, color, proveedor, precio de compra y venta
-7. Localizado para Colombia
+- Kardex y trazabilidad por producto.
+- Entradas, salidas, ajustes y transferencias.
+- Costeo, valorizacion y control de stock minimo.
+- Reorden y sugerencias de compra.
+- Proveedores, compras e historial.
 
-Moneda: Pesos Colombianos (COP)
-IVA: 19%
-Idioma: Español
-Formato de fechas colombiano
->>>>>>> 4abf92c27015b98a52f6fc007300b3fc26d0c2d8
+### Punto de venta y caja
+
+- POS rapido con busqueda por nombre, codigo o SKU.
+- Descuentos por item o por venta.
+- Multiples medios de pago.
+- Facturacion y documentos (factura, remision, notas).
+- Cierres de caja, arqueo y control de efectivo.
+- Impresion de tickets y facturas.
+
+### Clientes, credito y fidelizacion
+
+- CRM basico con historico de compras.
+- Fiados y creditos con control de cupo.
+- Seguimiento de pagos y saldos.
+- Segmentacion por frecuencia o monto.
+
+### Analitica, reportes y finanzas
+
+- Dashboard con KPIs en tiempo real.
+- Historial de ventas con filtros avanzados.
+- Tendencias, top productos y categorias.
+- Flujo de ingresos y egresos.
+- Reportes exportables para decisiones rapidas.
+
+### Operacion por roles
+
+- Panel de cajero, cocinero, bartender y mesero.
+- RestBar/mesas para servicio en piso.
+- Panel de vendedor y administrador.
+- Permisos por rol y modulos activables.
+
+### Recetas, costos y gastrobar ops
+
+- Recetas BOM con consumo de insumos.
+- Food cost por receta y por area.
+- Control de merma y desperdicio.
+- Centro de mando con modo dueno.
+- Niveles PAR y sugerencias de compra.
+
+### Delivery, despacho y flota
+
+- Panel de despachador con asignacion de pedidos.
+- Panel de conductor con seguimiento operativo.
+- Gestion de flota para negocios con reparto.
+
+### Tienda online y presencia digital
+
+- Catalogo y pedidos online.
+- Cupones, reseñas y servicios.
+- Landing, menu digital, links y reservas.
+- Portafolio para servicios o proyectos.
+
+### Presets por industria
+
+- Gastrobar, restaurante, bar, cafeteria, panaderia.
+- Moda, calzado, retail y ecommerce.
+- Ferreteria, supermercado, farmacia y electronica.
+- Tapiceria y servicios generales.
+- Inmobiliaria y transporte.
+
+## Usabilidad destacada
+
+- Interfaces por rol para evitar ruido y acelerar tareas.
+- Flujos guiados para caja, merma, compras y reposicion.
+- Datos en tiempo real para decidir con confianza.
+- Preparado para crecer por sucursales y equipos.
+- Modulos activables segun el tipo de negocio.

@@ -39,6 +39,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { CloudinaryUpload } from '@/components/ui/cloudinary-upload'
+import { VariantManager } from '@/components/variant-manager'
+import { ProductModifiersManager } from '@/components/product-modifiers-manager'
 import {
   Search,
   Plus,
@@ -50,10 +52,19 @@ import {
   ScanLine,
   Smartphone,
   Upload,
+  Layers,
+  SlidersHorizontal,
   MapPin,
   ChevronDown,
   Settings2,
   FileDown,
+  ImageIcon,
+  Eye,
+  EyeOff,
+  Palette,
+  GripVertical,
+  CheckSquare,
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BarcodeScanner } from '@/components/barcode-scanner'
@@ -61,7 +72,7 @@ import { RemoteScanner } from '@/components/remote-scanner'
 import { BulkUploadDialog } from '@/components/bulk-upload-dialog'
 
 export function InventoryList() {
-  const { products, isLoadingProducts, fetchProducts, addProduct, updateProduct, deleteProduct, categories, fetchCategories, addCategory, inventoryStockFilter, inventorySearchQuery, clearInventoryFilters, sedes, fetchSedes, addSede, updateSede, deleteSede } = useStore()
+  const { products, isLoadingProducts, fetchProducts, addProduct, updateProduct, deleteProduct, bulkDeleteProducts, categories, fetchCategories, addCategory, updateCategory, toggleCategoryVisibility, deleteCategory, inventoryStockFilter, inventorySearchQuery, clearInventoryFilters, sedes, fetchSedes, addSede, updateSede, deleteSede } = useStore()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('all')
@@ -69,10 +80,19 @@ export function InventoryList() {
   const [activeSede, setActiveSede] = useState<string>('all')
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [variantProduct, setVariantProduct] = useState<Product | null>(null)
+  const [modifiersProduct, setModifiersProduct] = useState<Product | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
   const [isSedeDialogOpen, setIsSedeDialogOpen] = useState(false)
+  const [isImageDialogOpen, setIsImageDialogOpen] = useState(false)
+  const [imageDialogData, setImageDialogData] = useState<{ imageUrl: string; images: string[] }>({ imageUrl: '', images: ['', '', '', ''] })
+  const [isSavingImages, setIsSavingImages] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [isExporting, setIsExporting] = useState(false)
 
@@ -99,7 +119,10 @@ export function InventoryList() {
       setIsExporting(false)
     }
   }
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' })
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '#6366f1' })
+  const [showHiddenCategories, setShowHiddenCategories] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<any>(null)
+  const [editingCategoryForm, setEditingCategoryForm] = useState({ name: '', description: '', color: '#6366f1' })
   const [sedeForm, setSedeForm] = useState({ name: '', address: '' })
   const [editingSede, setEditingSede] = useState<Sede | null>(null)
   const [highlightedProduct, setHighlightedProduct] = useState<string | null>(null)
@@ -109,6 +132,13 @@ export function InventoryList() {
     fetchCategories()
     fetchSedes()
   }, [fetchProducts, fetchCategories, fetchSedes])
+
+  // When category dialog opens/closes or showHiddenCategories changes, reload categories
+  useEffect(() => {
+    if (isCategoryDialogOpen) {
+      fetchCategories(showHiddenCategories)
+    }
+  }, [isCategoryDialogOpen, showHiddenCategories, fetchCategories])
 
   // Apply filters from notification navigation
   useEffect(() => {
@@ -178,6 +208,39 @@ export function InventoryList() {
     setIsDeleteDialogOpen(true)
   }
 
+  const handleOpenImageDialog = (product: Product) => {
+    const imagesArr = Array.isArray(product.images) ? product.images : []
+    setSelectedProduct(product)
+    setImageDialogData({
+      imageUrl: product.imageUrl || imagesArr[0] || '',
+      images: [
+        product.imageUrl || imagesArr[0] || '',
+        imagesArr[1] || '',
+        imagesArr[2] || '',
+        imagesArr[3] || '',
+      ],
+    })
+    setIsImageDialogOpen(true)
+  }
+
+  const handleSaveImages = async () => {
+    if (!selectedProduct) return
+    setIsSavingImages(true)
+    const trimmed = imageDialogData.images.map(u => u.trim())
+    const result = await updateProduct(selectedProduct.id, {
+      imageUrl: trimmed[0],
+      images: trimmed,
+    })
+    setIsSavingImages(false)
+    if (result.success) {
+      setIsImageDialogOpen(false)
+      setSelectedProduct(null)
+      toast.success('Imágenes actualizadas')
+    } else {
+      toast.error('Error al guardar imágenes')
+    }
+  }
+
   const confirmDelete = async () => {
     if (selectedProduct) {
       const result = await deleteProduct(selectedProduct.id)
@@ -187,6 +250,36 @@ export function InventoryList() {
       } else {
         toast.error(result.error || 'Error al eliminar producto')
       }
+    }
+  }
+
+  // ── Multi-selección + acciones bulk ──
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  const selectAll = () =>
+    setSelectedIds(
+      selectedIds.size === filteredProducts.length
+        ? new Set()
+        : new Set(filteredProducts.map(p => p.id))
+    )
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
+  const confirmBulkDelete = async () => {
+    setIsBulkDeleting(true)
+    const ids = Array.from(selectedIds)
+    const result = await bulkDeleteProducts(ids)
+    setIsBulkDeleting(false)
+    if (result.success) {
+      const d = result.data?.deleted ?? ids.length
+      const s = result.data?.skipped ?? 0
+      toast.success(`${d} producto(s) eliminado(s)${s ? ` · ${s} omitido(s) (tienen ventas asociadas)` : ''}`)
+      setIsBulkDeleteOpen(false)
+      exitSelectMode()
+    } else {
+      toast.error(result.error || 'Error al eliminar productos')
     }
   }
 
@@ -244,7 +337,7 @@ export function InventoryList() {
           </Button>
           <Button variant="outline" onClick={() => setIsCategoryDialogOpen(true)} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
             <Tags className="h-4 w-4 lg:h-5 lg:w-5" />
-            Crear Categoria
+            Categorías
           </Button>
           <Button variant="outline" onClick={() => setIsBulkUploadOpen(true)} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
             <Upload className="h-4 w-4 lg:h-5 lg:w-5" />
@@ -254,7 +347,15 @@ export function InventoryList() {
             <FileDown className="h-4 w-4 lg:h-5 lg:w-5" />
             {isExporting ? 'Exportando...' : 'Exportar CSV'}
           </Button>
-          <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
+          <Button
+            variant={selectMode ? 'default' : 'outline'}
+            onClick={() => { setSelectMode(v => !v); setSelectedIds(new Set()) }}
+            className="gap-2 h-10 lg:h-11 text-sm lg:text-base"
+          >
+            <CheckSquare className="h-4 w-4 lg:h-5 lg:w-5" />
+            {selectMode ? 'Cancelar selección' : 'Seleccionar'}
+          </Button>
+          <Button data-tour="inv-new" onClick={() => setIsAddDialogOpen(true)} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
             <Plus className="h-4 w-4 lg:h-5 lg:w-5" />
             Agregar Producto
           </Button>
@@ -264,8 +365,8 @@ export function InventoryList() {
       {/* Filters */}
       <Card className="border-border bg-card">
         <CardContent className="p-4 lg:p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center" data-tour="inv-filters">
+            <div className="relative flex-1" data-tour="inv-search">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nombre, SKU, marca o codigo..."
@@ -318,12 +419,105 @@ export function InventoryList() {
         </CardContent>
       </Card>
 
+      {/* Barra de acciones bulk */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/60 backdrop-blur p-3">
+          <span className="text-sm font-medium">{selectedIds.size} producto(s) seleccionado(s)</span>
+          <Button size="sm" variant="ghost" onClick={selectAll}>
+            {selectedIds.size === filteredProducts.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+          </Button>
+          <Button size="sm" variant="destructive" className="ml-auto gap-1" onClick={() => setIsBulkDeleteOpen(true)}>
+            <Trash2 className="h-4 w-4" /> Eliminar seleccionados
+          </Button>
+        </div>
+      )}
+
       {/* Products Table */}
       <Card className="border-border bg-card">
-        <CardContent className="p-0 overflow-x-auto">
+        <CardContent className="p-0">
+          {/* ── Tarjetas (móvil) ── */}
+          <div className="md:hidden">
+            {filteredProducts.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-12">
+                <Package className="h-8 w-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No se encontraron productos</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {filteredProducts.map((product) => {
+                  const status = getStockStatus(product)
+                  const typeInfo = getProductTypeInfo(product.productType)
+                  const mainImg = product.imageUrl || (Array.isArray(product.images) ? product.images[0] : '') || ''
+                  return (
+                    <div
+                      key={product.id}
+                      id={`product-m-${product.id}`}
+                      className={`relative p-3 ${highlightedProduct === product.id ? 'bg-primary/10' : ''} ${selectMode && selectedIds.has(product.id) ? 'bg-primary/5 ring-1 ring-primary/40' : ''}`}
+                    >
+                      {selectMode && (
+                        <button
+                          type="button"
+                          onClick={() => toggleSelect(product.id)}
+                          aria-label="Seleccionar"
+                          className={`absolute top-2 left-2 z-10 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                            selectedIds.has(product.id) ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-muted-foreground/40'
+                          }`}
+                        >
+                          {selectedIds.has(product.id) && <CheckCircle2 className="h-4 w-4" />}
+                        </button>
+                      )}
+                      <div className={`flex gap-3 ${selectMode ? 'pl-8' : ''}`}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenImageDialog(product)}
+                          className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary text-lg"
+                        >
+                          {mainImg ? <img src={mainImg} alt={product.name} className="h-full w-full object-cover" /> : <span>{typeInfo.icon}</span>}
+                        </button>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm text-foreground truncate">{product.name}</p>
+                          <p className="text-xs text-muted-foreground font-mono">{product.sku}</p>
+                          <div className="flex flex-wrap items-center gap-1 mt-1">
+                            <Badge variant="secondary" className="bg-secondary text-muted-foreground text-[10px]">{typeInfo.icon} {typeInfo.name}</Badge>
+                            <Badge variant="secondary" className="bg-secondary text-muted-foreground text-[10px]">{getCategoryName(product.category)}</Badge>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-semibold text-sm">{formatCOP(product.salePrice)}</p>
+                          <p className="text-[11px] text-muted-foreground">Costo {formatCOP(product.purchasePrice)}</p>
+                          <div className="flex items-center justify-end gap-1 mt-1">
+                            <span className={`h-2 w-2 rounded-full ${status === 'suficiente' ? 'bg-primary' : status === 'bajo' ? 'bg-warning' : 'bg-destructive'}`} />
+                            <span className={`text-xs font-medium ${status === 'suficiente' ? 'text-primary' : status === 'bajo' ? 'text-warning' : 'text-destructive'}`}>{product.stock}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end gap-1 mt-2 pt-2 border-t border-border/60">
+                        <Button variant="ghost" size="icon" title="Variantes / Tiers" onClick={() => setVariantProduct(product)} className="h-8 w-8 text-primary"><Layers className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" title="Modificadores" onClick={() => setModifiersProduct(product)} className="h-8 w-8 text-primary"><SlidersHorizontal className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(product)} className="h-8 w-8"><Edit2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(product)} className="h-8 w-8 text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Tabla (escritorio) ── */}
+          <div className="hidden md:block overflow-x-auto">
           <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">
+                {selectMode && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filteredProducts.length > 0 && selectedIds.size === filteredProducts.length}
+                      onCheckedChange={selectAll}
+                      aria-label="Seleccionar todo"
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="text-muted-foreground text-sm lg:text-base">Producto</TableHead>
                 <TableHead className="text-muted-foreground text-sm lg:text-base">SKU</TableHead>
                 <TableHead className="text-muted-foreground text-sm lg:text-base">Tipo</TableHead>
@@ -337,7 +531,7 @@ export function InventoryList() {
             <TableBody>
               {filteredProducts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={sedes.length >= 2 ? 8 : 7} className="h-24 text-center">
+                  <TableCell colSpan={(sedes.length >= 2 ? 8 : 7) + (selectMode ? 1 : 0)} className="h-24 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <Package className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground" />
                       <p className="text-sm lg:text-base text-muted-foreground">No se encontraron productos</p>
@@ -354,13 +548,39 @@ export function InventoryList() {
                       id={`product-${product.id}`}
                       className={`border-border transition-colors duration-1000 ${
                         highlightedProduct === product.id ? 'bg-primary/15 ring-1 ring-primary/30' : ''
-                      }`}
+                      } ${selectMode && selectedIds.has(product.id) ? 'bg-primary/10' : ''}`}
                     >
+                      {selectMode && (
+                        <TableCell className="w-10">
+                          <Checkbox
+                            checked={selectedIds.has(product.id)}
+                            onCheckedChange={() => toggleSelect(product.id)}
+                            aria-label={`Seleccionar ${product.name}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 lg:h-12 lg:w-12 items-center justify-center rounded-lg bg-secondary text-lg">
-                            {typeInfo.icon}
-                          </div>
+                          {(() => {
+                            const mainImg = product.imageUrl || (Array.isArray(product.images) ? product.images[0] : '') || ''
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenImageDialog(product)}
+                                title="Gestionar imágenes"
+                                className="group relative flex h-10 w-10 lg:h-12 lg:w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary text-lg transition-shadow hover:ring-2 hover:ring-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                              >
+                                {mainImg ? (
+                                  <img src={mainImg} alt={product.name} className="h-full w-full object-cover" />
+                                ) : (
+                                  <span>{typeInfo.icon}</span>
+                                )}
+                                <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                                  <ImageIcon className="h-4 w-4 text-white" />
+                                </span>
+                              </button>
+                            )
+                          })()}
                           <div>
                             <p className="font-medium text-sm lg:text-base text-foreground">{product.name}</p>
                             {product.articulo && (
@@ -370,6 +590,11 @@ export function InventoryList() {
                               {product.brand || ''}{product.brand && product.color ? ' | ' : ''}{product.color || ''}
                               {product.size ? ` | ${product.size}` : ''}
                             </p>
+                            {product.productType === 'ferreteria' && product.weight != null && product.weight > 0 && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400 mt-0.5">
+                                ⚖ {product.weight} {product.hardwareWeightUnit || 'kg'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </TableCell>
@@ -427,6 +652,24 @@ export function InventoryList() {
                           <Button
                             variant="ghost"
                             size="icon"
+                            title="Variantes / Tiers"
+                            onClick={() => setVariantProduct(product)}
+                            className="h-8 w-8 lg:h-9 lg:w-9 text-primary hover:text-primary"
+                          >
+                            <Layers className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Modificadores (adiciones, combos, sin X)"
+                            onClick={() => setModifiersProduct(product)}
+                            className="h-8 w-8 lg:h-9 lg:w-9 text-primary hover:text-primary"
+                          >
+                            <SlidersHorizontal className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => handleEdit(product)}
                             className="h-8 w-8 lg:h-9 lg:w-9"
                           >
@@ -448,6 +691,7 @@ export function InventoryList() {
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -513,54 +757,310 @@ export function InventoryList() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Category Dialog */}
-      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-        <DialogContent className="max-w-md">
+      {/* Bulk Delete Confirmation */}
+      <Dialog open={isBulkDeleteOpen} onOpenChange={(v) => !isBulkDeleting && setIsBulkDeleteOpen(v)}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Crear Categoria</DialogTitle>
+            <DialogTitle>Eliminar productos seleccionados</DialogTitle>
             <DialogDescription>
-              Agregue una nueva categoria para organizar sus productos
+              ¿Seguro que deseas eliminar {selectedIds.size} producto(s)? Esta acción no se puede deshacer.
+              Los productos con ventas asociadas se omitirán.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={async (e) => {
-            e.preventDefault()
-            const id = categoryForm.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-            const result = await addCategory({ id, name: categoryForm.name, description: categoryForm.description || undefined })
-            if (result.success) {
-              setCategoryForm({ name: '', description: '' })
-              setIsCategoryDialogOpen(false)
-            }
-          }}>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="categoryName">Nombre de la categoria</Label>
-                <Input
-                  id="categoryName"
-                  value={categoryForm.name}
-                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                  placeholder="Ej: Ropa Casual"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="categoryDesc">Descripcion (opcional)</Label>
-                <Input
-                  id="categoryDesc"
-                  value={categoryForm.description}
-                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
-                  placeholder="Breve descripcion de la categoria"
-                />
-              </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkDeleteOpen(false)} disabled={isBulkDeleting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmBulkDelete} disabled={isBulkDeleting}>
+              {isBulkDeleting ? 'Eliminando…' : `Eliminar ${selectedIds.size}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Image Upload Dialog */}
+      {selectedProduct && (
+        <Dialog open={isImageDialogOpen} onOpenChange={(open) => { setIsImageDialogOpen(open); if (!open) setSelectedProduct(null) }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Imágenes del Producto</DialogTitle>
+              <DialogDescription>
+                {selectedProduct.name} — Cargue hasta 4 imágenes. La primera es la imagen principal.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-3 py-2">
+              {[0, 1, 2, 3].map((idx) => (
+                <div key={idx} className="rounded-lg border border-border p-2 bg-secondary/20">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                    {idx === 0 ? 'Imagen principal ★' : `Imagen ${idx + 1}`}
+                  </p>
+                  <CloudinaryUpload
+                    value={imageDialogData.images[idx] || ''}
+                    onChange={(url) => {
+                      const next = [...imageDialogData.images]
+                      next[idx] = url
+                      setImageDialogData({ imageUrl: next[0] || '', images: next })
+                    }}
+                    previewClassName="h-20 w-full object-cover rounded border"
+                    accept="image/*,image/gif"
+                  />
+                </div>
+              ))}
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>
+              <Button variant="outline" onClick={() => { setIsImageDialogOpen(false); setSelectedProduct(null) }}>
                 Cancelar
               </Button>
-              <Button type="submit">
-                Crear Categoria
+              <Button onClick={handleSaveImages} disabled={isSavingImages}>
+                {isSavingImages ? 'Guardando...' : 'Guardar Imágenes'}
               </Button>
             </DialogFooter>
-          </form>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Category Management Dialog */}
+      <Dialog open={isCategoryDialogOpen} onOpenChange={(open) => {
+        setIsCategoryDialogOpen(open)
+        if (!open) { setEditingCategory(null); setShowHiddenCategories(false) }
+      }}>
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tags className="h-4 w-4 text-primary" />
+              Gestionar Categor\u00edas
+            </DialogTitle>
+            <DialogDescription>
+              Crea, edita, oculta y elimina categor\u00edas de tus productos
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Existing categories list */}
+          <div className="flex-1 overflow-y-auto space-y-2 py-2 min-h-0">
+            {/* Header row */}
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {categories.length} categor\u00eda{categories.length !== 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowHiddenCategories(v => !v)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showHiddenCategories ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {showHiddenCategories ? 'Ocultar inactivas' : 'Mostrar inactivas'}
+              </button>
+            </div>
+
+            {categories.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">Sin categor\u00edas a\u00fan</p>
+            )}
+
+            {categories.map(cat => (
+              <div
+                key={cat.id}
+                className={`rounded-lg border border-border p-3 transition-all ${cat.isActive === false ? 'opacity-50 bg-secondary/20' : 'bg-secondary/30'}`}
+              >
+                {editingCategory?.id === cat.id ? (
+                  /* \u2500\u2500 Inline edit form \u2500\u2500 */
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <Input
+                        value={editingCategoryForm.name}
+                        onChange={e => setEditingCategoryForm(f => ({ ...f, name: e.target.value }))}
+                        placeholder="Nombre"
+                        className="h-8 text-sm flex-1"
+                        autoFocus
+                      />
+                      <div className="flex items-center gap-1">
+                        <label className="flex items-center gap-1 cursor-pointer text-xs text-muted-foreground">
+                          <Palette className="h-3 w-3" />
+                          <input
+                            type="color"
+                            value={editingCategoryForm.color}
+                            onChange={e => setEditingCategoryForm(f => ({ ...f, color: e.target.value }))}
+                            className="w-7 h-7 rounded border-0 cursor-pointer bg-transparent"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    <Input
+                      value={editingCategoryForm.description}
+                      onChange={e => setEditingCategoryForm(f => ({ ...f, description: e.target.value }))}
+                      placeholder="Descripci\u00f3n (opcional)"
+                      className="h-8 text-sm"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setEditingCategory(null)}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={async () => {
+                          if (!editingCategoryForm.name.trim()) return
+                          const result = await updateCategory(cat.id, {
+                            name: editingCategoryForm.name,
+                            description: editingCategoryForm.description || undefined,
+                            color: editingCategoryForm.color,
+                          })
+                          if (result.success) {
+                            toast.success('Categor\u00eda actualizada')
+                            setEditingCategory(null)
+                          } else {
+                            toast.error(result.error || 'Error al actualizar')
+                          }
+                        }}
+                      >
+                        Guardar
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* \u2500\u2500 Display row \u2500\u2500 */
+                  <div className="flex items-center gap-3">
+                    {/* Color dot */}
+                    <div
+                      className="h-3 w-3 rounded-full shrink-0"
+                      style={{ backgroundColor: cat.color || '#6366f1' }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${cat.isActive === false ? 'line-through text-muted-foreground' : ''}`}>
+                        {cat.name}
+                      </p>
+                      {cat.description && (
+                        <p className="text-xs text-muted-foreground truncate">{cat.description}</p>
+                      )}
+                    </div>
+                    {cat.isActive === false && (
+                      <span className="text-[10px] bg-zinc-700 text-zinc-300 px-1.5 py-0.5 rounded shrink-0">oculta</span>
+                    )}
+                    {/* Actions */}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        title="Editar"
+                        className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => {
+                          setEditingCategory(cat)
+                          setEditingCategoryForm({
+                            name: cat.name,
+                            description: cat.description || '',
+                            color: cat.color || '#6366f1',
+                          })
+                        }}
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title={cat.isActive === false ? 'Mostrar' : 'Ocultar'}
+                        className="p-1.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={async () => {
+                          const result = await toggleCategoryVisibility(cat.id)
+                          if (result.success) {
+                            toast.success(cat.isActive === false ? 'Categor\u00eda visible' : 'Categor\u00eda oculta')
+                            fetchCategories(showHiddenCategories)
+                          } else {
+                            toast.error(result.error || 'Error al cambiar visibilidad')
+                          }
+                        }}
+                      >
+                        {cat.isActive === false ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        title="Eliminar"
+                        className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                        onClick={async () => {
+                          if (!confirm(`\u00bfEliminar categor\u00eda "${cat.name}"? No se puede deshacer.`)) return
+                          const result = await deleteCategory(cat.id)
+                          if (result.success) {
+                            toast.success('Categor\u00eda eliminada')
+                            fetchCategories(showHiddenCategories)
+                          } else {
+                            toast.error(result.error || 'Error al eliminar')
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Separator */}
+          <div className="border-t border-border pt-3 mt-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Nueva categor\u00eda</p>
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              const id = categoryForm.name
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '')
+              const result = await addCategory({
+                id,
+                name: categoryForm.name,
+                description: categoryForm.description || undefined,
+                color: categoryForm.color,
+              })
+              if (result.success) {
+                toast.success('Categor\u00eda creada')
+                setCategoryForm({ name: '', description: '', color: '#6366f1' })
+                fetchCategories(showHiddenCategories)
+              } else {
+                toast.error(result.error || 'Error al crear categor\u00eda')
+              }
+            }}>
+              <div className="flex gap-2 mb-2">
+                <Input
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  placeholder="Nombre de la categor\u00eda"
+                  required
+                  className="h-9 text-sm flex-1"
+                />
+                <label className="flex items-center gap-1 cursor-pointer shrink-0" title="Color">
+                  <div
+                    className="h-9 w-9 rounded border border-border flex items-center justify-center"
+                    style={{ backgroundColor: categoryForm.color + '33' }}
+                  >
+                    <Palette className="h-4 w-4" style={{ color: categoryForm.color }} />
+                  </div>
+                  <input
+                    type="color"
+                    value={categoryForm.color}
+                    onChange={e => setCategoryForm({ ...categoryForm, color: e.target.value })}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                  placeholder="Descripci\u00f3n (opcional)"
+                  className="h-9 text-sm flex-1"
+                />
+                <Button type="submit" size="sm" className="h-9 px-4 shrink-0">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Crear
+                </Button>
+              </div>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -649,6 +1149,24 @@ export function InventoryList() {
         open={isBulkUploadOpen}
         onOpenChange={setIsBulkUploadOpen}
       />
+
+      {/* Variant Manager */}
+      {variantProduct && (
+        <VariantManager
+          productId={variantProduct.id}
+          productName={variantProduct.name}
+          open={!!variantProduct}
+          onClose={() => setVariantProduct(null)}
+        />
+      )}
+
+      {modifiersProduct && (
+        <ProductModifiersManager
+          productId={modifiersProduct.id}
+          productName={modifiersProduct.name}
+          onClose={() => setModifiersProduct(null)}
+        />
+      )}
     </div>
   )
 }
@@ -674,7 +1192,7 @@ function ProductFormDialog({
   sedes = [],
   defaultSedeId,
 }: ProductFormDialogProps) {
-  const { categories } = useStore()
+  const { categories, products } = useStore()
   const [showScanner, setShowScanner] = useState(false)
   const [showRemoteScanner, setShowRemoteScanner] = useState(false)
   const [formData, setFormData] = useState<Record<string, any>>(() => getInitialFormData(initialData, categories, defaultSedeId))
@@ -682,11 +1200,15 @@ function ProductFormDialog({
   // Reset form and scanner state when dialog opens/closes or initialData changes
   useEffect(() => {
     if (open) {
-      setFormData(getInitialFormData(initialData, categories, defaultSedeId))
+      const initial = getInitialFormData(initialData, categories, defaultSedeId)
+      if (!initialData) {
+        initial.sku = generateNextSku(products)
+      }
+      setFormData(initial)
       setShowScanner(false)
       setShowRemoteScanner(false)
     }
-  }, [open, initialData, categories, defaultSedeId])
+  }, [open, initialData, categories, defaultSedeId, products])
 
   const productType = (formData.productType || 'general') as ProductType
   const typeFields = getFieldsForProductType(productType)
@@ -709,36 +1231,38 @@ function ProductFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
-            {/* Product Type Selector */}
+          <div className="grid gap-4 py-3">
+
+            {/* ── Tipo de Producto ── */}
             <div className="space-y-2">
               <Label>Tipo de Producto</Label>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+              <div className="grid grid-cols-5 gap-1.5">
                 {Object.values(PRODUCT_TYPES).map((type) => (
                   <button
                     key={type.id}
                     type="button"
                     onClick={() => updateField('productType', type.id)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs transition-colors ${
+                    title={type.name}
+                    className={`flex flex-col items-center gap-0.5 px-1 py-2 rounded-lg border text-center transition-colors ${
                       productType === type.id
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border hover:border-muted-foreground/50'
                     }`}
                   >
-                    <span className="text-lg">{type.icon}</span>
-                    <span className="truncate w-full text-center">{type.name}</span>
+                    <span className="text-xl leading-none">{type.icon}</span>
+                    <span className="text-[10px] leading-tight mt-0.5 line-clamp-2 w-full">{type.name}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Common fields - always visible */}
+            {/* ── Nombre ── */}
             <div className="space-y-2">
               <Label htmlFor="name">Nombre en tienda *</Label>
               <Input
@@ -749,7 +1273,9 @@ function ProductFormDialog({
                 required
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+
+            {/* ── Artículo + Categoría ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="articulo">Artículo (inventario)</Label>
                 <Input
@@ -779,9 +1305,15 @@ function ProductFormDialog({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* ── SKU + Código de Barras ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="sku">SKU / Codigo *</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="sku">SKU / Codigo *</Label>
+                  {!initialData && (
+                    <span className="text-[10px] text-muted-foreground">Auto-generado · editable</span>
+                  )}
+                </div>
                 <Input
                   id="sku"
                   value={formData.sku || ''}
@@ -797,11 +1329,11 @@ function ProductFormDialog({
                       id="barcode"
                       value={formData.barcode || ''}
                       onChange={(e) => updateField('barcode', e.target.value)}
-                      placeholder="Escanea o ingresa manualmente"
+                      placeholder="Escanea o ingresa"
                       className={formData.barcode ? 'border-green-500' : ''}
                     />
                     {formData.barcode && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
                         <svg className="h-4 w-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
@@ -809,22 +1341,10 @@ function ProductFormDialog({
                     )}
                   </div>
                   <div className="flex gap-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowScanner(true)}
-                      title="Escanear con cámara local (DroidCam)"
-                    >
+                    <Button type="button" variant="outline" size="icon" onClick={() => setShowScanner(true)} title="Cámara local">
                       <ScanLine className="h-4 w-4" />
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowRemoteScanner(true)}
-                      title="Escanear con cámara remota (QR)"
-                    >
+                    <Button type="button" variant="outline" size="icon" onClick={() => setShowRemoteScanner(true)} title="Cámara remota (QR)">
                       <Smartphone className="h-4 w-4" />
                     </Button>
                   </div>
@@ -832,7 +1352,8 @@ function ProductFormDialog({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* ── Precios ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="purchasePrice">Precio de compra (COP) *</Label>
                 <div className="relative">
@@ -868,7 +1389,8 @@ function ProductFormDialog({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            {/* ── Stock + Reorden + Fecha ── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="stock">Stock *</Label>
                 <Input
@@ -893,7 +1415,7 @@ function ProductFormDialog({
                   required
                 />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 col-span-2 sm:col-span-1">
                 <Label htmlFor="entryDate">Fecha de ingreso *</Label>
                 <Input
                   id="entryDate"
@@ -905,6 +1427,7 @@ function ProductFormDialog({
               </div>
             </div>
 
+            {/* ── Proveedor ── */}
             <div className="space-y-2">
               <Label htmlFor="supplier">Proveedor</Label>
               <Input
@@ -915,7 +1438,7 @@ function ProductFormDialog({
               />
             </div>
 
-            {/* Sede selector — only visible when there are sedes configured */}
+            {/* ── Sede ── */}
             {sedes.length >= 1 && (
               <div className="space-y-2">
                 <Label htmlFor="sedeId">Sede / Sucursal</Label>
@@ -938,7 +1461,7 @@ function ProductFormDialog({
               </div>
             )}
 
-            {/* ── Galería de imágenes (hasta 4) ───────────────── */}
+            {/* ── Galería de imágenes (hasta 4) ── */}
             <div className="space-y-3">
               <Label>Imágenes del Producto (máx. 4)</Label>
               <p className="text-xs text-muted-foreground -mt-1">
@@ -946,7 +1469,6 @@ function ProductFormDialog({
               </p>
               <div className="grid grid-cols-2 gap-3">
                 {[0, 1, 2, 3].map((idx) => {
-                  // Slot 0 = imageUrl (principal), slots 1-3 = images[1..3]
                   const imagesArr: string[] = Array.isArray(formData.images) ? formData.images : []
                   const slotValue = idx === 0
                     ? (formData.imageUrl || imagesArr[0] || '')
@@ -957,7 +1479,6 @@ function ProductFormDialog({
                       if (i === 0) return idx === 0 ? url : (formData.imageUrl || imagesArr[0] || '')
                       return i === idx ? url : (imagesArr[i] || '')
                     })
-                    // Trim trailing empty slots
                     const trimmed = next.map(u => u.trim())
                     updateField('images', trimmed)
                     if (idx === 0) updateField('imageUrl', url)
@@ -980,7 +1501,7 @@ function ProductFormDialog({
               </div>
             </div>
 
-            {/* Dynamic type-specific fields */}
+            {/* ── Campos específicos del tipo ── */}
             {typeFields.length > 0 && (
               <>
                 <div className="border-t border-border pt-4 mt-2">
@@ -988,7 +1509,15 @@ function ProductFormDialog({
                     {PRODUCT_TYPES[productType]?.icon} Campos de {PRODUCT_TYPES[productType]?.name}
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                {productType === 'ferreteria' && (
+                  <div className="flex items-start gap-2 rounded-md bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 px-3 py-2">
+                    <span className="text-orange-500 text-base leading-none mt-0.5">🚛</span>
+                    <p className="text-xs text-orange-700 dark:text-orange-300">
+                      Los campos <strong>Peso</strong> y <strong>Unidad de Peso</strong> se usan para asignar automáticamente el vehículo de despacho al crear un pedido.
+                    </p>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {typeFields.map((field) => (
                     <DynamicField
                       key={field.name}
@@ -1001,7 +1530,7 @@ function ProductFormDialog({
               </>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
@@ -1124,6 +1653,18 @@ function DynamicField({ field, value, onChange }: {
       placeholder={field.placeholder}
     />
   )
+}
+
+function generateNextSku(products: Product[]): string {
+  if (!products.length) return '0001'
+  const nums = products
+    .map(p => p.sku.match(/(\d+)$/))
+    .filter(Boolean)
+    .map(m => parseInt(m![1], 10))
+  if (!nums.length) return '0001'
+  const next = Math.max(...nums) + 1
+  const digits = Math.max(4, String(next).length)
+  return String(next).padStart(digits, '0')
 }
 
 function getInitialFormData(initialData: Product | undefined, categories: Array<{ id: string }>, defaultSedeId?: string) {

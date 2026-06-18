@@ -135,11 +135,25 @@ export class VariantsService {
     return v;
   }
 
+  // Asegura la columna color_hex (auto-migración idempotente; cubre entornos donde
+  // la migración de arranque aún no corrió).
+  private colorHexEnsured = false;
+  private async ensureColorHex(): Promise<void> {
+    if (this.colorHexEnsured) return;
+    try {
+      await db.execute('ALTER TABLE product_variants ADD COLUMN color_hex VARCHAR(9) NULL');
+    } catch (e: any) {
+      if (e?.errno !== 1060) { /* 1060 = columna ya existe; otro error se ignora aquí */ }
+    }
+    this.colorHexEnsured = true;
+  }
+
   async create(productId: string, tenantId: string, data: {
     sku: string; barcode?: string; color?: string; colorHex?: string; size?: string; material?: string;
     stock?: number; minStock?: number; costPrice?: number; priceOverride?: number;
     supplierId?: string; images?: string[]; sortOrder?: number;
   }): Promise<ProductVariant> {
+    await this.ensureColorHex();
     // SKU único por tenant
     const [dup] = await db.execute<RowDataPacket[]>(
       'SELECT id FROM product_variants WHERE sku = ? AND tenant_id = ?',
@@ -182,6 +196,7 @@ export class VariantsService {
     minStock: number; costPrice: number; priceOverride: number;
     supplierId: string; images: string[]; sortOrder: number; isActive: boolean;
   }>): Promise<ProductVariant> {
+    await this.ensureColorHex();
     await this.findById(id, tenantId);
 
     if (data.sku) {

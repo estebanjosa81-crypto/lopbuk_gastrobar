@@ -111,6 +111,10 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
 
   const existingSkus = useMemo(() => new Set(variants.map(v => v.sku)), [variants])
 
+  // Aviso proactivo: SKU duplicado contra variantes ya cargadas (excluye la que se edita).
+  const skuTrimmed = variantForm.sku.trim()
+  const skuDuplicate = !!skuTrimmed && variants.some(v => v.sku === skuTrimmed && v.id !== editingVariant?.id)
+
   const buildSku = (combo: { color?: string; size?: string; material?: string }) => {
     const parts = [combo.color, combo.size, combo.material].filter(Boolean).map(v => slug(v as string))
     return [skuPrefix || 'VAR', ...parts].filter(Boolean).join('-')
@@ -179,13 +183,14 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
         priceOverride: variantForm.priceOverride ? Number(variantForm.priceOverride) : undefined,
         images: variantForm.imageUrl.trim() ? [variantForm.imageUrl.trim()] : [],
       }
-      if (editingVariant) {
-        await api.updateVariant(editingVariant.id, payload)
-        toast.success('Variante actualizada')
-      } else {
-        await api.createVariant(productId, payload)
-        toast.success('Variante creada')
+      const result = editingVariant
+        ? await api.updateVariant(editingVariant.id, payload)
+        : await api.createVariant(productId, payload)
+      if (!result.success) {
+        toast.error(result.error || 'No se pudo guardar la variante')
+        return
       }
+      toast.success(editingVariant ? 'Variante actualizada' : 'Variante creada')
       setShowAddVariant(false)
       load()
     } catch (e: any) { toast.error(e?.message || 'Error guardando variante') }
@@ -510,7 +515,9 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
               <div>
                 <Label className="text-xs">SKU *</Label>
                 <Input placeholder="SE-SISO-BLK" value={variantForm.sku}
-                  onChange={e => setVariantForm(p => ({ ...p, sku: e.target.value }))} />
+                  onChange={e => setVariantForm(p => ({ ...p, sku: e.target.value }))}
+                  className={skuDuplicate ? 'border-destructive focus-visible:ring-destructive' : undefined} />
+                {skuDuplicate && <p className="text-[10px] text-destructive mt-1">⚠ Ese SKU ya existe en otra variante. Usa uno diferente.</p>}
               </div>
               <div>
                 <Label className="text-xs">Color (nombre)</Label>
@@ -579,8 +586,8 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddVariant(false)}>Cancelar</Button>
-            <Button onClick={saveVariant} disabled={savingVariant}>
-              {savingVariant ? 'Guardando…' : 'Guardar'}
+            <Button onClick={saveVariant} disabled={savingVariant || skuDuplicate}>
+              {savingVariant ? 'Guardando…' : skuDuplicate ? 'SKU duplicado' : 'Guardar'}
             </Button>
           </DialogFooter>
         </DialogContent>

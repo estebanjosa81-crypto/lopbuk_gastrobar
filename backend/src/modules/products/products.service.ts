@@ -610,6 +610,38 @@ export class ProductsService {
     }
   }
 
+  async bulkDelete(ids: string[], tenantId?: string): Promise<{ deleted: number; skipped: number }> {
+    const list = Array.from(new Set((ids || []).filter(Boolean)));
+    if (list.length === 0) return { deleted: 0, skipped: 0 };
+    const placeholders = list.map(() => '?').join(',');
+    const tenantClause = tenantId ? ' AND tenant_id = ?' : '';
+    try {
+      const [result] = await db.execute<ResultSetHeader>(
+        `DELETE FROM products WHERE id IN (${placeholders})${tenantClause}`,
+        tenantId ? [...list, tenantId] : [...list]
+      );
+      return { deleted: result.affectedRows, skipped: list.length - result.affectedRows };
+    } catch (error: any) {
+      // Si alguno tiene ventas asociadas, el IN falla en bloque → borra uno a uno saltando esos.
+      if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+        let deleted = 0, skipped = 0;
+        for (const id of list) {
+          try {
+            const [r] = await db.execute<ResultSetHeader>(
+              `DELETE FROM products WHERE id = ?${tenantClause}`,
+              tenantId ? [id, tenantId] : [id]
+            );
+            if (r.affectedRows > 0) deleted++; else skipped++;
+          } catch (e: any) {
+            if (e.code === 'ER_ROW_IS_REFERENCED_2') skipped++; else throw e;
+          }
+        }
+        return { deleted, skipped };
+      }
+      throw error;
+    }
+  }
+
   async updateStock(id: string, quantity: number): Promise<Product> {
     const product = await this.findById(id);
 

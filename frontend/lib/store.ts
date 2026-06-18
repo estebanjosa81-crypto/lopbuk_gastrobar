@@ -13,6 +13,7 @@ interface AppState {
   addProduct: (product: Record<string, any>) => Promise<{ success: boolean; error?: string }>
   updateProduct: (id: string, product: Partial<Product>) => Promise<{ success: boolean; error?: string }>
   deleteProduct: (id: string) => Promise<{ success: boolean; error?: string }>
+  bulkDeleteProducts: (ids: string[]) => Promise<{ success: boolean; data?: { deleted: number; skipped: number }; error?: string }>
   bulkImportProducts: (products: Record<string, any>[]) => Promise<{
     success: boolean
     data?: { totalCreated: number; totalFailed: number; errors: Array<{ row: number; sku: string; error: string }> }
@@ -216,6 +217,17 @@ export const useStore = create<AppState>()(
           return { success: true }
         }
         return { success: false, error: result.error || 'Error al eliminar producto' }
+      },
+
+      bulkDeleteProducts: async (ids) => {
+        const result = await api.bulkDeleteProducts(ids)
+        if (result.success) {
+          set(state => ({
+            products: state.products.filter(p => !ids.includes(p.id))
+          }))
+          return { success: true, data: result.data }
+        }
+        return { success: false, error: result.error || 'Error al eliminar productos' }
       },
 
       // Cart Actions (se mantienen locales)

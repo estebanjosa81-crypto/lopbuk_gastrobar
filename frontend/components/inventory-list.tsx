@@ -63,6 +63,8 @@ import {
   EyeOff,
   Palette,
   GripVertical,
+  CheckSquare,
+  CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BarcodeScanner } from '@/components/barcode-scanner'
@@ -70,7 +72,7 @@ import { RemoteScanner } from '@/components/remote-scanner'
 import { BulkUploadDialog } from '@/components/bulk-upload-dialog'
 
 export function InventoryList() {
-  const { products, isLoadingProducts, fetchProducts, addProduct, updateProduct, deleteProduct, categories, fetchCategories, addCategory, updateCategory, toggleCategoryVisibility, deleteCategory, inventoryStockFilter, inventorySearchQuery, clearInventoryFilters, sedes, fetchSedes, addSede, updateSede, deleteSede } = useStore()
+  const { products, isLoadingProducts, fetchProducts, addProduct, updateProduct, deleteProduct, bulkDeleteProducts, categories, fetchCategories, addCategory, updateCategory, toggleCategoryVisibility, deleteCategory, inventoryStockFilter, inventorySearchQuery, clearInventoryFilters, sedes, fetchSedes, addSede, updateSede, deleteSede } = useStore()
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('all')
@@ -81,6 +83,10 @@ export function InventoryList() {
   const [variantProduct, setVariantProduct] = useState<Product | null>(null)
   const [modifiersProduct, setModifiersProduct] = useState<Product | null>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false)
   const [isSedeDialogOpen, setIsSedeDialogOpen] = useState(false)
@@ -247,6 +253,36 @@ export function InventoryList() {
     }
   }
 
+  // ── Multi-selección + acciones bulk ──
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  const selectAll = () =>
+    setSelectedIds(
+      selectedIds.size === filteredProducts.length
+        ? new Set()
+        : new Set(filteredProducts.map(p => p.id))
+    )
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
+  const confirmBulkDelete = async () => {
+    setIsBulkDeleting(true)
+    const ids = Array.from(selectedIds)
+    const result = await bulkDeleteProducts(ids)
+    setIsBulkDeleting(false)
+    if (result.success) {
+      const d = result.data?.deleted ?? ids.length
+      const s = result.data?.skipped ?? 0
+      toast.success(`${d} producto(s) eliminado(s)${s ? ` · ${s} omitido(s) (tienen ventas asociadas)` : ''}`)
+      setIsBulkDeleteOpen(false)
+      exitSelectMode()
+    } else {
+      toast.error(result.error || 'Error al eliminar productos')
+    }
+  }
+
   const getProductTypeInfo = (type: ProductType) => {
     return PRODUCT_TYPES[type] || PRODUCT_TYPES.general
   }
@@ -310,6 +346,14 @@ export function InventoryList() {
           <Button variant="outline" onClick={handleExportCsv} disabled={isExporting} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
             <FileDown className="h-4 w-4 lg:h-5 lg:w-5" />
             {isExporting ? 'Exportando...' : 'Exportar CSV'}
+          </Button>
+          <Button
+            variant={selectMode ? 'default' : 'outline'}
+            onClick={() => { setSelectMode(v => !v); setSelectedIds(new Set()) }}
+            className="gap-2 h-10 lg:h-11 text-sm lg:text-base"
+          >
+            <CheckSquare className="h-4 w-4 lg:h-5 lg:w-5" />
+            {selectMode ? 'Cancelar selección' : 'Seleccionar'}
           </Button>
           <Button data-tour="inv-new" onClick={() => setIsAddDialogOpen(true)} className="gap-2 h-10 lg:h-11 text-sm lg:text-base">
             <Plus className="h-4 w-4 lg:h-5 lg:w-5" />
@@ -375,6 +419,19 @@ export function InventoryList() {
         </CardContent>
       </Card>
 
+      {/* Barra de acciones bulk */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/60 backdrop-blur p-3">
+          <span className="text-sm font-medium">{selectedIds.size} producto(s) seleccionado(s)</span>
+          <Button size="sm" variant="ghost" onClick={selectAll}>
+            {selectedIds.size === filteredProducts.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+          </Button>
+          <Button size="sm" variant="destructive" className="ml-auto gap-1" onClick={() => setIsBulkDeleteOpen(true)}>
+            <Trash2 className="h-4 w-4" /> Eliminar seleccionados
+          </Button>
+        </div>
+      )}
+
       {/* Products Table */}
       <Card className="border-border bg-card">
         <CardContent className="p-0">
@@ -395,9 +452,21 @@ export function InventoryList() {
                     <div
                       key={product.id}
                       id={`product-m-${product.id}`}
-                      className={`p-3 ${highlightedProduct === product.id ? 'bg-primary/10' : ''}`}
+                      className={`relative p-3 ${highlightedProduct === product.id ? 'bg-primary/10' : ''} ${selectMode && selectedIds.has(product.id) ? 'bg-primary/5 ring-1 ring-primary/40' : ''}`}
                     >
-                      <div className="flex gap-3">
+                      {selectMode && (
+                        <button
+                          type="button"
+                          onClick={() => toggleSelect(product.id)}
+                          aria-label="Seleccionar"
+                          className={`absolute top-2 left-2 z-10 h-6 w-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                            selectedIds.has(product.id) ? 'bg-primary border-primary text-primary-foreground' : 'bg-background border-muted-foreground/40'
+                          }`}
+                        >
+                          {selectedIds.has(product.id) && <CheckCircle2 className="h-4 w-4" />}
+                        </button>
+                      )}
+                      <div className={`flex gap-3 ${selectMode ? 'pl-8' : ''}`}>
                         <button
                           type="button"
                           onClick={() => handleOpenImageDialog(product)}
@@ -440,6 +509,15 @@ export function InventoryList() {
           <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow className="border-border hover:bg-transparent">
+                {selectMode && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filteredProducts.length > 0 && selectedIds.size === filteredProducts.length}
+                      onCheckedChange={selectAll}
+                      aria-label="Seleccionar todo"
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="text-muted-foreground text-sm lg:text-base">Producto</TableHead>
                 <TableHead className="text-muted-foreground text-sm lg:text-base">SKU</TableHead>
                 <TableHead className="text-muted-foreground text-sm lg:text-base">Tipo</TableHead>
@@ -453,7 +531,7 @@ export function InventoryList() {
             <TableBody>
               {filteredProducts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={sedes.length >= 2 ? 8 : 7} className="h-24 text-center">
+                  <TableCell colSpan={(sedes.length >= 2 ? 8 : 7) + (selectMode ? 1 : 0)} className="h-24 text-center">
                     <div className="flex flex-col items-center gap-2">
                       <Package className="h-8 w-8 lg:h-10 lg:w-10 text-muted-foreground" />
                       <p className="text-sm lg:text-base text-muted-foreground">No se encontraron productos</p>
@@ -470,8 +548,17 @@ export function InventoryList() {
                       id={`product-${product.id}`}
                       className={`border-border transition-colors duration-1000 ${
                         highlightedProduct === product.id ? 'bg-primary/15 ring-1 ring-primary/30' : ''
-                      }`}
+                      } ${selectMode && selectedIds.has(product.id) ? 'bg-primary/10' : ''}`}
                     >
+                      {selectMode && (
+                        <TableCell className="w-10">
+                          <Checkbox
+                            checked={selectedIds.has(product.id)}
+                            onCheckedChange={() => toggleSelect(product.id)}
+                            aria-label={`Seleccionar ${product.name}`}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center gap-3">
                           {(() => {
@@ -665,6 +752,27 @@ export function InventoryList() {
             </Button>
             <Button variant="destructive" onClick={confirmDelete}>
               Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation */}
+      <Dialog open={isBulkDeleteOpen} onOpenChange={(v) => !isBulkDeleting && setIsBulkDeleteOpen(v)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar productos seleccionados</DialogTitle>
+            <DialogDescription>
+              ¿Seguro que deseas eliminar {selectedIds.size} producto(s)? Esta acción no se puede deshacer.
+              Los productos con ventas asociadas se omitirán.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBulkDeleteOpen(false)} disabled={isBulkDeleting}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={confirmBulkDelete} disabled={isBulkDeleting}>
+              {isBulkDeleting ? 'Eliminando…' : `Eliminar ${selectedIds.size}`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -238,6 +238,13 @@ router.put(
   productsController.updatePreorder.bind(productsController)
 );
 
+// DELETE /api/products/bulk — eliminación múltiple (ANTES de /:id)
+router.delete(
+  '/bulk',
+  [body('ids').isArray({ min: 1 }).withMessage('ids requeridos'), validateRequest],
+  productsController.bulkDelete.bind(productsController)
+);
+
 // DELETE /api/products/:id
 router.delete(
   '/:id',

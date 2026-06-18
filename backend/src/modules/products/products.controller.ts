@@ -137,6 +137,21 @@ export class ProductsController {
     }
   }
 
+  async bulkDelete(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const tenantId = req.user!.tenantId!;
+      const { ids } = req.body;
+      const result = await productsService.bulkDelete(ids, tenantId);
+      res.json({
+        success: true,
+        data: result,
+        message: `${result.deleted} producto(s) eliminado(s)${result.skipped ? ` · ${result.skipped} omitido(s) (tienen ventas asociadas)` : ''}`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async bulkCreate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const tenantId = req.user!.tenantId!;

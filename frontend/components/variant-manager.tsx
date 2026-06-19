@@ -30,7 +30,7 @@ interface Props {
   onClose: () => void
 }
 
-const EMPTY_VARIANT = { sku: '', color: '', colorHex: '', size: '', material: '', stock: 0, minStock: 0, costPrice: '', priceOverride: '', imageUrl: '' }
+const EMPTY_VARIANT = { sku: '', color: '', colorHex: '', size: '', material: '', stock: 0, minStock: 0, costPrice: '', priceOverride: '', imageUrl: '', preorderLimit: '' }
 const EMPTY_TIER    = { minQty: 1, price: '', tenantMarginPct: 0 }
 
 // ── Ejes del modo guiado (mapeados a las columnas reales del backend) ──
@@ -111,6 +111,10 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
 
   const existingSkus = useMemo(() => new Set(variants.map(v => v.sku)), [variants])
 
+  // Aviso proactivo: SKU duplicado contra variantes ya cargadas (excluye la que se edita).
+  const skuTrimmed = variantForm.sku.trim()
+  const skuDuplicate = !!skuTrimmed && variants.some(v => v.sku === skuTrimmed && v.id !== editingVariant?.id)
+
   const buildSku = (combo: { color?: string; size?: string; material?: string }) => {
     const parts = [combo.color, combo.size, combo.material].filter(Boolean).map(v => slug(v as string))
     return [skuPrefix || 'VAR', ...parts].filter(Boolean).join('-')
@@ -158,6 +162,7 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
       minStock: v.minStock, costPrice: v.costPrice?.toString() || '',
       priceOverride: v.priceOverride?.toString() || '',
       imageUrl: v.images?.[0] || '',
+      preorderLimit: v.preorderLimit != null ? String(v.preorderLimit) : '',
     })
     setEditingVariant(v)
     setShowAddVariant(true)
@@ -178,14 +183,16 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
         costPrice: variantForm.costPrice ? Number(variantForm.costPrice) : undefined,
         priceOverride: variantForm.priceOverride ? Number(variantForm.priceOverride) : undefined,
         images: variantForm.imageUrl.trim() ? [variantForm.imageUrl.trim()] : [],
+        preorderLimit: variantForm.preorderLimit !== '' ? Number(variantForm.preorderLimit) : null,
       }
-      if (editingVariant) {
-        await api.updateVariant(editingVariant.id, payload)
-        toast.success('Variante actualizada')
-      } else {
-        await api.createVariant(productId, payload)
-        toast.success('Variante creada')
+      const result = editingVariant
+        ? await api.updateVariant(editingVariant.id, payload)
+        : await api.createVariant(productId, payload)
+      if (!result.success) {
+        toast.error(result.error || 'No se pudo guardar la variante')
+        return
       }
+      toast.success(editingVariant ? 'Variante actualizada' : 'Variante creada')
       setShowAddVariant(false)
       load()
     } catch (e: any) { toast.error(e?.message || 'Error guardando variante') }
@@ -510,7 +517,9 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
               <div>
                 <Label className="text-xs">SKU *</Label>
                 <Input placeholder="SE-SISO-BLK" value={variantForm.sku}
-                  onChange={e => setVariantForm(p => ({ ...p, sku: e.target.value }))} />
+                  onChange={e => setVariantForm(p => ({ ...p, sku: e.target.value }))}
+                  className={skuDuplicate ? 'border-destructive focus-visible:ring-destructive' : undefined} />
+                {skuDuplicate && <p className="text-[10px] text-destructive mt-1">⚠ Ese SKU ya existe en otra variante. Usa uno diferente.</p>}
               </div>
               <div>
                 <Label className="text-xs">Color (nombre)</Label>
@@ -563,6 +572,12 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
                 <Input type="number" min={0} placeholder="Usa precio base si vacío" value={variantForm.priceOverride}
                   onChange={e => setVariantForm(p => ({ ...p, priceOverride: e.target.value }))} />
               </div>
+              <div>
+                <Label className="text-xs">Cupo de preventa</Label>
+                <Input type="number" min={0} placeholder="Vacío = ilimitado" value={variantForm.preorderLimit}
+                  onChange={e => setVariantForm(p => ({ ...p, preorderLimit: e.target.value }))} />
+                <p className="text-[10px] text-muted-foreground mt-1">Máximo de unidades vendibles en preventa (backorder) para esta variante.</p>
+              </div>
               <div className="col-span-2">
                 <Label className="text-xs">Imagen del color (URL)</Label>
                 <Input placeholder="https://… (opcional)" value={variantForm.imageUrl}
@@ -579,8 +594,8 @@ export function VariantManager({ productId, productName, open, onClose }: Props)
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddVariant(false)}>Cancelar</Button>
-            <Button onClick={saveVariant} disabled={savingVariant}>
-              {savingVariant ? 'Guardando…' : 'Guardar'}
+            <Button onClick={saveVariant} disabled={savingVariant || skuDuplicate}>
+              {savingVariant ? 'Guardando…' : skuDuplicate ? 'SKU duplicado' : 'Guardar'}
             </Button>
           </DialogFooter>
         </DialogContent>

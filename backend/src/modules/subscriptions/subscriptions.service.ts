@@ -62,6 +62,15 @@ export async function getPlanPrices(): Promise<Record<PlanKey, string | null>> {
   };
 }
 
+/** Planes visibles/activos para el comerciante (default: todos activos salvo '0'). */
+export async function getPlanActive(): Promise<Record<PlanKey, boolean>> {
+  return {
+    basico:      (await getSetting('plan_active_basico'))      !== '0',
+    profesional: (await getSetting('plan_active_profesional')) !== '0',
+    empresarial: (await getSetting('plan_active_empresarial')) !== '0',
+  };
+}
+
 /** Returns stored plan IDs (null if not yet synced) */
 export async function getPlanIds(): Promise<Record<PlanKey, string | null>> {
   return {

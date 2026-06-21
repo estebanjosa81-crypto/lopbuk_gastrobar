@@ -523,7 +523,7 @@ export function Theme2OrderFlow({
                 <div className="mt-auto flex items-center justify-between pt-2">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-cyan-400">{COP(priceOf(p))}</span>
-                    {p.isOnOffer && p.offerPrice && <span className="text-[11px] text-white/30 line-through">{COP(p.salePrice)}</span>}
+                    {!!(p.isOnOffer && p.offerPrice) && <span className="text-[11px] text-white/30 line-through">{COP(p.salePrice)}</span>}
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => openDetail(p)} className="text-[11px] text-white/40 hover:text-white">Ver detalles</button>

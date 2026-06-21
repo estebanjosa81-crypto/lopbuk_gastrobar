@@ -51,6 +51,8 @@ export interface MLProduct {
 export interface MLSeller {
   name: string
   logoUrl?: string | null
+  /** Imagen de portada de la tarjeta del comercio. */
+  coverUrl?: string | null
   isOfficial?: boolean
   /** Texto de ventas, ej. "+10 mil ventas". */
   salesText?: string
@@ -475,7 +477,7 @@ export function ProductDetailML({
                 <StoreCardML
                   name={seller.name}
                   logoUrl={seller.logoUrl}
-                  coverUrl={null}
+                  coverUrl={seller.coverUrl}
                   isOfficial={seller.isOfficial}
                   followersText={seller.followersText}
                   productsText={seller.productsText}

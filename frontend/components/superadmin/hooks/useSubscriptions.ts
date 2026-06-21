@@ -9,6 +9,7 @@ import { api } from '@/lib/api'
  */
 export function useSubscriptions() {
   const [mpPrices, setMpPrices] = useState({ basico: '', profesional: '', empresarial: '' })
+  const [planActive, setPlanActive] = useState({ basico: true, profesional: true, empresarial: true })
   const [mpPlanIds, setMpPlanIds] = useState<Record<string, string | null>>({})
   const [isSavingPrices, setIsSavingPrices] = useState(false)
   const [isSyncingPlans, setIsSyncingPlans] = useState(false)
@@ -22,6 +23,11 @@ export function useSubscriptions() {
           profesional: res.data.plan_price_profesional || '',
           empresarial: res.data.plan_price_empresarial || '',
         })
+        setPlanActive({
+          basico:      res.data.plan_active_basico !== '0',
+          profesional: res.data.plan_active_profesional !== '0',
+          empresarial: res.data.plan_active_empresarial !== '0',
+        })
       }
     })
     api.getSubscriptionConfig().then(res => {
@@ -33,12 +39,17 @@ export function useSubscriptions() {
     setIsSavingPrices(true)
     try {
       await api.savePlanPrices(mpPrices)
-      setMpMsg({ type: 'ok', text: 'Precios guardados correctamente' })
+      await api.savePlanActive(planActive)
+      setMpMsg({ type: 'ok', text: 'Planes guardados correctamente' })
     } catch {
-      setMpMsg({ type: 'error', text: 'Error al guardar los precios' })
+      setMpMsg({ type: 'error', text: 'Error al guardar los planes' })
     }
     setIsSavingPrices(false)
     setTimeout(() => setMpMsg(null), 4000)
+  }
+
+  const togglePlanActive = (key: 'basico' | 'profesional' | 'empresarial') => {
+    setPlanActive(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
   const handleSyncMpPlans = async () => {
@@ -55,5 +66,5 @@ export function useSubscriptions() {
     setTimeout(() => setMpMsg(null), 6000)
   }
 
-  return { mpPrices, setMpPrices, mpPlanIds, isSavingPrices, isSyncingPlans, mpMsg, handleSaveMpPrices, handleSyncMpPlans }
+  return { mpPrices, setMpPrices, planActive, togglePlanActive, mpPlanIds, isSavingPrices, isSyncingPlans, mpMsg, handleSaveMpPrices, handleSyncMpPlans }
 }

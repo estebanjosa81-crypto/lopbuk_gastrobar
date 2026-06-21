@@ -9,7 +9,7 @@ import {
   UtensilsCrossed, Users, ShoppingCart, RefreshCw,
   Plus, Minus, X, Edit2, Clock, UserPlus, ChevronLeft,
   FileText, LogOut, ChefHat, Check,
-  Trash2, Search, ChevronUp, ChevronDown, Package, AlertTriangle,
+  Trash2, Search, ChevronUp, ChevronDown, Package, AlertTriangle, Link2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TableQrButton } from '@/components/restbar/table-qr-button'
@@ -49,6 +49,20 @@ function guestColor(n: number) { return GUEST_COLORS[(n - 1) % GUEST_COLORS.leng
 export function MeseroPanel() {
   const { user, logout } = useAuthStore()
   const [tables, setTables]   = useState<any[]>([])
+  const [mergeMode, setMergeMode] = useState(false)
+  const [mergeSel, setMergeSel] = useState<Set<string>>(new Set())
+  const toggleMergeSel = (id: string) => setMergeSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const doMerge = async () => {
+    const ids = [...mergeSel]
+    if (ids.length < 2) return
+    await api.mergeTables(ids)
+    setMergeMode(false); setMergeSel(new Set())
+    setLoading(true); load()
+  }
+  const doUnmerge = async (groupId: string) => {
+    await api.unmergeTables({ groupId })
+    setLoading(true); load()
+  }
   const [orders, setOrders]   = useState<any[]>([])
   const [menu, setMenu]       = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -129,6 +143,11 @@ export function MeseroPanel() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => { setMergeMode(m => !m); setMergeSel(new Set()) }}
+            className={cn('rounded-full border p-2 transition-colors', mergeMode ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:text-foreground')}
+            title="Unir mesas">
+            <Link2 className="h-4 w-4" />
+          </button>
           <button onClick={() => { setLoading(true); load() }}
             className="rounded-full border border-border p-2 text-muted-foreground hover:text-foreground transition-colors">
             <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
@@ -152,15 +171,38 @@ export function MeseroPanel() {
             <p className="text-sm">Sin mesas configuradas</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {tables.map(t => (
-              <TableCard key={t.id} table={t}
-                onOpen={() => openTable(t)}
-                onAddGuest={() => openTable(t, -1)} />
-            ))}
-          </div>
+          <>
+            {mergeMode && (
+              <div className="mb-3 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-xs text-primary">
+                Toca las mesas que quieres unir (mínimo 2). Compartirán cuenta y total.
+              </div>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {tables.map(t => (
+                <TableCard key={t.id} table={t}
+                  onOpen={() => openTable(t)}
+                  onAddGuest={() => openTable(t, -1)}
+                  mergeMode={mergeMode}
+                  selected={mergeSel.has(t.id)}
+                  onToggleSelect={() => toggleMergeSel(t.id)}
+                  onUnmerge={() => t.merge_group && doUnmerge(t.merge_group)} />
+              ))}
+            </div>
+          </>
         )}
       </div>
+
+      {/* ── Barra de acción al unir ── */}
+      {mergeMode && (
+        <div className="shrink-0 border-t border-border bg-card px-4 py-3 flex items-center justify-between gap-3">
+          <button onClick={() => { setMergeMode(false); setMergeSel(new Set()) }}
+            className="text-sm font-medium text-muted-foreground">Cancelar</button>
+          <button onClick={doMerge} disabled={mergeSel.size < 2}
+            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50 inline-flex items-center gap-2">
+            <Link2 className="h-4 w-4" /> Unir {mergeSel.size > 0 ? `(${mergeSel.size})` : ''}
+          </button>
+        </div>
+      )}
 
       {/* ── Order Modal ── */}
       {isOrderOpen && selectedTable && (
@@ -181,32 +223,42 @@ export function MeseroPanel() {
 
 // ─── Table Card ───────────────────────────────────────────────────────────────
 
-function TableCard({ table, onOpen, onAddGuest }: { table: any; onOpen: () => void; onAddGuest: () => void }) {
+function TableCard({ table, onOpen, onAddGuest, mergeMode, selected, onToggleSelect, onUnmerge }: { table: any; onOpen: () => void; onAddGuest: () => void; mergeMode?: boolean; selected?: boolean; onToggleSelect?: () => void; onUnmerge?: () => void }) {
   const isOccupied = table.status === 'ocupada'
   const isInactive = table.status === 'inactiva'
   const order = table.activeOrder
+  const merged = !!table.merge_group
 
   return (
     <div className={cn(
       'rounded-2xl border-2 bg-card p-3 flex flex-col gap-2 transition-all',
+      mergeMode && selected ? 'border-primary ring-2 ring-primary/40 bg-primary/5' :
+      merged      ? 'border-primary/50' :
       isOccupied  ? 'border-amber-500/60 bg-amber-500/5' :
       isInactive  ? 'border-border opacity-40' :
                     'border-border',
     )}>
       <div
         role="button"
-        tabIndex={isInactive ? -1 : 0}
-        onClick={isInactive ? undefined : onOpen}
-        onKeyDown={e => { if (!isInactive && (e.key === 'Enter' || e.key === ' ')) onOpen() }}
-        className={cn('flex flex-col gap-2 flex-1 cursor-pointer active:opacity-70 transition-opacity', isInactive && 'cursor-not-allowed')}
+        tabIndex={(isInactive && !mergeMode) ? -1 : 0}
+        onClick={mergeMode ? onToggleSelect : (isInactive ? undefined : onOpen)}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { if (mergeMode) onToggleSelect?.(); else if (!isInactive) onOpen() } }}
+        className={cn('flex flex-col gap-2 flex-1 cursor-pointer active:opacity-70 transition-opacity', (isInactive && !mergeMode) && 'cursor-not-allowed')}
       >
         <div className="flex items-center justify-between">
           <p className="font-bold text-base">Mesa {table.number}</p>
-          <span className={cn(
-            'h-2 w-2 rounded-full',
-            isOccupied ? 'bg-amber-400' : isInactive ? 'bg-zinc-600' : 'bg-green-500',
-          )} />
+          {mergeMode ? (
+            <span className={cn('h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0', selected ? 'bg-primary border-primary' : 'border-muted-foreground/40')}>
+              {selected && <Check className="h-3 w-3 text-primary-foreground" />}
+            </span>
+          ) : (
+            <span className={cn('h-2 w-2 rounded-full', isOccupied ? 'bg-amber-400' : isInactive ? 'bg-zinc-600' : 'bg-green-500')} />
+          )}
         </div>
+
+        {merged && !mergeMode && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-primary"><Link2 className="h-3 w-3" /> Unida</span>
+        )}
 
         {isOccupied && order ? (
           <>
@@ -218,7 +270,7 @@ function TableCard({ table, onOpen, onAddGuest }: { table: any; onOpen: () => vo
         )}
       </div>
 
-      {isOccupied && (
+      {!mergeMode && isOccupied && (
         <button
           onClick={onAddGuest}
           className="w-full mt-auto rounded-lg border border-violet-500/30 py-1 text-[11px] text-violet-400 font-medium hover:bg-violet-500/10 transition-colors flex items-center justify-center gap-1"
@@ -227,7 +279,16 @@ function TableCard({ table, onOpen, onAddGuest }: { table: any; onOpen: () => vo
         </button>
       )}
 
-      {!isInactive && <TableQrButton tableId={table.id} tableNumber={table.number} />}
+      {!mergeMode && merged && (
+        <button
+          onClick={onUnmerge}
+          className="w-full rounded-lg border border-border py-1 text-[11px] text-muted-foreground font-medium hover:bg-muted transition-colors"
+        >
+          Separar mesas
+        </button>
+      )}
+
+      {!mergeMode && !isInactive && <TableQrButton tableId={table.id} tableNumber={table.number} />}
     </div>
   )
 }

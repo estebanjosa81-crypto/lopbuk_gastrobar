@@ -119,8 +119,13 @@ interface Props {
 export function ProfileModal({ open, onClose }: Props) {
   const { user } = useAuthStore()
   const [planPrices, setPlanPrices] = useState<Record<string, string>>({})
+  const [planActive, setPlanActive] = useState<Record<string, boolean>>({ basico: true, profesional: true, empresarial: true })
   const [stripeConfigured, setStripeConfigured] = useState(false)
+  const [wompiAvailable, setWompiAvailable] = useState(false)
   const [loadingPlan, setLoadingPlan] = useState<TenantPlan | null>(null)
+
+  // Pasarela disponible si hay MercadoPago O Wompi configurado.
+  const paymentsEnabled = stripeConfigured || wompiAvailable
 
   useEffect(() => {
     if (!open) return
@@ -134,21 +139,31 @@ export function ProfileModal({ open, onClose }: Props) {
             empresarial: subRes.data.prices.empresarial || '',
           })
         }
+        if (subRes.data.active) setPlanActive(subRes.data.active as Record<string, boolean>)
       }
     })
+    api.getPaymentAvailability().then((r) => { if (r?.success) setWompiAvailable(!!r.data?.wompi) }).catch(() => {})
   }, [open])
 
   const handleUpgrade = async (plan: TenantPlan) => {
-    if (!stripeConfigured) {
+    if (!paymentsEnabled) {
       toast.error('El sistema de pagos aún no está configurado. Contacta al administrador.')
       return
     }
     setLoadingPlan(plan)
     try {
-      const result = await api.createMPSubscription(plan)
-      if (result.success && result.data?.url) {
-        window.location.href = result.data.url
+      // Prioriza Wompi si está disponible; si no, MercadoPago.
+      if (wompiAvailable) {
+        const res = await api.createPaymentCheckout({
+          context: 'subscription',
+          contextId: plan,
+          redirectUrl: `${window.location.origin}/pago/resultado`,
+        })
+        if (res?.success && res.data?.checkoutUrl) { window.location.href = res.data.checkoutUrl; return }
+        toast.error(res?.error || 'Error al iniciar el pago')
       } else {
+        const result = await api.createMPSubscription(plan)
+        if (result.success && result.data?.url) { window.location.href = result.data.url; return }
         toast.error(result.error || 'Error al crear la sesión de pago')
       }
     } catch {
@@ -177,7 +192,7 @@ export function ProfileModal({ open, onClose }: Props) {
     : 'profesional'
 
   const handleNewTransaction = () => {
-    if (!stripeConfigured) {
+    if (!paymentsEnabled) {
       toast.error('El sistema de pagos aún no está configurado. Contacta al administrador.')
       return
     }
@@ -323,7 +338,7 @@ export function ProfileModal({ open, onClose }: Props) {
                 </div>
 
                 <div className="grid grid-cols-3 gap-5 flex-1">
-                  {PLANS.map((plan) => {
+                  {PLANS.filter((plan) => planActive[plan.key] !== false || plan.key === currentPlan).map((plan) => {
                     const isCurrent = currentPlan === plan.key
                     const price = planPrices[plan.key]
                     return (
@@ -391,7 +406,7 @@ export function ProfileModal({ open, onClose }: Props) {
                             ) : (
                               <button
                                 onClick={() => handleUpgrade(plan.key)}
-                                disabled={loadingPlan !== null || !stripeConfigured}
+                                disabled={loadingPlan !== null || !paymentsEnabled}
                                 className={`flex items-center justify-center gap-1.5 w-full rounded-lg py-2 text-xs font-semibold text-white transition-opacity
                                   bg-gradient-to-r ${plan.gradient} hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed`}
                               >
@@ -409,7 +424,7 @@ export function ProfileModal({ open, onClose }: Props) {
                   })}
                 </div>
 
-                {!stripeConfigured && isCommerciante && (
+                {!paymentsEnabled && isCommerciante && (
                   <p className="text-xs text-muted-foreground mt-4 text-center">
                     El sistema de pagos aún no está habilitado. Contacta al administrador.
                   </p>

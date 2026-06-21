@@ -111,18 +111,17 @@ export function FloatingMarketplaceSticker({
   if (loading || !storeName) {
     return (
       <div
-        className={`fixed z-[55] left-4 md:left-5 bottom-[max(5.5rem,calc(env(safe-area-inset-bottom)+4.5rem))] md:bottom-auto md:top-1/2 md:-translate-y-1/2 ${position === 'right' ? 'left-auto right-4 md:right-5 md:left-auto' : ''}`}
+        className={`fixed z-[55] left-0 bottom-[max(5.5rem,calc(env(safe-area-inset-bottom)+4.5rem))] md:bottom-auto md:top-1/2 md:-translate-y-1/2 ${position === 'right' ? 'left-auto right-0' : ''}`}
         aria-hidden
       >
-        <div className="h-16 w-16 md:h-[72px] md:w-[72px] rounded-full bg-black/10 animate-pulse" />
+        <div className={`h-16 w-16 md:h-[72px] md:w-[72px] bg-black/10 animate-pulse ${position === 'right' ? 'rounded-l-2xl' : 'rounded-r-2xl'}`} />
       </div>
     )
   }
 
-  const sideClasses =
-    position === 'right'
-      ? 'right-4 md:right-5 md:left-auto'
-      : 'left-4 md:left-5'
+  // Pegado al borde de la pantalla (pestaña), no flotante.
+  const sideClasses = position === 'right' ? 'right-0 md:left-auto' : 'left-0'
+  const roundCls = position === 'right' ? 'rounded-l-2xl rounded-r-none' : 'rounded-r-2xl rounded-l-none'
 
   return (
     <button
@@ -140,7 +139,8 @@ export function FloatingMarketplaceSticker({
     >
       <span
         className={[
-          'group flex items-center overflow-hidden rounded-full cursor-pointer',
+          'group flex items-center overflow-hidden cursor-pointer',
+          roundCls,
           'h-16 md:h-[72px]',
           expanded ? 'w-[228px] md:w-[252px]' : 'w-16 md:w-[72px]',
           'transition-[width,transform,box-shadow] duration-[250ms] ease-out',

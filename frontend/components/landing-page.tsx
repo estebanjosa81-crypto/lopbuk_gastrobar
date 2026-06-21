@@ -3283,10 +3283,19 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
               <ProductDetailML
                 product={toML(selectedProduct)}
                 related={relatedProducts.map(toML)}
+                reviews={(productReviews || []).map((r: any) => ({
+                  rating: Number(r.rating) || 5,
+                  text: r.body || r.title || '',
+                  author: r.reviewerName || r.reviewer_name,
+                  date: (r.createdAt || r.created_at) ? new Date(r.createdAt || r.created_at).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }) : undefined,
+                  photo: r.imageUrl1 || r.image_url_1 || r.imageUrl || null,
+                }))}
                 seller={{
                   name: storeConfig?.storeInfo?.name || 'Tienda',
                   logoUrl: storeConfig?.storeInfo?.logoUrl || null,
-                  isOfficial: true,
+                  coverUrl: (storeConfig?.storeInfo as any)?.cardCoverUrl || null,
+                  isOfficial: !!(storeConfig?.storeInfo as any)?.isVerified,
+                  productsText: `+${products.length} Productos`,
                 }}
                 accentColor={(activeThemeColors as any)?.primary || '#3483fa'}
                 formatPrice={formatCOP}
@@ -9692,43 +9701,45 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
       {/* ========== AGE GATE MODAL ========== */}
       {showAgeGate && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-black/8 dark:border-white/8 animate-in fade-in zoom-in-95 duration-300">
-            {/* Top accent */}
-            <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-rose-400 to-rose-600" />
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="relative w-full max-w-[400px] max-h-[92dvh] my-auto flex flex-col overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/95 text-white shadow-[0_30px_90px_-25px_rgba(244,63,94,0.5)] animate-in fade-in zoom-in-95 duration-300">
+            {/* Glow decorativo superior */}
+            <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-48 rounded-full bg-rose-500/25 blur-3xl" />
 
-            {/* Icon + header */}
-            <div className="flex flex-col items-center text-center px-8 pt-8 pb-5">
-              <div className="h-14 w-14 rounded-full bg-rose-50 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/50 flex items-center justify-center mb-4">
-                <span className="text-2xl font-bold text-rose-600 leading-none select-none">18+</span>
+            {/* Header */}
+            <div className="relative shrink-0 flex flex-col items-center text-center px-6 sm:px-8 pt-8 pb-5">
+              {/* Badge 18+ con anillo brillante */}
+              <div className="relative mb-4">
+                <div className="absolute inset-0 rounded-full bg-rose-500/50 blur-xl" />
+                <div className="relative h-16 w-16 rounded-full bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center ring-2 ring-rose-400/50 shadow-lg shadow-rose-900/50">
+                  <span className="text-xl font-black tracking-tight text-white select-none">18+</span>
+                </div>
               </div>
-              <h2 className="text-lg font-semibold tracking-tight text-black dark:text-white leading-snug">
-                Verificación de edad
-              </h2>
-              <p className="text-xs text-black/40 dark:text-white/40 mt-1.5 font-medium uppercase tracking-widest">
+              <h2 className="text-xl font-semibold tracking-tight">Verificación de edad</h2>
+              <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-rose-400/80">
                 {storeConfig?.storeInfo?.name || 'Tienda'}
               </p>
             </div>
 
-            {/* Divider */}
-            <div className="h-px mx-8 bg-black/6 dark:bg-white/6" />
+            {/* Divider en gradiente */}
+            <div className="mx-6 sm:mx-8 h-px shrink-0 bg-gradient-to-r from-transparent via-white/15 to-transparent" />
 
-            {/* Description */}
-            <div className="px-8 py-5">
-              <p className="text-sm text-black/60 dark:text-white/60 leading-relaxed text-center">
+            {/* Descripción (scrolleable si el texto es largo) */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-6 sm:px-8 py-5">
+              <p className="text-[13px] sm:text-sm leading-relaxed text-center text-white/55">
                 {storeConfig?.storeInfo?.ageGateDescription?.trim() ||
                   'Este sitio contiene contenido exclusivo para mayores de 18 años. Al ingresar confirmas que eres mayor de edad y aceptas los términos y condiciones.'}
               </p>
             </div>
 
-            {/* Actions */}
-            <div className="px-8 pb-8 space-y-2.5">
+            {/* Acciones (siempre visibles) */}
+            <div className="shrink-0 px-6 sm:px-8 pt-4 pb-6 space-y-2.5 border-t border-white/[0.06] bg-white/[0.02]">
               <button
                 onClick={() => {
                   sessionStorage.setItem(`age_verified_${selectedStore}`, '1')
                   setShowAgeGate(false)
                 }}
-                className="w-full py-3 rounded-xl bg-black dark:bg-white text-white dark:text-black text-sm font-semibold tracking-wide hover:bg-black/80 dark:hover:bg-white/80 transition-colors"
+                className="w-full rounded-2xl py-3.5 text-sm font-semibold text-white bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-400 hover:to-rose-500 shadow-lg shadow-rose-900/40 transition-all active:scale-[0.99]"
               >
                 Soy mayor de edad — Entrar
               </button>
@@ -9738,15 +9749,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                   setSelectedStore('all')
                   window.scrollTo({ top: 0, behavior: 'smooth' })
                 }}
-                className="w-full py-3 rounded-xl border border-black/10 dark:border-white/10 text-black/50 dark:text-white/50 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                className="w-full rounded-2xl py-3 text-sm font-medium text-white/45 hover:text-white/75 hover:bg-white/[0.04] transition-colors"
               >
                 No soy mayor de edad
               </button>
-            </div>
-
-            {/* Footer note */}
-            <div className="px-8 pb-6 text-center">
-              <p className="text-[10px] text-black/25 dark:text-white/25 leading-relaxed">
+              <p className="pt-1 text-center text-[10px] leading-relaxed text-white/25">
                 Al entrar confirmas que eres mayor de 18 años y aceptas los términos de uso del sitio.
               </p>
             </div>

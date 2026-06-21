@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { useSubscriptions } from '../hooks/useSubscriptions'
 
 export function SubscriptionsTab() {
-  const { mpPrices, setMpPrices, mpPlanIds, isSavingPrices, isSyncingPlans, mpMsg, handleSaveMpPrices, handleSyncMpPlans } = useSubscriptions()
+  const { mpPrices, setMpPrices, planActive, togglePlanActive, mpPlanIds, isSavingPrices, isSyncingPlans, mpMsg, handleSaveMpPrices, handleSyncMpPlans } = useSubscriptions()
 
   return (
     <div className="space-y-6">
@@ -66,7 +66,7 @@ export function SubscriptionsTab() {
             Paso 3 — Precios de suscripción (COP / mes)
           </CardTitle>
           <CardDescription>
-            Define el precio mensual de cada plan. Guárdalos antes de sincronizar con MercadoPago.
+            Define el precio mensual y activa/desactiva cada plan. Los planes desactivados no se muestran al comerciante (puedes dejar 1, 2 o 3 a tu criterio).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -75,8 +75,11 @@ export function SubscriptionsTab() {
             { key: 'profesional' as const,  label: 'Plan Profesional', placeholder: '99900' },
             { key: 'empresarial' as const,  label: 'Plan Empresarial', placeholder: '199900' },
           ]).map(({ key, label, placeholder }) => (
-            <div key={key} className="flex items-center gap-3">
-              <Label className="w-40 shrink-0 text-sm">{label}</Label>
+            <div key={key} className={`flex items-center gap-3 ${planActive[key] ? '' : 'opacity-50'}`}>
+              <label className="flex items-center gap-2 w-44 shrink-0 cursor-pointer select-none">
+                <input type="checkbox" checked={planActive[key]} onChange={() => togglePlanActive(key)} className="h-4 w-4 accent-primary" />
+                <span className="text-sm">{label}</span>
+              </label>
               <div className="flex items-center gap-2 flex-1">
                 <span className="text-sm text-muted-foreground">$</span>
                 <Input
@@ -85,6 +88,7 @@ export function SubscriptionsTab() {
                   onChange={e => setMpPrices(p => ({ ...p, [key]: e.target.value }))}
                   placeholder={placeholder}
                   className="text-sm"
+                  disabled={!planActive[key]}
                 />
                 <span className="text-sm text-muted-foreground whitespace-nowrap">COP / mes</span>
               </div>
@@ -93,7 +97,7 @@ export function SubscriptionsTab() {
           <Button onClick={handleSaveMpPrices} disabled={isSavingPrices} variant="outline" size="sm" className="mt-2">
             {isSavingPrices
               ? <><RefreshCw className="h-3.5 w-3.5 mr-2 animate-spin" /> Guardando…</>
-              : <><Save className="h-3.5 w-3.5 mr-2" /> Guardar precios</>}
+              : <><Save className="h-3.5 w-3.5 mr-2" /> Guardar planes</>}
           </Button>
         </CardContent>
       </Card>

@@ -2078,9 +2078,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     const orderJson = await orderRes.json()
     if (!orderJson.success || !orderJson.data?.orderNumber) throw new Error(orderJson.error || 'No se pudo crear el pedido')
 
-    const res = await api.createPaymentCheckout({
-      context: 'order', contextId: orderJson.data.orderNumber,
-      amountInCents: Math.round(total * 100),
+    const res = await api.createPublicOrderCheckout({
+      contextId: orderJson.data.orderNumber,
       redirectUrl: `${window.location.origin}/pago/resultado`,
       customerEmail: formData.email,
     })

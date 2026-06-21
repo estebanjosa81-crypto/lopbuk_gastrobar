@@ -390,6 +390,11 @@ class ApiService {
   async createPaymentCheckout(data: { context: 'subscription' | 'package' | 'order'; contextId?: string; amountInCents?: number; currency?: string; redirectUrl?: string; customerEmail?: string }) {
     return this.request<any>('/payments/checkout', { method: 'POST', body: JSON.stringify(data) })
   }
+  // Checkout PÚBLICO para pedidos de storefront (cliente anónimo). El monto se
+  // resuelve del pedido en el backend; contextId = order_number.
+  async createPublicOrderCheckout(data: { contextId: string; currency?: string; redirectUrl?: string; customerEmail?: string }) {
+    return this.request<any>('/payments/public/checkout', { method: 'POST', body: JSON.stringify(data) })
+  }
   async getPaymentTransaction(reference: string) {
     return this.request<any>(`/payments/transaction/${reference}`)
   }

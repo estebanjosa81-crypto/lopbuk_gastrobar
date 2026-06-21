@@ -56,6 +56,28 @@ router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) =
   } catch (e) { fail(res, e, 'Error al crear el checkout'); }
 });
 
+// ── Checkout PÚBLICO de pedidos (cliente anónimo del storefront) ──
+// Solo context 'order'. El monto y el tenant se resuelven del pedido en la BD.
+router.post('/public/checkout', async (req: Request, res: Response) => {
+  try {
+    const { contextId, currency, redirectUrl, customerEmail } = req.body || {};
+    if (!contextId) {
+      res.status(400).json({ success: false, error: 'Falta la referencia del pedido' });
+      return;
+    }
+    const out = await svc.createCheckout({
+      context: 'order',
+      contextId,
+      tenantId: null,
+      amountInCents: 0, // se resuelve del pedido en el servidor
+      currency,
+      redirectUrl,
+      customerEmail: customerEmail || undefined,
+    });
+    res.json({ success: true, data: out });
+  } catch (e) { fail(res, e, 'Error al crear el checkout'); }
+});
+
 // ── Webhook de Wompi (SIN auth; se valida la firma del evento) ──
 router.post('/wompi/webhook', async (req: Request, res: Response) => {
   try {

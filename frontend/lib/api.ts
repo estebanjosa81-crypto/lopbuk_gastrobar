@@ -1067,6 +1067,14 @@ class ApiService {
     return this.request<{ closed: number }>(`/restbar-qr/tables/${tableId}/session/close`, { method: 'POST' })
   }
 
+  // Unir mesas (comparten cuenta/total) y separar.
+  async mergeTables(tableIds: string[]) {
+    return this.request<{ groupId: string; tableIds: string[] }>('/restbar-qr/tables/merge', { method: 'POST', body: JSON.stringify({ tableIds }) })
+  }
+  async unmergeTables(data: { tableId?: string; groupId?: string }) {
+    return this.request<any>('/restbar-qr/tables/unmerge', { method: 'POST', body: JSON.stringify(data) })
+  }
+
   async getMyPublishedProducts() {
     return this.request<any[]>('/storefront/my-published')
   }
@@ -1979,7 +1987,7 @@ class ApiService {
   // ─── MercadoPago Suscripciones ────────────────────────────────────────────────
 
   async getSubscriptionConfig() {
-    return this.request<{ configured: boolean; planIds: Record<string, string | null>; prices: Record<string, string | null> }>('/subscriptions/config')
+    return this.request<{ configured: boolean; planIds: Record<string, string | null>; prices: Record<string, string | null>; active?: Record<string, boolean> }>('/subscriptions/config')
   }
 
   async createMPSubscription(plan: 'basico' | 'profesional' | 'empresarial') {
@@ -1998,6 +2006,14 @@ class ApiService {
     if (prices.basico !== undefined)      tasks.push(this.updatePlatformSetting('plan_price_basico', prices.basico))
     if (prices.profesional !== undefined) tasks.push(this.updatePlatformSetting('plan_price_profesional', prices.profesional))
     if (prices.empresarial !== undefined) tasks.push(this.updatePlatformSetting('plan_price_empresarial', prices.empresarial))
+    await Promise.all(tasks)
+    return { success: true }
+  }
+  async savePlanActive(active: { basico?: boolean; profesional?: boolean; empresarial?: boolean }) {
+    const tasks: Promise<any>[] = []
+    if (active.basico !== undefined)      tasks.push(this.updatePlatformSetting('plan_active_basico', active.basico ? '1' : '0'))
+    if (active.profesional !== undefined) tasks.push(this.updatePlatformSetting('plan_active_profesional', active.profesional ? '1' : '0'))
+    if (active.empresarial !== undefined) tasks.push(this.updatePlatformSetting('plan_active_empresarial', active.empresarial ? '1' : '0'))
     await Promise.all(tasks)
     return { success: true }
   }

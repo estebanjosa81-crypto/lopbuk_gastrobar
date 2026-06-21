@@ -13,7 +13,7 @@ import {
   BookOpen, Search, ToggleLeft, ToggleRight, ChevronLeft,
   Banknote, CreditCard, Smartphone, ArrowLeftRight, Layers,
   ChevronRight, User, DollarSign, FileText, Printer, TrendingDown, Download,
-  CalendarDays, Wallet,
+  CalendarDays, Wallet, Link2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { RestBarReservations } from '@/components/restbar-reservations'
@@ -493,6 +493,9 @@ function MesasTab() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<any>(null)
   const [form, setForm] = useState({ number: '', capacity: '4', area: '', notes: '' })
+  const [mergeMode, setMergeMode] = useState(false)
+  const [mergeSel, setMergeSel] = useState<Set<string>>(new Set())
+  const toggleMergeSel = (id: string) => setMergeSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -500,6 +503,19 @@ function MesasTab() {
     if (r.success) setTables(r.data ?? [])
     setLoading(false)
   }, [])
+
+  const doMerge = async () => {
+    const ids = [...mergeSel]
+    if (ids.length < 2) return
+    const r = await api.mergeTables(ids)
+    if (r.success) { toast.success('Mesas unidas'); setMergeMode(false); setMergeSel(new Set()); load() }
+    else toast.error(r.error)
+  }
+  const doUnmerge = async (groupId: string) => {
+    const r = await api.unmergeTables({ groupId })
+    if (r.success) { toast.success('Mesas separadas'); load() }
+    else toast.error(r.error)
+  }
 
   useEffect(() => { load() }, [load])
 
@@ -530,12 +546,24 @@ function MesasTab() {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Mesas ({tables.length})</h2>
         <div className="flex gap-2">
+          <Button size="sm" variant={mergeMode ? 'default' : 'outline'} onClick={() => { setMergeMode(m => !m); setMergeSel(new Set()) }}>
+            <Link2 className="h-3.5 w-3.5 mr-1" /> {mergeMode ? 'Cancelar' : 'Unir mesas'}
+          </Button>
           <Button size="sm" variant="ghost" onClick={load}><RefreshCw className="h-3.5 w-3.5" /></Button>
           <Button size="sm" onClick={() => { setEditing(null); setForm({ number: '', capacity: '4', area: '', notes: '' }); setShowForm(true) }}>
             <Plus className="h-3.5 w-3.5 mr-1" /> Nueva mesa
           </Button>
         </div>
       </div>
+
+      {mergeMode && (
+        <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 flex items-center justify-between gap-3">
+          <span className="text-xs text-primary">Selecciona las mesas a unir (mínimo 2). Compartirán cuenta y total.</span>
+          <Button size="sm" onClick={doMerge} disabled={mergeSel.size < 2}>
+            <Link2 className="h-3.5 w-3.5 mr-1" /> Unir {mergeSel.size > 0 ? `(${mergeSel.size})` : ''}
+          </Button>
+        </div>
+      )}
 
       {/* Form */}
       {showForm && (
@@ -574,29 +602,50 @@ function MesasTab() {
         <div className="flex justify-center py-10"><RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-          {tables.map(t => (
-            <div key={t.id} className={cn('relative rounded-xl border-2 p-3 cursor-pointer transition-all hover:scale-[1.02]', TABLE_STATUS_COLORS[t.status] ?? TABLE_STATUS_COLORS.libre)}>
+          {tables.map(t => {
+            const sel = mergeMode && mergeSel.has(t.id)
+            return (
+            <div key={t.id}
+              onClick={mergeMode ? () => toggleMergeSel(t.id) : undefined}
+              className={cn('relative rounded-xl border-2 p-3 cursor-pointer transition-all hover:scale-[1.02]',
+                sel ? 'border-primary ring-2 ring-primary/40' : t.merge_group ? 'border-primary/50' : (TABLE_STATUS_COLORS[t.status] ?? TABLE_STATUS_COLORS.libre))}>
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-lg font-bold">Mesa {t.number}</p>
                   <p className="text-xs opacity-70"><Users className="inline h-3 w-3 mr-0.5" />{t.capacity} personas</p>
                   {t.area && <p className="text-[10px] opacity-60 mt-0.5">{t.area}</p>}
                 </div>
-                <div className="flex flex-col gap-1">
-                  <button onClick={() => openEdit(t)} className="rounded p-0.5 hover:bg-white/10"><Edit2 className="h-3 w-3" /></button>
-                  <button onClick={() => del(t.id)} className="rounded p-0.5 hover:bg-white/10"><Trash2 className="h-3 w-3" /></button>
-                </div>
+                {mergeMode ? (
+                  <span className={cn('h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0', sel ? 'bg-primary border-primary text-primary-foreground' : 'border-muted-foreground/40')}>
+                    {sel && <Check className="h-3 w-3" />}
+                  </span>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    <button onClick={() => openEdit(t)} className="rounded p-0.5 hover:bg-white/10"><Edit2 className="h-3 w-3" /></button>
+                    <button onClick={() => del(t.id)} className="rounded p-0.5 hover:bg-white/10"><Trash2 className="h-3 w-3" /></button>
+                  </div>
+                )}
               </div>
-              <div className="mt-2">
+              <div className="mt-2 flex items-center gap-1.5">
                 <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', TABLE_STATUS_COLORS[t.status])}>
                   {t.status}
                 </span>
+                {t.merge_group && !mergeMode && (
+                  <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-primary border border-primary/40"><Link2 className="h-2.5 w-2.5" /> Unida</span>
+                )}
               </div>
               {t.activeOrder && (
                 <p className="mt-1 text-[10px] opacity-70">Comanda: {t.activeOrder.orderNumber}</p>
               )}
+              {t.merge_group && !mergeMode && (
+                <button onClick={(e) => { e.stopPropagation(); doUnmerge(t.merge_group) }}
+                  className="mt-2 w-full rounded-lg border border-border py-1 text-[10px] font-medium opacity-80 hover:opacity-100 hover:bg-white/5 transition">
+                  Separar mesas
+                </button>
+              )}
             </div>
-          ))}
+            )
+          })}
           {tables.length === 0 && (
             <div className="col-span-full flex flex-col items-center gap-2 py-10 text-muted-foreground">
               <TableProperties className="h-8 w-8 opacity-30" />

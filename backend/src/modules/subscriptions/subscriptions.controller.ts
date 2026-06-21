@@ -8,7 +8,8 @@ export async function getConfig(req: Request, res: Response): Promise<void> {
     const configured = await svc.isMPConfigured();
     const planIds = await svc.getPlanIds();
     const prices = await svc.getPlanPrices();
-    res.json({ success: true, data: { configured, planIds, prices } });
+    const active = await svc.getPlanActive();
+    res.json({ success: true, data: { configured, planIds, prices, active } });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

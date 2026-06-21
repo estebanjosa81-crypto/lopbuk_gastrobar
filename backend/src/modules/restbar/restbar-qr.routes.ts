@@ -32,6 +32,8 @@ async function ensureTables() {
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, INDEX idx_rbtg_session (session_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   await pool.query('ALTER TABLE rb_table_sessions ADD COLUMN IF NOT EXISTS order_id VARCHAR(36) NULL').catch(() => {});
+  // Unión de mesas: las mesas con el mismo merge_group comparten cuenta/total.
+  await pool.query('ALTER TABLE rb_tables ADD COLUMN merge_group VARCHAR(36) NULL').catch(() => {});
   await pool.query(`CREATE TABLE IF NOT EXISTS rb_jukebox_queue (
     id VARCHAR(36) PRIMARY KEY, tenant_id VARCHAR(36) NOT NULL, table_session_id VARCHAR(36) NULL,
     title VARCHAR(200) NOT NULL, url VARCHAR(500) NULL, requested_by VARCHAR(120) NULL,
@@ -88,6 +90,37 @@ async function getOrCreateOrderId(tenantId: string, tableId: string, waiterId: s
   )) as any;
   return created[0]?.id;
 }
+
+// ─────────── AUTH: unir / separar mesas (mesero y comerciante) ───────────
+// Une las mesas seleccionadas bajo un grupo común: comparten cuenta y total.
+router.post('/tables/merge', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    await ensureTables();
+    const tenantId = req.user!.tenantId!;
+    const ids: string[] = Array.isArray(req.body?.tableIds) ? req.body.tableIds.map(String).filter(Boolean) : [];
+    if (ids.length < 2) return bad(res, 'Selecciona al menos 2 mesas para unir');
+    // Si alguna ya está en un grupo, reutiliza ese grupo; si no, crea uno nuevo.
+    const [existing] = (await pool.query(
+      'SELECT merge_group FROM rb_tables WHERE tenant_id = ? AND id IN (?) AND merge_group IS NOT NULL LIMIT 1', [tenantId, ids]
+    )) as any;
+    const groupId = existing[0]?.merge_group || uuidv4();
+    await pool.query('UPDATE rb_tables SET merge_group = ? WHERE tenant_id = ? AND id IN (?)', [groupId, tenantId, ids]);
+    ok(res, { groupId, tableIds: ids });
+  } catch (e: any) { bad(res, e?.message || 'No se pudieron unir las mesas', 500); }
+});
+
+// Separa: quita una mesa del grupo (tableId) o disuelve el grupo entero (groupId).
+router.post('/tables/unmerge', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    await ensureTables();
+    const tenantId = req.user!.tenantId!;
+    const { tableId, groupId } = req.body || {};
+    if (groupId) await pool.query('UPDATE rb_tables SET merge_group = NULL WHERE tenant_id = ? AND merge_group = ?', [tenantId, groupId]);
+    else if (tableId) await pool.query('UPDATE rb_tables SET merge_group = NULL WHERE tenant_id = ? AND id = ?', [tenantId, tableId]);
+    else return bad(res, 'Falta tableId o groupId');
+    ok(res, { ok: true });
+  } catch (e: any) { bad(res, e?.message || 'No se pudieron separar las mesas', 500); }
+});
 
 // ─────────── AUTH: el mesero genera/rota el QR de la mesa ───────────
 router.post('/tables/:tableId/session', authenticate, async (req: AuthRequest, res: Response) => {
@@ -246,14 +279,29 @@ router.get('/session/:token/order', async (req: Request, res: Response) => {
   try {
     const s = await loadSession(req.params.token);
     if (!s) return bad(res, 'Sesion no valida', 410);
-    if (!s.order_id) return ok(res, { items: [], total: 0 });
+
+    // Mesas a sumar: si la mesa está unida a un grupo, suma TODAS las del grupo.
+    const [[tbl]] = (await pool.query('SELECT merge_group FROM rb_tables WHERE id = ?', [s.table_id])) as any;
+    let tableIds: string[] = [s.table_id];
+    if (tbl?.merge_group) {
+      const [grp] = (await pool.query('SELECT id FROM rb_tables WHERE tenant_id = ? AND merge_group = ?', [s.tenant_id, tbl.merge_group])) as any;
+      if (grp.length) tableIds = grp.map((t: any) => t.id);
+    }
+
+    // Pedidos abiertos de todas las mesas del grupo.
+    const [orders] = (await pool.query(
+      `SELECT id, total FROM rb_orders WHERE tenant_id = ? AND table_id IN (?) AND status NOT IN ('cerrada','cancelada')`,
+      [s.tenant_id, tableIds]
+    )) as any;
+    if (!orders.length) return ok(res, { items: [], total: 0, merged: tableIds.length > 1 });
+    const orderIds = orders.map((o: any) => o.id);
+    const total = orders.reduce((sum: number, o: any) => sum + Number(o.total || 0), 0);
     const [items] = (await pool.query(
       `SELECT menu_item_name AS name, quantity, status, item_notes AS notes
-         FROM rb_order_items WHERE order_id = ? AND status <> 'cancelado' ORDER BY created_at ASC`,
-      [s.order_id]
+         FROM rb_order_items WHERE order_id IN (?) AND status <> 'cancelado' ORDER BY created_at ASC`,
+      [orderIds]
     )) as any;
-    const [[o]] = (await pool.query('SELECT total FROM rb_orders WHERE id = ?', [s.order_id])) as any;
-    ok(res, { items, total: Number(o?.total || 0) });
+    ok(res, { items, total, merged: tableIds.length > 1 });
   } catch (e: any) { bad(res, e?.message || 'Error al cargar tu pedido', 500); }
 });
 

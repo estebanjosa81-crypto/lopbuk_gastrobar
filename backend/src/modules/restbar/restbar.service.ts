@@ -100,6 +100,7 @@ class RestbarService {
             itemsCount: r.active_items_count ?? 0,
           }
         : null,
+      merge_group: (r as any).merge_group ?? null,
     }));
   }
 

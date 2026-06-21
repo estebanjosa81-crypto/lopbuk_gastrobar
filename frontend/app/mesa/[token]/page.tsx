@@ -53,7 +53,11 @@ export default function MesaPage() {
       const j = await r.json()
       if (!r.ok || !j.success) { setError(j?.error || 'Mesa no disponible'); setPhase('invalid'); return }
       setBrand(j.data.brand); setTableNumber(j.data.tableNumber); setMenu(j.data.menu || [])
-      setPhase('join')
+      // Persistencia: si el cliente ya entró a esta mesa, restaura su sesión (no re-pedir nombre al recargar).
+      let savedName = ''
+      try { savedName = localStorage.getItem(`mesa_name_${token}`) || '' } catch { /* SSR / bloqueado */ }
+      if (savedName) { setName(savedName); setPhase('menu') }
+      else setPhase('join')
     } catch { setError('No se pudo conectar'); setPhase('invalid') }
   }, [token])
 
@@ -63,7 +67,7 @@ export default function MesaPage() {
     try {
       const r = await fetch(`${API_URL}/restbar-qr/session/${token}/order`)
       const j = await r.json()
-      if (r.status === 410) { setPhase('invalid'); return }
+      if (r.status === 410) { try { localStorage.removeItem(`mesa_name_${token}`) } catch { /* */ }; setPhase('invalid'); return }
       if (r.ok && j.success) { setOrderItems(j.data.items || []); setOrderTotal(j.data.total || 0) }
     } catch { /* reintenta en el próximo ciclo */ }
   }, [token])
@@ -114,13 +118,14 @@ export default function MesaPage() {
     } finally { setBusy(false) }
   }
 
-    // Polling del estado del pedido mientras el cliente está en la vista de seguimiento.
+    // Polling del consumo/total de la mesa: activo en menú y seguimiento (así cualquiera
+  // que llega a la mesa ve el total). La rocola solo se consulta en seguimiento.
   useEffect(() => {
-    if (phase !== 'track') { if (pollRef.current) clearInterval(pollRef.current); return }
-    pollOrder(); loadJukebox()
-    pollRef.current = setInterval(() => { pollOrder(); loadJukebox() }, 7000)
+    if (phase !== 'menu' && phase !== 'track') { if (pollRef.current) clearInterval(pollRef.current); return }
+    pollOrder(); if (phase === 'track') loadJukebox()
+    pollRef.current = setInterval(() => { pollOrder(); if (phase === 'track') loadJukebox() }, 7000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [phase, pollOrder])
+  }, [phase, pollOrder, loadJukebox])
 
   const join = async () => {
     if (!name.trim() || busy) return
@@ -131,6 +136,7 @@ export default function MesaPage() {
       })
       const j = await r.json()
       if (!r.ok || !j.success) { setError(j?.error || 'No se pudo unir'); if (r.status === 410) setPhase('invalid'); return }
+      try { localStorage.setItem(`mesa_name_${token}`, name.trim()) } catch { /* bloqueado */ }
       setPhase('menu')
     } finally { setBusy(false) }
   }
@@ -191,12 +197,20 @@ export default function MesaPage() {
           <h1 className="text-lg font-bold">{tableNumber ? `Mesa ${tableNumber}` : 'Tu mesa'}</h1>
         </div>
         {(phase === 'menu' || phase === 'track') && (
-          <button
-            onClick={() => setPhase(phase === 'track' ? 'menu' : 'track')}
-            className="text-xs font-semibold rounded-full px-3 py-1.5 border border-white/15 hover:bg-white/10"
-          >
-            {phase === 'track' ? '+ Pedir más' : 'Mi pedido'}
-          </button>
+          <div className="flex items-center gap-2.5">
+            {orderTotal > 0 && (
+              <div className="text-right leading-none">
+                <p className="text-[9px] uppercase tracking-wider text-gray-400 mb-0.5">Total mesa</p>
+                <p className="text-sm font-extrabold" style={{ color: A }}>{money(orderTotal)}</p>
+              </div>
+            )}
+            <button
+              onClick={() => setPhase(phase === 'track' ? 'menu' : 'track')}
+              className="text-xs font-semibold rounded-full px-3 py-1.5 border border-white/15 hover:bg-white/10 whitespace-nowrap"
+            >
+              {phase === 'track' ? '+ Pedir más' : 'Mi pedido'}
+            </button>
+          </div>
         )}
       </div>
 

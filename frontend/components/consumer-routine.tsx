@@ -12,7 +12,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   X, Home, ChefHat, CalendarDays, ShoppingBasket, Plus, Trash2, Check, Clock,
   AlertTriangle, Sparkles, Loader2, Dumbbell, Flame, TrendingUp, Settings,
-  Droplet, Target, Carrot, ListChecks, Utensils, Repeat, QrCode, ShieldCheck, ShieldX, ShieldAlert, Crown, Compass,
+  Droplet, Target, Carrot, ListChecks, Utensils, Repeat, QrCode, ShieldCheck, ShieldX, ShieldAlert, Crown, Compass, Award, KeyRound,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@/lib/api'
@@ -20,7 +20,12 @@ import PlanesView from '@/components/consumer-plans-view'
 import LegendReveal from '@/components/legend-reveal'
 import { useConsumerData, type ConsumerTab } from '@/components/consumer/hooks/useConsumerData'
 import ExploreSection from '@/components/consumer/sections/explore/ExploreSection'
+import CoachSection from '@/components/consumer/sections/CoachSection'
+import VaultSection from '@/components/consumer/sections/VaultSection'
+import AchievementShelf from '@/components/consumer/AchievementShelf'
+import AdaptiveCards from '@/components/consumer/widgets/AdaptiveCards'
 import CartButton from '@/components/consumer/widgets/CartButton'
+import ActiveProgramBanner from '@/components/consumer/widgets/ActiveProgramBanner'
 import { useEntitlements } from '@/components/consumer/hooks/useEntitlements'
 import LegendShine from '@/components/consumer/widgets/LegendShine'
 
@@ -43,7 +48,7 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
   // Core de datos compartido (C1). La UI móvil de abajo queda idéntica.
   const {
     tab, setTab, today, loading,
-    assistantOn, hasGym, legend, setLegend, legendCfg, streak,
+    assistantOn, hasGym, legend, setLegend, legendCfg, streak, activeProgram,
     resumen, despensa, recetas, puedoHacer, rutinas, plan, compras, gym,
     load,
   } = useConsumerData('hoy')
@@ -59,6 +64,7 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
     { k: 'cocina', icon: ChefHat, label: 'Cocina' },
     { k: 'plan', icon: CalendarDays, label: 'Plan' },
     { k: 'compras', icon: ShoppingBasket, label: 'Compras' },
+    { k: 'coach', icon: Award, label: 'Coach' },
     { k: 'planes', icon: Crown, label: 'Planes' },
     ...(hasGym ? [{ k: 'gym', icon: Dumbbell, label: 'Gym' }] : []),
   ] as const
@@ -80,6 +86,7 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-1">
             {assistantOn && <button onClick={() => setShowAssistant(true)} className="px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-semibold" style={legend ? { background: 'rgba(212,175,55,0.25)', color: '#D4AF37' } : { background: 'rgba(255,255,255,0.2)' }} title={legend ? 'AI Coach LEGEND' : 'Asistente IA'}>{legend ? <Crown className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}{legend ? 'AI Coach' : 'IA'}</button>}
             <CartButton className="p-2 rounded-full hover:bg-white/20" />
+            <button onClick={() => setTab('vault')} className="p-2 rounded-full hover:bg-white/20" title="The Vault"><KeyRound className="w-5 h-5" /></button>
             <button onClick={() => setShowPerfil(true)} className="p-2 rounded-full hover:bg-white/20" title="Mi perfil"><Settings className="w-5 h-5" /></button>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-white/20"><X className="w-5 h-5" /></button>
           </div>
@@ -90,6 +97,8 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
       {/* Content */}
       <div className="flex-1 overflow-y-auto pb-20">
         {loading && <div className="flex justify-center py-12 text-neutral-300"><Loader2 className="w-7 h-7 animate-spin" /></div>}
+        {!loading && tab === 'hoy' && activeProgram && <div className="p-4 pb-0"><ActiveProgramBanner program={activeProgram} onOpen={() => setTab('coach')} /></div>}
+        {!loading && tab === 'hoy' && <AdaptiveCards onGoTo={setTab} />}
         {!loading && tab === 'hoy' && <HoyView resumen={resumen} plan={plan} rutinas={rutinas} onReload={() => load('hoy')} onGoTo={setTab} />}
         {!loading && tab === 'rutina' && <RutinaView rutinas={rutinas} onReload={() => load('rutina')} />}
         {!loading && tab === 'cocina' && <CocinaView despensa={despensa} recetas={recetas} puedoHacer={puedoHacer} onReload={() => load('cocina')} />}
@@ -97,6 +106,8 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
         {!loading && tab === 'compras' && <ComprasView items={compras} onReload={() => load('compras')} />}
         {tab === 'planes' && <PlanesView onUpgrade={() => { setLegend(true); setShowReveal(true) }} />}
         {tab === 'explore' && <ExploreSection goal={resumen?.perfil?.goal} onFullStore={onClose} onGoPlanes={() => setTab('planes')} />}
+        {tab === 'coach' && <CoachSection />}
+        {tab === 'vault' && <VaultSection />}
         {!loading && tab === 'gym' && <GymView data={gym} onReload={() => load('gym')} />}
       </div>
 
@@ -878,6 +889,7 @@ function PerfilModal({ onClose, onSaved }: any) {
           </select>
           <input value={f.city} onChange={e => setF({ ...f, city: e.target.value })} placeholder="Ciudad" className={inputCls} />
           <button onClick={save} disabled={saving} className="w-full bg-orange-500 text-white rounded-xl py-2.5 text-sm font-medium disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar perfil'}</button>
+          <div className="pt-3 border-t border-black/5"><AchievementShelf compact /></div>
         </div>
       )}
     </Modal>

@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   Mail, Lock, User, AlertCircle, Eye, EyeOff, ShieldX, Phone, Timer,
-  Code2, Smartphone, Globe, FileSpreadsheet, Megaphone, Wrench, Bot, MessageCircle, MousePointerClick, PartyPopper, Sparkles, ArrowRight,
   MapPin, Home, Building2, CreditCard,
 } from 'lucide-react'
 import { departamentosMunicipios } from '@/constants'
@@ -18,32 +17,6 @@ import { DataPolicyModal } from '@/components/data-policy-modal'
 import { ContactModal } from '@/components/contact-modal'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
-
-const services = [
-  { icon: Code2, title: 'Desarrollo de Software', description: 'Aplicaciones web y de escritorio a medida', color: 'emerald' },
-  { icon: Smartphone, title: 'Apps Móviles (APK)', description: 'Aplicaciones nativas para Android', color: 'blue' },
-  { icon: Globe, title: 'Páginas Web', description: 'Sitios de conversión y landing pages', color: 'purple' },
-  { icon: FileSpreadsheet, title: 'Plantillas Excel', description: 'Asesoría y plantillas personalizadas', color: 'teal' },
-  { icon: Megaphone, title: 'Marketing Digital', description: 'Estrategias para hacer crecer tu negocio', color: 'amber' },
-  { icon: Wrench, title: 'Mantenimiento & Instalación', description: 'Componentes, aplicativos y soporte técnico', color: 'rose' },
-  { icon: Bot, title: 'Automatización con IA', description: 'Procesos inteligentes para tu empresa', color: 'cyan' },
-  { icon: MessageCircle, title: 'Chatbots para Negocios', description: 'Atención automática en la era digital', color: 'green' },
-  { icon: MousePointerClick, title: 'Landing de Ventas', description: 'Páginas de conversión y redirección a WhatsApp', color: 'orange' },
-  { icon: PartyPopper, title: 'Tarjetas Digitales', description: 'Invitaciones digitales para tus eventos', color: 'pink' },
-]
-
-const colorMap: Record<string, { icon: string; bg: string; border: string }> = {
-  emerald: { icon: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
-  blue: { icon: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-  purple: { icon: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
-  teal: { icon: 'text-teal-400', bg: 'bg-teal-500/10', border: 'border-teal-500/20' },
-  amber: { icon: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-  rose: { icon: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/20' },
-  cyan: { icon: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
-  green: { icon: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20' },
-  orange: { icon: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
-  pink: { icon: 'text-pink-400', bg: 'bg-pink-500/10', border: 'border-pink-500/20' },
-}
 
 interface AuthFormProps {
   onGoBack?: () => void
@@ -228,98 +201,29 @@ export function AuthForm({ onGoBack }: AuthFormProps) {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#0a0a0a]">
+    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] p-4 sm:p-6 relative overflow-hidden">
+      {/* Fondo: imagen configurable muy tenue (opcional) + degradado + glow */}
+      {loginBgUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={loginBgUrl} alt="" className="absolute inset-0 w-full h-full object-cover opacity-[0.18]" onError={() => setLoginBgUrl('')} />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-br from-black via-[#0a0a0a] to-black" />
+      <div aria-hidden className="absolute -top-1/3 left-1/2 -translate-x-1/2 w-[640px] h-[640px] rounded-full bg-white/[0.04] blur-[130px]" />
 
-      {/* ═══ LEFT — Branding panel ═══ */}
-      <div className="hidden lg:flex lg:w-[52%] relative overflow-hidden">
-        {/* Background image (solo si hay una configurada; onError la oculta) */}
-        {loginBgUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={loginBgUrl} alt="" className="absolute inset-0 w-full h-full object-cover" onError={() => setLoginBgUrl('')} />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-br from-black/90 via-black/75 to-black/60" />
+      {/* ═══ Tarjeta de login centrada ═══ */}
+      <div className="relative z-10 w-full max-w-md">
+        <div className="rounded-2xl border border-white/10 bg-[#0d0d0d]/85 backdrop-blur-xl shadow-[0_24px_70px_-20px_rgba(0,0,0,0.85)] max-h-[92vh] overflow-y-auto">
+          <div className="p-7 sm:p-10 space-y-7">
 
-        <div className="relative z-10 flex flex-col justify-between p-12 text-white w-full overflow-y-auto">
-          {/* Logo */}
-          <div className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={BRAND.isotipo} alt={BRAND.name} width={40} height={40} className="rounded-lg object-contain bg-white p-0.5" />
-            <span className="text-lg font-light tracking-[0.15em] uppercase">{BRAND.name}</span>
-          </div>
-
-          {/* Hero copy */}
-          <div className="space-y-8 my-10">
-            <div className="space-y-3">
-              <p className="text-[10px] uppercase tracking-[0.4em] text-white/30 font-light">Plataforma integral</p>
-              <h1 className="text-4xl font-extralight leading-tight tracking-tight">
-                Gestión de<br />
-                <span className="font-light text-white/70">inventario & ventas</span>
-              </h1>
-              <p className="text-sm text-white/40 font-light max-w-sm leading-relaxed">
-                Controla tu stock, gestiona ventas, domicilios y haz crecer tu negocio desde un solo lugar.
-              </p>
+            {/* Logo */}
+            <div className="flex flex-col items-center gap-2.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={BRAND.isotipo} alt={BRAND.name} width={52} height={52} className="rounded-xl object-contain bg-white p-1 shadow-lg" />
+              <span className="text-sm font-light text-white/70 tracking-[0.25em] uppercase">{BRAND.name}</span>
             </div>
-
-            {/* Services grid */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-white/10" />
-                <span className="text-[9px] uppercase tracking-[0.35em] text-white/25 font-light flex items-center gap-2">
-                  <Sparkles className="w-3 h-3" /> DAIMUZ · Soluciones digitales
-                </span>
-                <div className="h-px flex-1 bg-white/10" />
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {services.slice(0, 8).map((service) => (
-                  <div
-                    key={service.title}
-                    className="flex items-center gap-2.5 px-3 py-2.5 border border-white/[0.07] bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
-                  >
-                    <service.icon className="w-3 h-3 text-white/25 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-light text-white/60 leading-tight truncate">{service.title}</p>
-                      <p className="text-[8px] text-white/25 leading-snug mt-0.5 truncate">{service.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <a
-                href="https://api.whatsapp.com/message/56AISNOZMVW5N1?autoload=1&app_absent=0"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full py-3 border border-white/15 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-[11px] uppercase tracking-[0.2em] font-light transition-all duration-300"
-              >
-                <MessageCircle className="w-3.5 h-3.5" />
-                Contáctanos por WhatsApp
-                <ArrowRight className="w-3 h-3" />
-              </a>
-            </div>
-          </div>
-
-          <p className="text-[9px] text-white/20 font-light uppercase tracking-widest">
-            © 2026 DAIMUZ · Desarrollo, Asesoría & Innovación
-          </p>
-        </div>
-      </div>
-
-      {/* ═══ RIGHT — Form panel ═══ */}
-      <div className="w-full lg:w-[48%] flex flex-col bg-[#0a0a0a] border-l border-white/[0.06]">
-
-        {/* Top bar — solo logo en móvil (vista minimalista, sin botón Volver) */}
-        <div className="flex items-center justify-center px-8 py-5 lg:hidden">
-          <div className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={BRAND.isotipo} alt={BRAND.name} width={28} height={28} className="rounded-md object-contain bg-white p-0.5" />
-            <span className="text-sm font-light text-white/70 tracking-widest uppercase">{BRAND.name}</span>
-          </div>
-        </div>
-
-        {/* Scrollable form area */}
-        <div className="flex-1 overflow-y-auto flex items-start lg:items-center justify-center p-8 sm:p-12">
-          <div className="w-full max-w-sm space-y-8">
 
             {/* Heading */}
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 text-center">
               <h2 className="text-2xl font-light text-white tracking-tight">
                 {isLogin ? 'Bienvenido de vuelta' : 'Crear cuenta'}
               </h2>

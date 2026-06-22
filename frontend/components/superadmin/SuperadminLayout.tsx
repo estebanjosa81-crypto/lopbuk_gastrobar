@@ -4,7 +4,7 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import {
   Briefcase, CreditCard, LayoutTemplate, MessageSquarePlus,
-  Plug, Star, Store, TrendingUp, ShoppingBag, Sparkles, Wallet, Crown,
+  Plug, Star, Store, TrendingUp, ShoppingBag, Sparkles, Wallet, Crown, Dumbbell, KeyRound, Flame,
 } from 'lucide-react'
 import { RefreshCw } from 'lucide-react'
 
@@ -22,10 +22,13 @@ const DevRequestsTab    = dynamic(() => import('./tabs/DevRequestsTab').then(m =
 const OrdersCenterTab   = dynamic(() => import('./tabs/OrdersCenterTab').then(m => ({ default: m.OrdersCenterTab })), { loading: () => <TabLoader /> })
 const CommunityTab      = dynamic(() => import('./tabs/CommunityTab').then(m => ({ default: m.CommunityTab })), { loading: () => <TabLoader /> })
 const LegendCodesTab    = dynamic(() => import('./tabs/LegendCodesTab').then(m => ({ default: m.LegendCodesTab })), { loading: () => <TabLoader /> })
+const CoachPayoutsTab   = dynamic(() => import('./tabs/CoachPayoutsTab').then(m => ({ default: m.CoachPayoutsTab })), { loading: () => <TabLoader /> })
+const VaultKeysTab      = dynamic(() => import('./tabs/VaultKeysTab').then(m => ({ default: m.VaultKeysTab })), { loading: () => <TabLoader /> })
+const DropsTab          = dynamic(() => import('./tabs/DropsTab').then(m => ({ default: m.DropsTab })), { loading: () => <TabLoader /> })
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
-type TabId = 'pedidos' | 'pagina' | 'comercios' | 'timeline' | 'destacados' | 'integraciones' | 'pagos' | 'pasarela' | 'portafolio' | 'solicitudes' | 'comunidad' | 'legend'
+type TabId = 'pedidos' | 'pagina' | 'comercios' | 'timeline' | 'destacados' | 'integraciones' | 'pagos' | 'pasarela' | 'portafolio' | 'solicitudes' | 'comunidad' | 'legend' | 'coaches' | 'vault' | 'drops'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'pedidos',       label: 'Pedidos',          icon: ShoppingBag },
@@ -39,6 +42,9 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'portafolio',    label: 'Portafolio',       icon: Briefcase },
   { id: 'comunidad',     label: 'Comunidad',        icon: Sparkles },
   { id: 'legend',        label: 'LEGEND',           icon: Crown },
+  { id: 'coaches',       label: 'Coaches',          icon: Dumbbell },
+  { id: 'vault',         label: 'Vault',            icon: KeyRound },
+  { id: 'drops',         label: 'Drops',            icon: Flame },
   { id: 'solicitudes',   label: 'Dev',              icon: MessageSquarePlus },
 ]
 
@@ -103,6 +109,9 @@ export function SuperadminLayout() {
       {activeTab === 'portafolio'    && <PortfolioTab />}
       {activeTab === 'comunidad'     && <CommunityTab />}
       {activeTab === 'legend'        && <LegendCodesTab />}
+      {activeTab === 'coaches'       && <CoachPayoutsTab />}
+      {activeTab === 'vault'         && <VaultKeysTab />}
+      {activeTab === 'drops'         && <DropsTab />}
       {activeTab === 'solicitudes'   && <DevRequestsTab />}
     </div>
   )

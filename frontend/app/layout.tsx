@@ -19,7 +19,12 @@ const BRAND_ICON = '/daimuz-icon.png'
 // Favicon de la pestaña: icono DAIMUZ oficial.
 const BRAND_FAVICON = '/daimuz-icon.png'
 
+// Base absoluta para que og:image / twitter:image se emitan con URL completa
+// (WhatsApp, Twitter, etc. NO resuelven rutas relativas en los previews).
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://daimuz.alexsters.works'
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'DAIMUZ - !Bienvenido al epicentro digital de colombia!',
   description: 'Sistema completo de gestión de inventario para tiendas',
   generator: 'v0.app',
@@ -34,6 +39,8 @@ export const metadata: Metadata = {
     title: 'DAIMUZ — Epicentro digital de Colombia',
     description: 'Plataforma de comercios, catálogo y gestión.',
     type: 'website',
+    url: SITE_URL,
+    siteName: 'DAIMUZ',
     images: [{ url: BRAND_ICON, width: 512, height: 512, alt: 'DAIMUZ' }],
   },
   twitter: {

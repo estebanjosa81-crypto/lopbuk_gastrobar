@@ -9,7 +9,7 @@
 import { useState, type CSSProperties } from 'react'
 import {
   Home, Repeat, ChefHat, CalendarDays, ShoppingBasket, Crown, Dumbbell,
-  Compass, Sparkles, Settings, Loader2,
+  Compass, Sparkles, Settings, Loader2, Award, KeyRound,
 } from 'lucide-react'
 import { useConsumerData, type ConsumerTab } from '@/components/consumer/hooks/useConsumerData'
 import { useConsumerTheme } from '@/components/consumer/hooks/useConsumerTheme'
@@ -26,7 +26,11 @@ import PlanDashboard from '@/components/consumer/sections/PlanDashboard'
 import KitchenDashboard from '@/components/consumer/sections/KitchenDashboard'
 import ShoppingDashboard from '@/components/consumer/sections/ShoppingDashboard'
 import ExploreSection from '@/components/consumer/sections/explore/ExploreSection'
+import CoachSection from '@/components/consumer/sections/CoachSection'
+import VaultSection from '@/components/consumer/sections/VaultSection'
+import AdaptiveCards from '@/components/consumer/widgets/AdaptiveCards'
 import CartButton from '@/components/consumer/widgets/CartButton'
+import ActiveProgramBanner from '@/components/consumer/widgets/ActiveProgramBanner'
 
 const TITLES: Record<string, string> = {
   hoy: 'Today', rutina: 'Rutina', cocina: 'Cocina', plan: 'Plan',
@@ -36,7 +40,7 @@ const TITLES: Record<string, string> = {
 export default function DesktopShell({ onExplore }: { onExplore: () => void }) {
   const {
     tab, setTab, today, loading,
-    assistantOn, hasGym, legend, setLegend, legendCfg, planState, streak,
+    assistantOn, hasGym, legend, setLegend, legendCfg, planState, streak, activeProgram,
     resumen, despensa, recetas, puedoHacer, rutinas, plan, compras, gym,
     load,
   } = useConsumerData('hoy')
@@ -52,7 +56,9 @@ export default function DesktopShell({ onExplore }: { onExplore: () => void }) {
     { k: 'plan', icon: CalendarDays, label: 'Plan' },
     { k: 'compras', icon: ShoppingBasket, label: 'Compras' },
     { k: 'explore', icon: Compass, label: 'Explore' },
+    { k: 'coach', icon: Award, label: 'Coach' },
     { k: 'planes', icon: Crown, label: 'Planes' },
+    { k: 'vault', icon: KeyRound, label: 'Vault' },
     ...(hasGym ? [{ k: 'gym' as ConsumerTab, icon: Dumbbell, label: 'Gym' }] : []),
   ]
 
@@ -129,13 +135,20 @@ export default function DesktopShell({ onExplore }: { onExplore: () => void }) {
         </div>
         {/* Today = grid de widgets a todo el ancho (C3b) */}
         {tab === 'hoy' && !loading && (
-          <TodayDashboard resumen={resumen} plan={plan} rutinas={rutinas} planState={planState} legend={legend}
-            onReload={() => load('hoy')} onGoTo={setTab} onExplore={() => setTab('explore')} />
+          <>
+            {activeProgram && <div className="px-6 pt-2"><ActiveProgramBanner program={activeProgram} onOpen={() => setTab('coach')} /></div>}
+            <div className="px-2"><AdaptiveCards onGoTo={setTab} /></div>
+            <TodayDashboard resumen={resumen} plan={plan} rutinas={rutinas} planState={planState} legend={legend}
+              onReload={() => load('hoy')} onGoTo={setTab} onExplore={() => setTab('explore')} />
+          </>
         )}
         {/* Explore = marketplace modular dentro del OS (C4) */}
         {tab === 'explore' && (
           <ExploreSection goal={resumen?.perfil?.goal} onFullStore={onExplore} onGoPlanes={() => setTab('planes')} />
         )}
+        {/* Coach = catálogo de entrenadores (T2) */}
+        {tab === 'coach' && <CoachSection />}
+        {tab === 'vault' && <VaultSection />}
         {/* Rutina = dashboard de widgets (desktop) */}
         {tab === 'rutina' && !loading && (
           <RoutineDashboard rutinas={rutinas} onReload={() => load('rutina')} />

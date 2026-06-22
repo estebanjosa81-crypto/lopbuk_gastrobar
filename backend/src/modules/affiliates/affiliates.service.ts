@@ -203,6 +203,17 @@ class AffiliatesService {
     }));
   }
 
+  /** Acredita comisión a un curador por una conversión de su Vault Key (V4/F3c). */
+  async creditVaultKeyConversion(affiliateId: string, amountCop: number, note?: string): Promise<void> {
+    const amt = Math.round(Number(amountCop) || 0);
+    if (!affiliateId || amt <= 0) return;
+    await db.execute(
+      'INSERT INTO affiliate_commissions (id, affiliate_id, type, amount_cop, status, note) VALUES (?, ?, ?, ?, ?, ?)',
+      [uuidv4(), affiliateId, 'conversion', amt, 'pending', note || 'Conversión de Vault Key']
+    );
+    await db.execute('UPDATE affiliates SET pending_cop = pending_cop + ? WHERE id = ?', [amt, affiliateId]);
+  }
+
   // ── Retiros ────────────────────────────────────────────────────────────────
   async requestWithdrawal(affiliateId: string, data: { amountCop: number; paymentMethod: string }) {
     const amount = Number(data.amountCop) || 0;

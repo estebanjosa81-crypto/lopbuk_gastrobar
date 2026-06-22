@@ -50,7 +50,8 @@ Detalle y datos: `plan-marketplace-entrenadores.md`. **Refinamientos canónicos:
 - **Adaptive Coaching:** si el usuario falla macros / baja asistencia / pierde streak → DAIMUZ **avisa al coach** y sugiere ajuste. Difícil de copiar.
 - El marketplace debe sentirse **elite fitness ecosystem**, no Fiverr: resultados, transformación, filosofía, energía visual — no tablas/cards aburridas.
 
-## FASE 3 — Vault / Access Ecosystem  ⏳ (plan listo, 0 código)
+## FASE 3 — Vault / Access Ecosystem  ✅ (construido V1–V4; ver current-sprint.md)
+> V1 Vault Keys (interfaces ocultas + AccessGate) · V2 Drops como eventos (ventana + cupos en vivo Socket.io) · V3 Logros de cliente (badges) · V4 Afiliados-curadores (emiten Vault Keys, portal `/promotor`). Pendiente futuro: drops→checkout real, waiting room visual, comisión por conversión de llave.
 Dispara viralidad, FOMO, adquisición, comunidad, afiliados. Detalle: `plan-gamificacion-ecosistema.md`. **Refinamientos canónicos:**
 - **Llamarlo "Vault Key" / "Access Pass", NO "código"** (se siente barato).
 - **Las llaves desbloquean INTERFACES OCULTAS, no solo productos:** tema secreto, catálogo oculto, combos exclusivos, sala de coach privada, drops, leaderboard. La app tiene "capas" → obsesión.
@@ -59,8 +60,8 @@ Dispara viralidad, FOMO, adquisición, comunidad, afiliados. Detalle: `plan-gami
 - **Afiliados como CURADORES:** emiten vault keys, desbloquean drops, crean campañas privadas, curan productos; comisión dinámica por tier/conversión/retención.
 - **Logros de cliente:** Founder, Early Access, Drop Hunter, Elite Buyer, Coach Disciple (en perfil/checkout/rankings/drops).
 
-## FASE 4 — AI + Adaptive System  ⏳ (futuro)
-- **Adaptive OS:** el OS reacciona a macros/compras/sueño/rutina/coach/streak → cambia recomendaciones, combos, reminders, intensidad, drops sugeridos.
+## FASE 4 — AI + Adaptive System  🚧 (F4.1 construido)
+- **Adaptive OS:** ✅ F4.1 — módulo `adaptive` (`/adaptive/me`): nudges priorizados desde señales reales (feed coach sin leer, drop en vivo con acceso, racha, cercanía a logro, membresía por vencer/upgrade). Front: `AdaptiveCards` en Today (móvil+desktop), descartables 24h (localStorage). Pendiente: macros/compras/sueño, predictive commerce, drops sugeridos.
 - **Predictive commerce:** "Probablemente necesitarás proteína en 4 días".
 - **AI transformation tracking:** peso/fotos/medidas/adherencia → progress score + body trend.
 

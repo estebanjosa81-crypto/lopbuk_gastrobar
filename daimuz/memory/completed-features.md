@@ -1,5 +1,13 @@
 # ✅ Features Completados
 
+## DAIMUZ Fitness Lifestyle OS — Coach Economy + Vault/Access + Adaptive (2026-06-22)
+
+> Construido, NO deployado. Detalle en `context/current-sprint.md` + `changelog.md`.
+
+- **Coach Economy (Fase 2, T1–T8):** marketplace de transformación dentro del OS. Programas (no sesiones), contratación con Wompi (contexto `coach_booking`), comisión híbrida 20%/mín 100k + gateway al coach + release a 7 días, delivery (rutina materializada) + **feed async de coaching**, payouts del coach (`trainer_withdrawals` + release de comisiones), portal **`/coach`**, reviews + **Transformation Score** + ranking. Tab superadmin **Coaches**.
+- **Vault / Access Ecosystem (Fase 3, V1–V4):** **Vault Keys** que desbloquean interfaces ocultas del OS (`AccessGate` + `useVaultUnlocks`); **Drops como eventos** (cupos en vivo por Socket.io, claim transaccional, checkout Wompi contexto `drop`, **10% de comisión al curador**); **Logros de cliente** (badges con rareza, award en vault/drops/coach/legend/streak); portal curador **`/promotor`** (afiliado emite Vault Keys). Tabs superadmin **Vault** y **Drops**.
+- **Adaptive OS (Fase 4.1):** `/adaptive/me` — nudges priorizados desde señales reales (feed coach, drop en vivo, racha, logros, membresía); `AdaptiveCards` en Today, descartables 24h.
+
 ## Variantes en storefront: selección dinámica + reserva atómica + preventa (2026-06-18)
 
 - **`attachVariants()` compartido** (`storefront.routes.ts`): adjunta `variants` + `hasVariants` a TODOS los endpoints públicos de producto (lista, ofertas, novedades, destacados de plataforma, drops, featured/trending). Devuelve todas las variantes activas con `stock`/`reserved_stock`/tiers/`min_price`.

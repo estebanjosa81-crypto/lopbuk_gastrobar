@@ -8,6 +8,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { config, testConnection } from './config';
 import { errorHandler, notFoundHandler } from './common/middleware';
 import { initScannerSocket } from './modules/scanner';
+import { initVaultSocket } from './modules/vault/vault.realtime';
 
 // Importar rutas de modulos
 import { authRoutes } from './modules/auth';
@@ -55,6 +56,10 @@ import { rutinaRoutes } from './modules/rutina';
 import variantsRoutes from './modules/variants/variants.routes';
 import affiliatesRoutes from './modules/affiliates/affiliates.routes';
 import consumerPlansRoutes from './modules/consumer-plans/consumer-plans.routes';
+import trainersRoutes from './modules/trainers/trainers.routes';
+import vaultRoutes from './modules/vault/vault.routes';
+import achievementsRoutes from './modules/achievements/achievements.routes';
+import adaptiveRoutes from './modules/adaptive/adaptive.routes';
 import paymentsRoutes from './modules/payments/payments.routes';
 import suppliersRoutes from './modules/suppliers/suppliers.routes';
 import { gymRoutes } from './modules/gym';
@@ -175,6 +180,10 @@ app.use(`${apiPrefix}/restbar-qr`, restbarQrRoutes);
 app.use(`${apiPrefix}/loyalty`, loyaltyRoutes);
 app.use(`${apiPrefix}/affiliates`, affiliatesRoutes);
 app.use(`${apiPrefix}/consumer-plans`, consumerPlansRoutes);
+app.use(`${apiPrefix}/trainers`, trainersRoutes);
+app.use(`${apiPrefix}/vault`, vaultRoutes);
+app.use(`${apiPrefix}/achievements`, achievementsRoutes);
+app.use(`${apiPrefix}/adaptive`, adaptiveRoutes);
 app.use(`${apiPrefix}/payments`, paymentsRoutes);
 app.use(`${apiPrefix}/daimuz-chat`, daimuzChatRoutes);
 app.use(`${apiPrefix}/finances`, financesRoutes);
@@ -931,6 +940,233 @@ const startServer = async () => {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e: any) { console.warn('[migration consumer-plans]', e?.message); }
 
+    // ── Vault / Access Ecosystem (V1) ────────────────────────────────────────
+    // "Vault Keys" / Access Pass que desbloquean INTERFACES OCULTAS del OS
+    // (tema secreto, catálogo oculto, sala de coach, drops). Nivel plataforma.
+    try {
+      const poolVk = (await import('./config/database')).default;
+
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS vault_keys (
+        id VARCHAR(36) PRIMARY KEY,
+        tenant_id VARCHAR(36) NULL,
+        code VARCHAR(40) NOT NULL,
+        label VARCHAR(160) NOT NULL,
+        key_type ENUM('one_use','window','multi') NOT NULL DEFAULT 'multi',
+        unlocks JSON NOT NULL,
+        max_redemptions INT NULL,
+        redemptions INT NOT NULL DEFAULT 0,
+        starts_at DATETIME NULL,
+        expires_at DATETIME NULL,
+        status ENUM('active','disabled') NOT NULL DEFAULT 'active',
+        created_by VARCHAR(36) NULL,
+        created_by_affiliate_id VARCHAR(36) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_vk_code (code),
+        INDEX idx_vk_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS vault_key_redemptions (
+        id VARCHAR(36) PRIMARY KEY,
+        vault_key_id VARCHAR(36) NOT NULL,
+        user_id VARCHAR(36) NOT NULL,
+        zero_party_data JSON NULL,
+        redeemed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_vkr_unique (vault_key_id, user_id),
+        INDEX idx_vkr_user (user_id),
+        FOREIGN KEY (vault_key_id) REFERENCES vault_keys(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Desbloqueos efectivos por usuario (lookup rápido para el gate de UI).
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS consumer_vault_unlocks (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        unlock_key VARCHAR(80) NOT NULL,
+        vault_key_id VARCHAR(36) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_cvu_unique (user_id, unlock_key),
+        INDEX idx_cvu_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Drops = EVENTOS (V2): ventana de tiempo + escasez de cupos + acceso gateado.
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS drops (
+        id VARCHAR(36) PRIMARY KEY,
+        tenant_id VARCHAR(36) NULL,
+        title VARCHAR(200) NOT NULL,
+        subtitle VARCHAR(300) NULL,
+        image_url VARCHAR(800) NULL,
+        requires_unlock VARCHAR(80) NULL,
+        starts_at DATETIME NOT NULL,
+        ends_at DATETIME NOT NULL,
+        total_slots INT NOT NULL,
+        slots_taken INT NOT NULL DEFAULT 0,
+        product_ref JSON NULL,
+        status ENUM('scheduled','cancelled') NOT NULL DEFAULT 'scheduled',
+        created_by VARCHAR(36) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_drop_window (starts_at, ends_at),
+        INDEX idx_drop_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS drop_claims (
+        id VARCHAR(36) PRIMARY KEY,
+        drop_id VARCHAR(36) NOT NULL,
+        user_id VARCHAR(36) NOT NULL,
+        status ENUM('reserved','converted') NOT NULL DEFAULT 'reserved',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_dc_unique (drop_id, user_id),
+        INDEX idx_dc_user (user_id),
+        FOREIGN KEY (drop_id) REFERENCES drops(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Logros de cliente (V3): badges que retienen (Fundador, Drop Hunter, …).
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS consumer_achievements (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        achievement_code VARCHAR(60) NOT NULL,
+        source VARCHAR(40) NULL,
+        unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_ach_unique (user_id, achievement_code),
+        INDEX idx_ach_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+    } catch (e: any) { console.warn('[migration vault]', e?.message); }
+
+    // ── Coach Economy / Marketplace de Entrenadores (T1) ─────────────────────
+    // Nivel plataforma (como afiliados): auth propia del coach, ofertas (programas),
+    // contrataciones con captura Wompi, comisiones y reviews. Todo idempotente.
+    try {
+      const poolTr = (await import('./config/database')).default;
+
+      await poolTr.query(`CREATE TABLE IF NOT EXISTS trainers (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NULL,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        handle VARCHAR(100) NULL,
+        bio TEXT NULL,
+        photo_url VARCHAR(800) NULL,
+        specialties JSON NULL,
+        status ENUM('pending','active','suspended') NOT NULL DEFAULT 'pending',
+        commission_pct DECIMAL(5,2) NOT NULL DEFAULT 20.00,
+        min_commission_cop DECIMAL(14,2) NOT NULL DEFAULT 100000,
+        balance_cop DECIMAL(14,2) NOT NULL DEFAULT 0,
+        pending_cop DECIMAL(14,2) NOT NULL DEFAULT 0,
+        rating_avg DECIMAL(3,2) NOT NULL DEFAULT 0,
+        sessions_count INT NOT NULL DEFAULT 0,
+        password_hash VARCHAR(255) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_tr_email (email),
+        UNIQUE INDEX idx_tr_handle (handle),
+        INDEX idx_tr_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolTr.query(`CREATE TABLE IF NOT EXISTS trainer_offers (
+        id VARCHAR(36) PRIMARY KEY,
+        trainer_id VARCHAR(36) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT NULL,
+        kind ENUM('programa','sesion','mensual','combo') NOT NULL DEFAULT 'programa',
+        price_cop DECIMAL(14,2) NOT NULL,
+        duration_days INT NULL,
+        deliverables JSON NULL,
+        media JSON NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE,
+        INDEX idx_troffer_trainer (trainer_id, is_active)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolTr.query(`CREATE TABLE IF NOT EXISTS trainer_bookings (
+        id VARCHAR(36) PRIMARY KEY,
+        offer_id VARCHAR(36) NOT NULL,
+        trainer_id VARCHAR(36) NOT NULL,
+        user_id VARCHAR(36) NOT NULL,
+        amount_cop DECIMAL(14,2) NOT NULL,
+        platform_cop DECIMAL(14,2) NOT NULL DEFAULT 0,
+        trainer_cop DECIMAL(14,2) NOT NULL DEFAULT 0,
+        gateway_fee_cop DECIMAL(14,2) NOT NULL DEFAULT 0,
+        status ENUM('pending','paid','delivered','completed','refunded') NOT NULL DEFAULT 'pending',
+        activation_status ENUM('pending','active','paused','completed','cancelled') NOT NULL DEFAULT 'pending',
+        current_week INT NOT NULL DEFAULT 1,
+        program_snapshot JSON NULL,
+        wompi_reference VARCHAR(120) NULL,
+        gateway_payment_id VARCHAR(255) NULL,
+        started_at DATETIME NULL,
+        expires_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (offer_id) REFERENCES trainer_offers(id) ON DELETE RESTRICT,
+        FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE,
+        INDEX idx_trbk_user (user_id, status),
+        INDEX idx_trbk_trainer (trainer_id, status),
+        INDEX idx_trbk_ref (wompi_reference)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolTr.query(`CREATE TABLE IF NOT EXISTS trainer_commissions (
+        id VARCHAR(36) PRIMARY KEY,
+        booking_id VARCHAR(36) NOT NULL,
+        trainer_id VARCHAR(36) NOT NULL,
+        gross_cop DECIMAL(14,2) NOT NULL,
+        platform_cop DECIMAL(14,2) NOT NULL,
+        trainer_cop DECIMAL(14,2) NOT NULL,
+        gateway_fee_cop DECIMAL(14,2) NOT NULL DEFAULT 0,
+        status ENUM('pending','available','paid') NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (booking_id) REFERENCES trainer_bookings(id) ON DELETE CASCADE,
+        FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE,
+        INDEX idx_trcomm_trainer (trainer_id, status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolTr.query(`CREATE TABLE IF NOT EXISTS trainer_reviews (
+        id VARCHAR(36) PRIMARY KEY,
+        booking_id VARCHAR(36) NOT NULL,
+        trainer_id VARCHAR(36) NOT NULL,
+        user_id VARCHAR(36) NOT NULL,
+        rating TINYINT NOT NULL,
+        comment TEXT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE,
+        INDEX idx_trrev_trainer (trainer_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Async coach feed (T4): el coach deja feedback/checkin/ajustes; el usuario responde.
+      await poolTr.query(`CREATE TABLE IF NOT EXISTS coach_feed_entries (
+        id VARCHAR(36) PRIMARY KEY,
+        booking_id VARCHAR(36) NOT NULL,
+        author ENUM('coach','user') NOT NULL,
+        kind ENUM('feedback','checkin','adjustment','audio','photo','task','announcement','reply') NOT NULL DEFAULT 'feedback',
+        body TEXT NULL,
+        media_url VARCHAR(800) NULL,
+        metadata JSON NULL,
+        is_read TINYINT(1) NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (booking_id) REFERENCES trainer_bookings(id) ON DELETE CASCADE,
+        INDEX idx_cfe_booking (booking_id, created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Retiros del coach (T5): mismo patrón que affiliate_withdrawals.
+      await poolTr.query(`CREATE TABLE IF NOT EXISTS trainer_withdrawals (
+        id VARCHAR(36) PRIMARY KEY,
+        trainer_id VARCHAR(36) NOT NULL,
+        amount_cop DECIMAL(14,2) NOT NULL,
+        payment_method VARCHAR(200) NOT NULL,
+        status ENUM('requested','processing','paid','rejected') NOT NULL DEFAULT 'requested',
+        processed_by VARCHAR(36) NULL,
+        note VARCHAR(500) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (trainer_id) REFERENCES trainers(id) ON DELETE CASCADE,
+        INDEX idx_trwd_trainer (trainer_id, status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // ALTERs idempotentes (por si T1 ya corrió sin las columnas de T3).
+      const addTrCol = async (sql: string) => { try { await poolTr.query(sql); } catch (e: any) { if (e?.errno !== 1060 && e?.errno !== 1061) throw e; } };
+      await addTrCol(`ALTER TABLE trainer_bookings ADD COLUMN activation_status ENUM('pending','active','paused','completed','cancelled') NOT NULL DEFAULT 'pending'`);
+      await addTrCol(`ALTER TABLE trainer_bookings ADD COLUMN current_week INT NOT NULL DEFAULT 1`);
+      await addTrCol(`ALTER TABLE trainer_bookings ADD COLUMN program_snapshot JSON NULL`);
+      await addTrCol(`ALTER TABLE trainer_commissions ADD COLUMN release_at DATETIME NULL`);
+    } catch (e: any) { console.warn('[migration trainers]', e?.message); }
+
     // ── Variantes: color exacto (hex) además del nombre ──────────────────────
     try {
       const poolCh = (await import('./config/database')).default;
@@ -1025,6 +1261,7 @@ const startServer = async () => {
 
     // Inicializar WebSocket handlers para escáner
     initScannerSocket(io);
+    initVaultSocket(io);
 
     // Iniciar scheduler de sync offline→nube (solo si IS_LOCAL_INSTANCE=true)
     startSyncScheduler();

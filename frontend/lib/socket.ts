@@ -21,3 +21,16 @@ export function disconnectScannerSocket() {
     scannerSocket = null
   }
 }
+
+// ── Vault / Drops (V2): contador de cupos en vivo ──
+let vaultSocket: Socket | null = null
+
+export function getVaultSocket(): Socket {
+  if (!vaultSocket) {
+    vaultSocket = io(`${SOCKET_URL}/vault`, {
+      autoConnect: true,
+      transports: ['websocket', 'polling'],
+    })
+  }
+  return vaultSocket
+}

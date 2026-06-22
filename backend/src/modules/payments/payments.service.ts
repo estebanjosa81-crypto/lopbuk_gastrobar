@@ -14,7 +14,7 @@ import { AppError } from '../../common/middleware';
 import { encrypt, decrypt } from '../../utils/crypto';
 
 export type WompiEnv = 'sandbox' | 'production';
-export type PayContext = 'subscription' | 'package' | 'order';
+export type PayContext = 'subscription' | 'package' | 'order' | 'coach_booking' | 'drop';
 
 const CHECKOUT_URL = 'https://checkout.wompi.co/p/';
 export const apiBase = (env: WompiEnv) =>
@@ -150,6 +150,32 @@ export async function createCheckout(params: {
     amount = Math.round(Number(order.total) * 100); // pesos → centavos
     params.tenantId = order.tenant_id;
   }
+  if (params.context === 'coach_booking') {
+    // Contratación de programa: monto del booking en BD. contextId = booking id.
+    const ref = String(params.contextId || '');
+    if (!ref) throw new AppError('Falta el booking', 400);
+    const [rows] = await db.query(`SELECT amount_cop, status FROM trainer_bookings WHERE id = ? LIMIT 1`, [ref]) as any;
+    const bk = rows?.[0];
+    if (!bk) throw new AppError('Contratación no encontrada', 404);
+    if (String(bk.status) !== 'pending') throw new AppError('Esta contratación ya no está pendiente de pago', 409);
+    amount = Math.round(Number(bk.amount_cop) * 100); // pesos → centavos
+  }
+  if (params.context === 'drop') {
+    // Conversión de un cupo de drop. contextId = claim id (drop_claims).
+    const ref = String(params.contextId || '');
+    if (!ref) throw new AppError('Falta el cupo del drop', 400);
+    const [rows] = await db.query(
+      `SELECT c.status AS claimStatus, d.product_ref FROM drop_claims c JOIN drops d ON d.id = c.drop_id WHERE c.id = ? LIMIT 1`,
+      [ref]
+    ) as any;
+    const row = rows?.[0];
+    if (!row) throw new AppError('Cupo no encontrado', 404);
+    if (String(row.claimStatus) === 'converted') throw new AppError('Este cupo ya fue pagado', 409);
+    let pr: any = row.product_ref; try { if (typeof pr === 'string') pr = JSON.parse(pr); } catch { pr = null; }
+    const priceCop = Math.round(Number(pr?.priceCop) || 0);
+    if (priceCop <= 0) throw new AppError('Este drop no tiene precio para pagar', 400);
+    amount = priceCop * 100; // pesos → centavos
+  }
   if (!Number.isFinite(amount) || amount <= 0) throw new AppError('Monto inválido', 400);
   const currency = (params.currency || 'COP').toUpperCase();
 
@@ -262,6 +288,22 @@ async function onApproved(reference: string): Promise<void> {
   if (txn.context === 'order' && txn.context_id) {
     await db.query(`UPDATE storefront_orders SET status = 'confirmado' WHERE order_number = ?`, [txn.context_id]);
     console.log(`[payments] Pedido confirmado por pago Wompi order=${txn.context_id} ref=${reference}`);
+    return;
+  }
+
+  // Contratación de programa: activa el programa + calcula comisión (Coach Economy T3).
+  if (txn.context === 'coach_booking' && txn.context_id) {
+    const { trainersService } = await import('../trainers/trainers.service');
+    await trainersService.activateBookingPaid(txn.context_id, txn.wompi_id ?? null);
+    console.log(`[payments] Programa activado por pago Wompi booking=${txn.context_id} ref=${reference}`);
+    return;
+  }
+
+  // Conversión de cupo de drop: marca convertido + comisión al curador (V2/F3c).
+  if (txn.context === 'drop' && txn.context_id) {
+    const { dropsService } = await import('../vault/vault.drops.service');
+    await dropsService.convertClaim(txn.context_id, txn.wompi_id ?? null);
+    console.log(`[payments] Cupo de drop convertido por pago Wompi claim=${txn.context_id} ref=${reference}`);
     return;
   }
 

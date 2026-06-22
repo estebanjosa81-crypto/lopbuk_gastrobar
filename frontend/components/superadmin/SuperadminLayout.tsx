@@ -4,7 +4,7 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import {
   Briefcase, CreditCard, LayoutTemplate, MessageSquarePlus,
-  Plug, Star, Store, TrendingUp, ShoppingBag, Sparkles, Wallet,
+  Plug, Star, Store, TrendingUp, ShoppingBag, Sparkles, Wallet, Crown,
 } from 'lucide-react'
 import { RefreshCw } from 'lucide-react'
 
@@ -21,10 +21,11 @@ const PortfolioTab      = dynamic(() => import('./tabs/PortfolioTab').then(m => 
 const DevRequestsTab    = dynamic(() => import('./tabs/DevRequestsTab').then(m => ({ default: m.DevRequestsTab })), { loading: () => <TabLoader /> })
 const OrdersCenterTab   = dynamic(() => import('./tabs/OrdersCenterTab').then(m => ({ default: m.OrdersCenterTab })), { loading: () => <TabLoader /> })
 const CommunityTab      = dynamic(() => import('./tabs/CommunityTab').then(m => ({ default: m.CommunityTab })), { loading: () => <TabLoader /> })
+const LegendCodesTab    = dynamic(() => import('./tabs/LegendCodesTab').then(m => ({ default: m.LegendCodesTab })), { loading: () => <TabLoader /> })
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
-type TabId = 'pedidos' | 'pagina' | 'comercios' | 'timeline' | 'destacados' | 'integraciones' | 'pagos' | 'pasarela' | 'portafolio' | 'solicitudes' | 'comunidad'
+type TabId = 'pedidos' | 'pagina' | 'comercios' | 'timeline' | 'destacados' | 'integraciones' | 'pagos' | 'pasarela' | 'portafolio' | 'solicitudes' | 'comunidad' | 'legend'
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'pedidos',       label: 'Pedidos',          icon: ShoppingBag },
@@ -37,6 +38,7 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: 'pasarela',      label: 'Pasarela',         icon: Wallet },
   { id: 'portafolio',    label: 'Portafolio',       icon: Briefcase },
   { id: 'comunidad',     label: 'Comunidad',        icon: Sparkles },
+  { id: 'legend',        label: 'LEGEND',           icon: Crown },
   { id: 'solicitudes',   label: 'Dev',              icon: MessageSquarePlus },
 ]
 
@@ -100,6 +102,7 @@ export function SuperadminLayout() {
       {activeTab === 'pasarela'      && <PaymentGatewayTab />}
       {activeTab === 'portafolio'    && <PortfolioTab />}
       {activeTab === 'comunidad'     && <CommunityTab />}
+      {activeTab === 'legend'        && <LegendCodesTab />}
       {activeTab === 'solicitudes'   && <DevRequestsTab />}
     </div>
   )

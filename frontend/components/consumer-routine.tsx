@@ -12,12 +12,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   X, Home, ChefHat, CalendarDays, ShoppingBasket, Plus, Trash2, Check, Clock,
   AlertTriangle, Sparkles, Loader2, Dumbbell, Flame, TrendingUp, Settings,
-  Droplet, Target, Carrot, ListChecks, Utensils, Repeat, QrCode, ShieldCheck, ShieldX, ShieldAlert,
+  Droplet, Target, Carrot, ListChecks, Utensils, Repeat, QrCode, ShieldCheck, ShieldX, ShieldAlert, Crown,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@/lib/api'
+import PlanesView from '@/components/consumer-plans-view'
+import LegendReveal from '@/components/legend-reveal'
 
-type Tab = 'hoy' | 'rutina' | 'cocina' | 'plan' | 'compras' | 'gym'
+type Tab = 'hoy' | 'rutina' | 'cocina' | 'plan' | 'compras' | 'gym' | 'planes'
 
 const MEALS = [
   { key: 'desayuno', label: 'Desayuno' },
@@ -38,6 +40,10 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
   const [showPerfil, setShowPerfil] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [assistantOn, setAssistantOn] = useState(false)
+  // LEGEND: tema premium + reveal
+  const [legend, setLegend] = useState(false)
+  const [legendCfg, setLegendCfg] = useState<any>(null)
+  const [showReveal, setShowReveal] = useState(false)
 
   const [resumen, setResumen] = useState<any>(null)
   const [despensa, setDespensa] = useState<any[]>([])
@@ -54,6 +60,8 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     api.getMisMembresias().then(r => { if (r.success && (r.data || []).length) setHasGym(true) })
     api.getPlatformAssistant().then(r => { if (r.success && r.data?.enabled) setAssistantOn(true) })
+    api.getMyPlan().then(r => { if (r.success && r.data) setLegend(!r.data.isExpired && r.data.tier === 'legend') }).catch(() => {})
+    api.getLegendConfig().then(r => { if (r.success) setLegendCfg(r.data) }).catch(() => {})
   }, [])
 
   const load = useCallback(async (t: Tab) => {
@@ -98,17 +106,21 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
     { k: 'cocina', icon: ChefHat, label: 'Cocina' },
     { k: 'plan', icon: CalendarDays, label: 'Plan' },
     { k: 'compras', icon: ShoppingBasket, label: 'Compras' },
+    { k: 'planes', icon: Crown, label: 'Planes' },
     ...(hasGym ? [{ k: 'gym', icon: Dumbbell, label: 'Gym' }] : []),
   ] as const
 
   return (
     <div className="fixed inset-0 z-[80] bg-neutral-50 text-neutral-900 flex flex-col md:hidden">
-      {/* Header con degradado */}
-      <div className="flex-shrink-0 bg-gradient-to-br from-amber-400 to-orange-500 text-white px-4 pt-4 pb-5">
+      {/* Header con degradado (cambia a LEGEND dorado si el plan está activo) */}
+      <div
+        className={`flex-shrink-0 text-white px-4 pt-4 pb-5 ${legend ? '' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}
+        style={legend ? { background: 'linear-gradient(135deg, #1a1a1a 0%, #2a2410 55%, #4a3a0c 100%)' } : undefined}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5" />
-            <span className="text-sm font-semibold tracking-wide uppercase">Mi Rutina</span>
+            {legend ? <Crown className="w-5 h-5" style={{ color: '#D4AF37' }} /> : <Sparkles className="w-5 h-5" />}
+            <span className="text-sm font-semibold tracking-wide uppercase" style={legend ? { color: '#D4AF37' } : undefined}>{legend ? 'LEGEND' : 'Mi Rutina'}</span>
           </div>
           <div className="flex items-center gap-1">
             {assistantOn && <button onClick={() => setShowAssistant(true)} className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 flex items-center gap-1.5 text-xs font-semibold" title="Asistente IA"><Sparkles className="w-4 h-4" />Asistente</button>}
@@ -127,6 +139,7 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
         {!loading && tab === 'cocina' && <CocinaView despensa={despensa} recetas={recetas} puedoHacer={puedoHacer} onReload={() => load('cocina')} />}
         {!loading && tab === 'plan' && <PlanView plan={plan} recetas={recetas} onReload={() => load('plan')} today={today} />}
         {!loading && tab === 'compras' && <ComprasView items={compras} onReload={() => load('compras')} />}
+        {tab === 'planes' && <PlanesView onUpgrade={() => { setLegend(true); setShowReveal(true) }} />}
         {!loading && tab === 'gym' && <GymView data={gym} onReload={() => load('gym')} />}
       </div>
 
@@ -134,7 +147,8 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
       <div className="absolute bottom-0 left-0 right-0 h-16 border-t border-black/10 bg-white flex items-center justify-around shadow-[0_-2px_10px_rgba(0,0,0,0.04)]" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         {tabs.map(({ k, icon: Icon, label }) => (
           <button key={k} onClick={() => setTab(k as Tab)}
-            className={`flex flex-col items-center gap-0.5 flex-1 h-full justify-center transition-colors ${tab === k ? 'text-orange-600' : 'text-neutral-400'}`}>
+            className={`flex flex-col items-center gap-0.5 flex-1 h-full justify-center transition-colors ${tab === k ? (legend ? '' : 'text-orange-600') : 'text-neutral-400'}`}
+            style={tab === k && legend ? { color: '#D4AF37' } : undefined}>
             <Icon className="w-5 h-5" />
             <span className="text-[10px] font-medium">{label}</span>
           </button>
@@ -143,6 +157,7 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
 
       {showPerfil && <PerfilModal onClose={() => setShowPerfil(false)} onSaved={() => { setShowPerfil(false); load('hoy') }} />}
       {showAssistant && <ChatAssistant onClose={() => setShowAssistant(false)} onChanged={() => load(tab)} />}
+      {showReveal && <LegendReveal config={legendCfg} onDone={() => setShowReveal(false)} />}
     </div>
   )
 }

@@ -395,6 +395,39 @@ class ApiService {
   async createPublicOrderCheckout(data: { contextId: string; currency?: string; redirectUrl?: string; customerEmail?: string }) {
     return this.request<any>('/payments/public/checkout', { method: 'POST', body: JSON.stringify(data) })
   }
+  // ── Consumer Plans / LEGEND ──
+  async getMyPlan() {
+    return this.request<any>('/consumer-plans/me')
+  }
+  async redeemPlanCode(code: string) {
+    return this.request<any>('/consumer-plans/redeem', { method: 'POST', body: JSON.stringify({ code }) })
+  }
+  async getLegendConfig() {
+    return this.request<any>('/consumer-plans/legend-config')
+  }
+  // ── Consumer Plans (superadmin) ──
+  async adminCreatePlanCode(body: { tier?: string; durationValue: number; durationUnit: 'day' | 'month'; stackPolicy?: 'extend' | 'replace' | 'block'; maxRedemptions?: number | null; validUntil?: string | null; scope?: 'global' | 'tenant'; tenantId?: string | null; code?: string }) {
+    return this.request<any>('/consumer-plans/admin/codes', { method: 'POST', body: JSON.stringify(body) })
+  }
+  async adminListPlanCodes(params: { status?: string; tier?: string } = {}) {
+    const q = new URLSearchParams()
+    if (params.status) q.set('status', params.status)
+    if (params.tier) q.set('tier', params.tier)
+    const qs = q.toString()
+    return this.request<any>(`/consumer-plans/admin/codes${qs ? `?${qs}` : ''}`)
+  }
+  async adminUpdatePlanCode(id: string, patch: { isActive?: boolean; validUntil?: string | null; maxRedemptions?: number | null }) {
+    return this.request<any>(`/consumer-plans/admin/codes/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+  async adminGetLegendConfig() {
+    return this.request<any>('/consumer-plans/admin/legend-config')
+  }
+  async adminGetPlanAnalytics() {
+    return this.request<any>('/consumer-plans/admin/analytics')
+  }
+  async adminSaveLegendConfig(patch: Record<string, any>) {
+    return this.request<any>('/consumer-plans/admin/legend-config', { method: 'PUT', body: JSON.stringify(patch) })
+  }
   async getPaymentTransaction(reference: string) {
     return this.request<any>(`/payments/transaction/${reference}`)
   }

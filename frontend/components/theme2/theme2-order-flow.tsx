@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   X, ChevronRight, ChevronLeft, Search, MapPin, Clock, Plus, Minus,
-  ShoppingBag, MessageCircle, Store, Trash2,
+  ShoppingBag, Store, Trash2, Navigation, Loader2, Check,
 } from 'lucide-react'
 import { Theme2OrderSuccess, type OrderSuccessData } from '@/components/theme2/theme2-order-success'
 import { VariantSelector, type RawVariant, type SelectedVariant } from '@/components/variant-selector'
@@ -129,8 +129,14 @@ export function Theme2OrderFlow({
   const [otherPhone, setOtherPhone] = useState('')
   const [mode, setMode] = useState<'domicilio' | 'recoger'>('domicilio')
   const [address, setAddress] = useState('')
-  const [mapUrl, setMapUrl] = useState('')
-  const [showMapField, setShowMapField] = useState(false)
+  // Ubicación GPS exacta (mini-mapa, sin mostrar coordenadas)
+  const [coLat, setCoLat] = useState<number | null>(null)
+  const [coLng, setCoLng] = useState<number | null>(null)
+  const [locating, setLocating] = useState(false)
+  const [locErr, setLocErr] = useState('')
+  // Autocompletado de cliente recurrente por teléfono
+  const [foundMsg, setFoundMsg] = useState('')
+  const lookedUpRef = useRef('')
   const [payment, setPayment] = useState<'efectivo' | 'transferencia' | 'tarjeta' | ''>('')
 
   // Carga de productos al entrar al menú o cambiar de sede
@@ -281,6 +287,50 @@ export function Theme2OrderFlow({
       .filter(i => i.qty > 0))
   }
 
+  // Tenant del pedido (para búsquedas públicas) — del carrito o de los productos.
+  const orderTenantId = useMemo(
+    () => cart.map(i => i.product.tenantId).find(Boolean) || products.map(p => p.tenantId).find(Boolean) || '',
+    [cart, products],
+  )
+
+  // ── Captura de ubicación del dispositivo (GPS) → mini-mapa, sin mostrar coordenadas ──
+  const captureLocation = () => {
+    if (!navigator.geolocation) { setLocErr('Tu navegador no soporta ubicación'); return }
+    setLocating(true); setLocErr('')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setCoLat(pos.coords.latitude); setCoLng(pos.coords.longitude); setLocating(false) },
+      (err) => { setLocating(false); setLocErr(err.code === 1 ? 'Permiso denegado. Activa la ubicación.' : 'No se pudo obtener tu ubicación.') },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
+  const clearLocation = () => { setCoLat(null); setCoLng(null); setLocErr('') }
+
+  // ── "Te encontré": autocompleta domicilio con el último pedido de ese teléfono ──
+  // PRIVACIDAD: el nombre es la llave de verificación. El backend solo revela el
+  // domicilio si el nombre escrito coincide con el del pedido anterior de ese número.
+  useEffect(() => {
+    const phone = coWhats.replace(/\D/g, '')
+    const name = coName.trim()
+    if (phone.length < 10 || name.length < 2 || !orderTenantId) { setFoundMsg(''); return }
+    const key = `${phone}|${name.toLowerCase()}`
+    if (lookedUpRef.current === key) return
+    lookedUpRef.current = key
+    let alive = true
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API_URL}/orders/public/lookup?phone=${encodeURIComponent(phone)}&tenantId=${encodeURIComponent(orderTenantId)}&name=${encodeURIComponent(name)}`)
+        const j = await r.json().catch(() => null)
+        if (!alive || !j?.data?.found) { setFoundMsg(''); return }
+        const c = j.data.customer
+        // Solo autocompleta lo que esté vacío (no pisa lo que el cliente ya escribió).
+        setAddress(prev => prev || c.address || c.neighborhood || '')
+        if (c.latitude != null && c.longitude != null) { setCoLat(prev => prev ?? c.latitude); setCoLng(prev => prev ?? c.longitude) }
+        setFoundMsg('¡Te encontré! Autocompletamos tu domicilio.')
+      } catch { /* noop */ }
+    }, 500)
+    return () => { alive = false; clearTimeout(t) }
+  }, [coWhats, coName, orderTenantId])
+
   // Campos faltantes para habilitar el envío
   const missing = useMemo(() => {
     const m: string[] = []
@@ -300,6 +350,9 @@ export function Theme2OrderFlow({
 
   // Registra el pedido en la base de datos del comercio (además del WhatsApp).
   // Devuelve { ok, orderNumber, total } — ok=false setea orderError.
+  // Link de Google Maps a partir del GPS capturado (para que el comercio lo abra).
+  const mapsLink = (coLat != null && coLng != null) ? `https://maps.google.com/?q=${coLat},${coLng}` : ''
+
   const registerOrder = async (): Promise<{ ok: boolean; orderNumber?: string; total?: number }> => {
     const tenantId = cart.map(i => i.product.tenantId).find(Boolean) || undefined
     const notesParts = [
@@ -307,7 +360,7 @@ export function Theme2OrderFlow({
       sede ? `Sede: ${sede.name}` : '',
       `Pago: ${paymentLabel[payment] || ''}`,
       forOther ? `Recibe: ${otherName.trim()} (+57 ${otherPhone.trim()})` : '',
-      mode === 'domicilio' && mapUrl.trim() ? `Ubicación: ${mapUrl.trim()}` : '',
+      mode === 'domicilio' && mapsLink ? `Ubicación: ${mapsLink}` : '',
     ].filter(Boolean)
     const items = cart.map(i => ({
       productId: i.product.id,
@@ -340,6 +393,8 @@ export function Theme2OrderFlow({
           items,
           tenantId,
           paymentMethod: payment || 'efectivo',
+          deliveryLatitude: mode === 'domicilio' ? coLat ?? undefined : undefined,
+          deliveryLongitude: mode === 'domicilio' ? coLng ?? undefined : undefined,
           refToken,
         }),
       })
@@ -377,7 +432,7 @@ export function Theme2OrderFlow({
       forOther ? `Recibe: ${otherName.trim()} (+57 ${otherPhone.trim()})` : '',
       `Entrega: ${mode === 'domicilio' ? 'Domicilio' : 'Recoger en sede'}`,
       mode === 'domicilio' ? `Dirección: ${address.trim()}` : '',
-      mode === 'domicilio' && mapUrl.trim() ? `Ubicación: ${mapUrl.trim()}` : '',
+      mode === 'domicilio' && mapsLink ? `Ubicación: ${mapsLink}` : '',
       `Pago: ${paymentLabel[payment] || ''}`,
     ].filter(Boolean)
     const msg = encodeURIComponent(lines.join('\n'))
@@ -390,7 +445,8 @@ export function Theme2OrderFlow({
     setCart([]); setShowCart(false)
     setCoWhats(''); setCoWhatsConfirm(''); setCoName('')
     setForOther(false); setOtherName(''); setOtherPhone('')
-    setAddress(''); setMapUrl(''); setShowMapField(false); setPayment('')
+    setAddress(''); setPayment('')
+    setCoLat(null); setCoLng(null); setLocErr(''); setFoundMsg(''); lookedUpRef.current = ''
     setOrderError('')
   }
 
@@ -756,6 +812,12 @@ export function Theme2OrderFlow({
                   <Field label="WhatsApp" required>
                     <PhoneInput value={coWhats} onChange={setCoWhats} placeholder="3001234567" />
                   </Field>
+                  {foundMsg && (
+                    <div className="rounded-xl border border-green-500/30 bg-green-500/[0.08] px-3 py-2.5 flex items-center gap-2">
+                      <Check className="w-4 h-4 text-green-400 shrink-0" />
+                      <p className="text-[13px] font-semibold text-green-400">{foundMsg}</p>
+                    </div>
+                  )}
                   <Field label="Confirmar WhatsApp" required>
                     <PhoneInput value={coWhatsConfirm} onChange={setCoWhatsConfirm} placeholder="Repite tu número" />
                   </Field>
@@ -807,14 +869,30 @@ export function Theme2OrderFlow({
                           <p className="text-[11px] text-white/50">El costo del envío se coordina directamente con el restaurante.</p>
                         </div>
                       </div>
-                      {!showMapField ? (
-                        <button onClick={() => setShowMapField(true)} className="w-full rounded-xl border border-white/[0.08] bg-[#161616] py-3 text-sm text-white/60 hover:text-white flex items-center justify-center gap-2">
-                          <MapPin className="w-4 h-4" /> Agregar ubicación exacta (opcional)
-                        </button>
+                      {coLat == null || coLng == null ? (
+                        <>
+                          <button onClick={captureLocation} disabled={locating} className="w-full rounded-xl border border-white/[0.08] bg-[#161616] py-3 text-sm text-white/70 hover:text-white flex items-center justify-center gap-2 disabled:opacity-60">
+                            {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+                            {locating ? 'Obteniendo tu ubicación…' : 'Agregar ubicación exacta (opcional)'}
+                          </button>
+                          {locErr && <p className="text-[11px] text-red-400 mt-1">{locErr}</p>}
+                        </>
                       ) : (
-                        <Field label="Ubicación (link de Google Maps)">
-                          <input value={mapUrl} onChange={e => setMapUrl(e.target.value)} placeholder="https://maps.google.com/..." className={INP} />
-                        </Field>
+                        <div className="rounded-xl overflow-hidden border border-green-500/30 bg-[#161616]">
+                          <iframe
+                            title="Ubicación de entrega"
+                            className="w-full h-40 block"
+                            loading="lazy"
+                            src={`https://www.openstreetmap.org/export/embed.html?bbox=${coLng - 0.0035}%2C${coLat - 0.002}%2C${coLng + 0.0035}%2C${coLat + 0.002}&layer=mapnik&marker=${coLat}%2C${coLng}`}
+                          />
+                          <div className="flex items-center justify-between px-3 py-2.5">
+                            <span className="text-[13px] font-semibold text-green-400 flex items-center gap-1.5"><MapPin className="w-4 h-4" /> Ubicación capturada</span>
+                            <div className="flex items-center gap-3">
+                              <button onClick={captureLocation} className="text-[11px] text-white/50 hover:text-white">Actualizar</button>
+                              <button onClick={clearLocation} className="text-[11px] text-white/50 hover:text-red-400">Quitar</button>
+                            </div>
+                          </div>
+                        </div>
                       )}
                     </>
                   )}
@@ -859,10 +937,10 @@ export function Theme2OrderFlow({
                   className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-green-500 text-black font-bold py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {submitting
-                    ? <span className="text-[12px] font-semibold">Enviando...</span>
+                    ? <span className="text-[12px] font-semibold">Confirmando...</span>
                     : missing.length > 0
                       ? <span className="text-[12px] font-semibold">Falta: {missing.join(', ')}</span>
-                      : <><MessageCircle className="w-5 h-5" /> Enviar pedido por WhatsApp</>}
+                      : <><Check className="w-5 h-5" /> Confirmar pedido</>}
                 </button>
               </div>
             )}

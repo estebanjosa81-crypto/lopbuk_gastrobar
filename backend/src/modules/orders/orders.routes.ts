@@ -72,6 +72,64 @@ async function extendHolds(orderId: string, newExpiresAt: Date): Promise<void> {
 }
 
 // =============================================
+// PUBLIC: Buscar cliente recurrente por teléfono (autocompletar domicilio)
+// Devuelve los datos del pedido MÁS RECIENTE de ese teléfono en ese tenant.
+// PRIVACIDAD: solo revela el domicilio si el NOMBRE provisto coincide con el del
+// pedido anterior (evita que alguien coseche la dirección de un número ajeno).
+// =============================================
+const normName = (s: unknown) =>
+  String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+
+router.get('/public/lookup', async (req: Request, res: Response) => {
+  try {
+    const phone = String(req.query.phone || '').replace(/\D/g, '');
+    const tenantId = String(req.query.tenantId || '');
+    const reqName = normName(req.query.name);
+    if (phone.length < 7 || !tenantId || reqName.length < 2) {
+      res.json({ success: true, data: { found: false } });
+      return;
+    }
+    const [rows] = await pool.query(
+      `SELECT customer_name, customer_email, customer_cedula, address, neighborhood,
+              department, municipality, delivery_latitude, delivery_longitude
+         FROM storefront_orders
+        WHERE tenant_id = ? AND REPLACE(REPLACE(customer_phone,' ',''),'+','') LIKE ?
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [tenantId, `%${phone}`]
+    ) as any;
+    const r = rows?.[0];
+    if (!r) { res.json({ success: true, data: { found: false } }); return; }
+    // Verificación de identidad ligera: nombre completo igual, o el primer nombre coincide.
+    const storedName = normName(r.customer_name);
+    const nameOk = !!storedName && (
+      storedName === reqName ||
+      storedName.split(' ')[0] === reqName.split(' ')[0]
+    );
+    if (!nameOk) { res.json({ success: true, data: { found: false } }); return; }
+    res.json({
+      success: true,
+      data: {
+        found: true,
+        customer: {
+          name: r.customer_name || '',
+          email: r.customer_email || '',
+          cedula: r.customer_cedula || '',
+          address: r.address || '',
+          neighborhood: r.neighborhood || '',
+          department: r.department || '',
+          municipality: r.municipality || '',
+          latitude: r.delivery_latitude != null ? Number(r.delivery_latitude) : null,
+          longitude: r.delivery_longitude != null ? Number(r.delivery_longitude) : null,
+        },
+      },
+    });
+  } catch (e) {
+    res.json({ success: true, data: { found: false } });
+  }
+});
+
+// =============================================
 // PUBLIC: Crear pedido desde el storefront (sin auth)
 // =============================================
 router.post(

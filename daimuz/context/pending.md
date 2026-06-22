@@ -4,6 +4,16 @@
 
 ## 🔴 P1 — Crítico
 
+### LEGEND — conectar entitlements a features (próxima sesión)
+
+Módulo Consumer Plans / LEGEND implementado G1–G8 (2026-06-21). **Pendiente:** usar `consumerPlansService.hasEntitlement(userId, key)` para gatear features reales según el grant activo:
+- `routine_ai` → asistente IA de rutina/nutrición.
+- `discounts` / `smart_combos` → descuentos y combos para usuarios LEGEND.
+- `premium_theme` → ya aplicado (tema dorado del panel).
+- `coach_priority` / `content_vault` → reservados para el marketplace de entrenadores.
+
+También: tsc front+back en Windows + **Deploy en Komodo** (migración G1 corre al boot). NO se hizo push en la sesión de implementación.
+
 ### Variantes + Precios por Volumen + Proveedores
 
 Arquitectura completa en [[brain/variants-and-suppliers]]. Decisiones formales en [[decisions/variant-architecture]].

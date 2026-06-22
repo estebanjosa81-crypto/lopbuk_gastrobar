@@ -135,6 +135,21 @@ export async function createCheckout(params: {
     if (!priceStr || !Number.isFinite(price) || price <= 0) throw new AppError(`El precio del plan "${plan}" no está configurado`, 400);
     amount = Math.round(price * 100); // pesos → centavos
   }
+  if (params.context === 'order') {
+    // Pedido público de storefront: el monto y el tenant se resuelven del pedido
+    // en la BD (nunca se confía en el front). contextId = order_number.
+    const ref = String(params.contextId || '');
+    if (!ref) throw new AppError('Falta la referencia del pedido', 400);
+    const [rows] = await db.query(
+      `SELECT tenant_id, total, status FROM storefront_orders WHERE order_number = ? LIMIT 1`,
+      [ref]
+    ) as any;
+    const order = rows?.[0];
+    if (!order) throw new AppError('Pedido no encontrado', 404);
+    if (String(order.status) !== 'pendiente') throw new AppError('El pedido ya no está pendiente de pago', 409);
+    amount = Math.round(Number(order.total) * 100); // pesos → centavos
+    params.tenantId = order.tenant_id;
+  }
   if (!Number.isFinite(amount) || amount <= 0) throw new AppError('Monto inválido', 400);
   const currency = (params.currency || 'COP').toUpperCase();
 

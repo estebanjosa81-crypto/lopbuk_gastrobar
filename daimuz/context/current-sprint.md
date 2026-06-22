@@ -4,6 +4,33 @@
 
 ## Sprint activo: Junio 2026
 
+### ✅ Completado [2026-06-21]: Carrito Tema 2 + fixes pagos + "Te encontré"/GPS + Módulo LEGEND (G1–G8)
+
+| Tarea | Estado | Descripción |
+|---|---|---|
+| Carrito Tema 2 responsivo + fotos | ✅ | `theme2-order-flow.tsx`: modal `h-[100dvh]` + header/footer `shrink-0`; miniatura de producto/variante en cada línea |
+| Promo "lleva 2, −X%" en Tema 2 | ✅ | `lib/qty-promo.ts` nuevo `qtyPromoUnit()` (escala a cualquier qty); badge en lista, banner en detalle, precio combinado en carrito/WhatsApp/pedido. `T2Product.qtyPromo` |
+| Fix 400 /orders/public con Wompi | ✅ | validadores `optional({ checkFalsy: true })` para email/cédula/depto/municipio/dirección/barrio (vacíos ya no rompen) |
+| Fix 401 pago de productos | ✅ | endpoint público `POST /payments/public/checkout` (sin auth) + `createCheckout` resuelve monto/tenant del pedido en BD (context 'order'); `api.createPublicOrderCheckout`; landing-page usa el público |
+| Wizard ML captura completa | ✅ | campo Notas (opcional) agregado; flujo revisado (captura los 9 campos) |
+| "Te encontré" (Tema 2) | ✅ | `GET /orders/public/lookup` (por teléfono+tenant) **verificado por nombre** (privacidad); autocompleta dirección/GPS de pedido anterior |
+| Ubicación GPS + mini-mapa | ✅ | botón captura `navigator.geolocation`, muestra mini-mapa OSM (iframe, sin coords); lat/lng al pedido + link Maps. Botón "Confirmar pedido" (antes "Enviar por WhatsApp") |
+| **Módulo LEGEND G1–G8** | ✅ | Consumer Plans completo (ver abajo) |
+
+**Módulo Consumer Plans / LEGEND (nuevo, end-to-end):**
+- **G1** Schema idempotente en `index.ts` (`consumer_access_codes`, `consumer_plan_grants`, `consumer_access_ledger`, `consumer_entitlements` + seed) · `migrations/006_consumer_plans.sql` · `consumer-plans.types.ts`. Ids VARCHAR(36) (no BIGINT).
+- **G2** `consumer-plans.service.ts`: `redeemCode` (FOR UPDATE, idempotente, hash código, stack_policy extend con tope 180d, ledger), `getUserTier`, `hasEntitlement`, CRUD códigos, get/saveLegendConfig.
+- **G3** `consumer-plans.routes.ts` (`/api/consumer-plans`): `/redeem` (rate-limit 5/15min), `/me`, `/legend-config`, admin codes + config.
+- **G4** `consumer-plans-view.tsx` (pestaña Planes en `consumer-routine.tsx`): estado + contador en vivo + canje + beneficios.
+- **G5** `legend-reveal.tsx` (glitch dorado skippable ≤2.5s) + tema LEGEND en el panel (header/tab dorados).
+- **G6** `superadmin/tabs/LegendCodesTab.tsx`: generar/listar/desactivar códigos + config animación.
+- **G7** Gamificación: `legend-badge.tsx` reutilizable, `powerDays` (streak), milestones 30/90/180/365 en `getUserTier` + UI.
+- **G8** `getAnalytics()` + `GET /admin/analytics` + KPIs en LegendCodesTab (activos, por vencer, canjes 30d, retención, milestones).
+
+**Archivos clave:** backend `index.ts` (migración G1 + registro ruta), `modules/consumer-plans/*`, `modules/orders/orders.routes.ts` (lookup + checkFalsy), `modules/payments/{payments.service,payments.routes}.ts` (checkout público order); frontend `lib/api.ts`, `theme2/theme2-order-flow.tsx`, `lib/qty-promo.ts`, `consumer-routine.tsx`, `consumer-plans-view.tsx`, `legend-reveal.tsx`, `legend-badge.tsx`, `theme-ml/checkout-wizard-ml.tsx`, `superadmin/{SuperadminLayout,tabs/LegendCodesTab}.tsx`.
+
+**PENDIENTE (próxima sesión):** conectar `hasEntitlement(userId, key)` a features reales (gatear asistente IA con `routine_ai`, descuentos con `discounts`, etc.). Además: tsc front+back en Windows y **Deploy en Komodo** (la migración G1 corre al boot). NO se hizo push.
+
 ### ✅ Completado [2026-06-18 parte 2]: Integración de variantes COMPLETA (asiento + pasarelas + variant_id + cupo)
 
 | Tarea | Estado | Descripción |

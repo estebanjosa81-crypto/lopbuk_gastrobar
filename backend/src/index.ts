@@ -54,6 +54,7 @@ import { gastrobarRoutes } from './modules/gastrobar-ops';
 import { rutinaRoutes } from './modules/rutina';
 import variantsRoutes from './modules/variants/variants.routes';
 import affiliatesRoutes from './modules/affiliates/affiliates.routes';
+import consumerPlansRoutes from './modules/consumer-plans/consumer-plans.routes';
 import paymentsRoutes from './modules/payments/payments.routes';
 import suppliersRoutes from './modules/suppliers/suppliers.routes';
 import { gymRoutes } from './modules/gym';
@@ -173,6 +174,7 @@ app.use(`${apiPrefix}/restbar`, restbarRoutes);
 app.use(`${apiPrefix}/restbar-qr`, restbarQrRoutes);
 app.use(`${apiPrefix}/loyalty`, loyaltyRoutes);
 app.use(`${apiPrefix}/affiliates`, affiliatesRoutes);
+app.use(`${apiPrefix}/consumer-plans`, consumerPlansRoutes);
 app.use(`${apiPrefix}/payments`, paymentsRoutes);
 app.use(`${apiPrefix}/daimuz-chat`, daimuzChatRoutes);
 app.use(`${apiPrefix}/finances`, financesRoutes);
@@ -816,6 +818,83 @@ const startServer = async () => {
         INDEX idx_submission_affiliate (affiliate_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e: any) { console.warn('[migration affiliates]', e?.message); }
+
+    // ── Consumer Plans / LEGEND (G1) ─────────────────────────────────────────
+    // Acceso premium del USUARIO final (cross-comercio, sobre users.id) vía códigos
+    // canjeables. Modelo: access_codes → ledger → grant activo → entitlements (gate).
+    // Todo idempotente. Ids VARCHAR(36) UUID (convención del proyecto, NO BIGINT).
+    try {
+      const poolCP = (await import('./config/database')).default;
+
+      await poolCP.query(`CREATE TABLE IF NOT EXISTS consumer_access_codes (
+        id VARCHAR(36) PRIMARY KEY,
+        code_hash VARCHAR(255) NOT NULL,
+        code_preview VARCHAR(30) NOT NULL,
+        tier VARCHAR(50) NOT NULL DEFAULT 'legend',
+        duration_value INT NOT NULL,
+        duration_unit ENUM('day','month') NOT NULL DEFAULT 'day',
+        stack_policy ENUM('extend','replace','block') NOT NULL DEFAULT 'extend',
+        max_redemptions INT NULL,
+        redemptions INT NOT NULL DEFAULT 0,
+        valid_from DATETIME NULL,
+        valid_until DATETIME NULL,
+        scope ENUM('global','tenant') NOT NULL DEFAULT 'global',
+        tenant_id VARCHAR(36) NULL,
+        metadata JSON NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_by VARCHAR(36) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_cac_hash (code_hash),
+        INDEX idx_cac_active (is_active, scope, tier)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolCP.query(`CREATE TABLE IF NOT EXISTS consumer_plan_grants (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        tier VARCHAR(50) NOT NULL DEFAULT 'legend',
+        status ENUM('active','expired','revoked') NOT NULL DEFAULT 'active',
+        started_at DATETIME NOT NULL,
+        expires_at DATETIME NOT NULL,
+        source_ledger_id VARCHAR(36) NULL,
+        last_checked_at DATETIME NULL,
+        metadata JSON NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_cpg_user_active (user_id, status, expires_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolCP.query(`CREATE TABLE IF NOT EXISTS consumer_access_ledger (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        code_id VARCHAR(36) NULL,
+        grant_id VARCHAR(36) NULL,
+        action ENUM('redeem','extend','replace','expire','revoke') NOT NULL,
+        old_expires_at DATETIME NULL,
+        new_expires_at DATETIME NULL,
+        metadata JSON NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cal_user (user_id, created_at),
+        INDEX idx_cal_code (code_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolCP.query(`CREATE TABLE IF NOT EXISTS consumer_entitlements (
+        id VARCHAR(36) PRIMARY KEY,
+        tier VARCHAR(50) NOT NULL,
+        entitlement_key VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_cent_tier_key (tier, entitlement_key)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Seed de entitlements del tier LEGEND (idempotente vía INSERT IGNORE + UNIQUE).
+      await poolCP.query(`INSERT IGNORE INTO consumer_entitlements (id, tier, entitlement_key) VALUES
+        (UUID(),'legend','routine_ai'),
+        (UUID(),'legend','premium_theme'),
+        (UUID(),'legend','coach_priority'),
+        (UUID(),'legend','discounts'),
+        (UUID(),'legend','smart_combos'),
+        (UUID(),'legend','content_vault')`);
+    } catch (e: any) { console.warn('[migration consumer-plans]', e?.message); }
 
     // ── Variantes: color exacto (hex) además del nombre ──────────────────────
     try {

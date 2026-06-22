@@ -4,6 +4,25 @@
 
 ## Sprint activo: Junio 2026
 
+### 🚧 En progreso [2026-06-22]: Consumer OS (panel del cliente = producto, no marketplace)
+
+Visión: el panel del `cliente` es el producto; el marketplace es una función ("Explore"). Plan en `context/plan-consumer-os.md`.
+
+| Paso | Estado | Qué |
+|---|---|---|
+| C1 core | ✅ | `consumer/hooks/useConsumerData` (extrae estado+load de `consumer-routine.tsx` sin tocar UI móvil) |
+| C2 router+shell | ✅ | smart router en `app/page.tsx` (`cliente → <ConsumerOS/>`); `ConsumerOS` elige shell por breakpoint (`useIsDesktop`); `DesktopShell` (sidebar+main); secciones exportadas de `consumer-routine` |
+| C3 desktop premium | ✅ | Command Center (AI Insights heurísticos), saludo Today, glass; `useConsumerData` expone `planState` |
+| C3b Today grid | ✅ | `consumer/sections/TodayDashboard` (grid de widgets real, no la vista móvil en columna) |
+| C4 Explore modular | ✅ | `consumer/sections/explore/{ExploreSection,ProductCard}` (search+categorías+grid, contextual; NO embebe LandingPage); tab inline en ambos shells; compra delega a `?store=` |
+| C5 ambient+micro | ✅ | `useConsumerTheme` (ambiente FREE/LEGEND + CSS vars), `useCountUp` (contador suave), hover-lift |
+| C4b carrito inline | ✅ | `lib/consumer-cart-store` (zustand+persist, multi-tienda); `CartDrawer` (checkout inline: contra entrega multi-tienda / Wompi 1 tienda vía `/orders/public` + checkout público); `CartButton` global (sidebar+header) |
+| C6 reco engine | ✅ | `lib/explore-recommend` (scoring por objetivo: `bajar_peso`/`subir_masa`/…); "Recomendado para ti" + grid ordenado por relevancia |
+
+**Pendientes Consumer OS:** Wompi multi-tienda (hoy 1 a la vez); propagar ambient theme a todas las secciones (hoy shell/Today); entrega con GPS/sedes en el CartDrawer; recos desde backend/IA (hoy heurística front); dar tratamiento "widget desktop" a Rutina/Cocina/Plan/Compras (hoy reusan la vista móvil en columna).
+
+**Acción requerida:** `pnpm exec tsc --noEmit` + `pnpm build` en frontend, validar en runtime (móvil <768, desktop ≥768, Command Center ≥1280, flujo Explore→carrito→checkout) y **Deploy en Komodo**. NO se hizo push.
+
 ### ✅ Completado [2026-06-21]: Carrito Tema 2 + fixes pagos + "Te encontré"/GPS + Módulo LEGEND (G1–G8)
 
 | Tarea | Estado | Descripción |

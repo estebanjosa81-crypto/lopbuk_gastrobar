@@ -12,7 +12,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
 
-export type ConsumerTab = 'hoy' | 'rutina' | 'cocina' | 'plan' | 'compras' | 'gym' | 'planes' | 'explore'
+export type ConsumerTab = 'hoy' | 'rutina' | 'cocina' | 'plan' | 'compras' | 'gym' | 'planes' | 'explore' | 'coach' | 'vault'
 
 export interface GymData {
   membresias: any[]
@@ -33,6 +33,7 @@ export function useConsumerData(initialTab: ConsumerTab = 'hoy') {
   const [legendCfg, setLegendCfg] = useState<any>(null)
   const [planState, setPlanState] = useState<any>(null)   // /me LEGEND completo (powerDays, milestones…)
   const [streak, setStreak] = useState(0)                 // racha de actividad (C7.7)
+  const [activeProgram, setActiveProgram] = useState<any>(null)  // programa de coach activo (T3)
 
   // Datos por sección
   const [resumen, setResumen] = useState<any>(null)
@@ -54,6 +55,7 @@ export function useConsumerData(initialTab: ConsumerTab = 'hoy') {
     api.getLegendConfig().then(r => { if (r.success) setLegendCfg(r.data) }).catch(() => {})
     // Streak: registra actividad de hoy y trae la racha (C7.7).
     api.pingConsumer().then(r => { if (r.success && r.data) setStreak(Number(r.data.streak) || 0) }).catch(() => {})
+    api.getActiveProgram().then(r => { if (r.success) setActiveProgram(r.data) }).catch(() => {})
   }, [])
 
   const load = useCallback(async (t: ConsumerTab) => {
@@ -100,7 +102,7 @@ export function useConsumerData(initialTab: ConsumerTab = 'hoy') {
     // nav
     tab, setTab, today, loading,
     // flags
-    assistantOn, hasGym, legend, setLegend, legendCfg, planState, streak,
+    assistantOn, hasGym, legend, setLegend, legendCfg, planState, streak, activeProgram,
     // datos
     resumen, despensa, recetas, puedoHacer, rutinas, plan, compras, gym,
     // acciones

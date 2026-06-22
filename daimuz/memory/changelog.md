@@ -5,6 +5,29 @@
 ---
 
 
+## [2026-06-22] — Coach Economy T4–T8, Vault/Access Ecosystem (V1–V4), cierres Fase 3 + Adaptive OS (F4.1)
+
+Sesión larga sobre el DAIMUZ Fitness Lifestyle OS. Detalle completo en `context/current-sprint.md`. **Nada se ha hecho push/deploy — pendiente del usuario.**
+
+**Coach Economy (Fase 2) — cerrada T1–T8:**
+- **T4 delivery + coach feed:** al activar el programa se materializa una rutina en el OS + mensaje de bienvenida; feed async `coach_feed_entries` (feedback/checkin/ajuste/tarea/anuncio + reply). Front: `ProgramFeed` (default si hay programa activo).
+- **T5 payouts coach:** `trainer_withdrawals`, `releaseMaturedCommissions` (pending→available a los 7d), wallet, retiros + admin (`adminProcessWithdrawal`).
+- **T6 portal `/coach`:** `CoachPortal` (auth propia, Resumen/Programas/Clientes-feed/Retiros/Perfil) + tab superadmin **Coaches** (`CoachPayoutsTab`).
+- **T7 pulir CoachSection:** hero, ranking top coaches, reseñas + score en detalle.
+- **T8 reviews + Transformation Score + ranking:** `createReview` (1 por booking pagado), `listTrainerReviews`, `getRanking`; `ReviewCard` en `ProgramFeed`.
+
+**Vault / Access Ecosystem (Fase 3) — V1–V4 + cierres:**
+- **V1 Vault Keys:** `vault_keys`/`vault_key_redemptions`/`consumer_vault_unlocks`; módulo `vault` (createKey, redeem transaccional idempotente, getMyUnlocks); `useVaultUnlocks` + `<AccessGate>` + `VaultSection` (tab Vault desktop / 🔑 header móvil) + tab superadmin **Vault** (`VaultKeysTab`). Interfaces: secret_theme, hidden_catalog, coach_room, drops, leaderboard, inner_circle.
+- **V2 Drops como eventos:** `drops`/`drop_claims`; `vault.drops.service` (estado computado, claim transaccional `FOR UPDATE`), `vault.realtime` (namespace `/vault`, cupos en vivo); `DropsSection` (countdown + cupos en vivo Socket.io + claim) + tab superadmin **Drops** (`DropsTab`).
+- **V3 Logros:** `consumer_achievements`; módulo `achievements` (catálogo con rareza, award idempotente); hooks en vault/drops/coach/legend/streak; `AchievementShelf` en Vault + perfil.
+- **V4 Afiliados-curadores:** `createKeyAsAffiliate`/`listAffiliateKeys` (atribución `created_by_affiliate_id`); portal **`/promotor`** (`AffiliatePortal`): tier, ranking, emitir Vault Keys, lista con canjes.
+- **Cierres F3:** contexto de pago `drop` (Wompi) + `convertClaim` → **10% de comisión al curador** cuya llave dio el acceso; botón "Pagar y asegurar" en `DropCard`; **waiting room** (badge + countdown ≤10 min).
+
+**Fase 4.1 — Adaptive OS:** módulo `adaptive` (`/adaptive/me`) — nudges priorizados desde señales reales (feed coach sin leer, drop en vivo, racha, cercanía a logro, membresía). `AdaptiveCards` en Today (móvil+desktop), descartables 24h.
+
+**Eventos nuevos en whitelist analytics:** coach_review_submitted, vault_key_redeemed, drop_claimed.
+
+
 ## [2026-06-18] (parte 3) — Color exacto por variante, bulk inventario, auto-fallback IA, tamaño de logo, posición del Lanyard
 
 - **Color EXACTO por variante (hex) separado del nombre:** columna `product_variants.color_hex` (migración idempotente + auto-heal `ensureColorHex` en el service ante `ER_BAD_FIELD_ERROR`). En `variant-manager` el campo "Color (nombre)" quedó separado de una **paleta** que escribe `colorHex` (ya no pisa el nombre). El storefront (`variant-selector`) arma un mapa nombre→hex y pinta el **swatch con el color exacto** del comercio. Arregla la incoherencia "Vainilla sesgo" mostrándose gris.

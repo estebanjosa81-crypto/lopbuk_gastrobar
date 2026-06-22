@@ -163,13 +163,18 @@ export async function getStreak(userId: string): Promise<number> {
 export async function pingActivity(userId: string): Promise<{ streak: number }> {
   if (!userId) return { streak: 0 };
   await db.query(`INSERT IGNORE INTO consumer_streak_days (user_id, day) VALUES (?, CURDATE())`, [userId]);
-  return { streak: await getStreak(userId) };
+  const streak = await getStreak(userId);
+  // Logro (V3): Guerrero de Racha a los 7 días.
+  if (streak >= 7) { try { const { achievementsService } = await import('../achievements/achievements.service'); await achievementsService.award(userId, 'streak_warrior', 'streak'); } catch { /* no bloquear */ } }
+  return { streak };
 }
 
 // ── Analytics de eventos (C7.10) ─────────────────────────────────────────────
 const KNOWN_EVENTS = new Set([
   'legend_redeemed', 'legend_expired', 'smart_combo_clicked', 'discount_used',
   'ai_advanced_opened', 'milestone_unlocked', 'explore_opened', 'product_added',
+  'coach_program_started', 'coach_program_completed', 'coach_checkin_sent', 'coach_program_cancelled',
+  'coach_review_submitted', 'vault_key_redeemed', 'drop_claimed',
 ]);
 
 export async function trackEvent(userId: string | null, event: string, metadata?: any): Promise<void> {
@@ -310,6 +315,9 @@ export async function redeemCode(params: {
   } finally {
     conn.release();
   }
+
+  // Logro (V3): LEGEND — activó membresía.
+  try { const { achievementsService } = await import('../achievements/achievements.service'); await achievementsService.award(userId, 'legend_member', 'legend'); } catch { /* no bloquear */ }
 
   return getUserTier(userId);
 }

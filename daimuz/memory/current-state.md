@@ -2,6 +2,22 @@
 
 > Actualiza este archivo después de cada sesión de trabajo significativa.
 
+## 🆕 [2026-06-22] DAIMUZ Fitness Lifestyle OS — Fases 2, 3 y 4.1
+
+> Construido pero **NO deployado** (push + Komodo Deploy pendientes del usuario). Verificar `pnpm exec tsc --noEmit` en front y back antes. Las migraciones corren al boot del backend. Detalle en `context/current-sprint.md` y `changelog.md`.
+
+**Listo (código en disco):**
+- ✅ **Coach Economy (Fase 2) T1–T8** — programas, contratación Wompi, comisión híbrida 20%/mín100k, delivery + feed async, payouts del coach, portal `/coach`, reviews + Transformation Score + ranking.
+- ✅ **Vault / Access Ecosystem (Fase 3) V1–V4** — Vault Keys que desbloquean interfaces ocultas (`AccessGate`), Drops como eventos (cupos en vivo Socket.io + claim transaccional + checkout Wompi + 10% al curador), Logros de cliente (badges), portal curador `/promotor`. Tabs superadmin: **Vault** y **Drops**.
+- ✅ **Adaptive OS (Fase 4.1)** — `/adaptive/me` + `AdaptiveCards` en Today (nudges reactivos priorizados).
+
+**⏳ PENDIENTE (próxima sesión):**
+1. **Deploy:** correr `tsc --noEmit` (front+back), push, Komodo Deploy. Migraciones al boot: `trainer_withdrawals`, `vault_keys`/`vault_key_redemptions`/`consumer_vault_unlocks`, `drops`/`drop_claims`, `consumer_achievements`.
+2. **Probar en vivo** el loop completo: emitir Vault Key (superadmin o `/promotor`) → canjear en OS → drop en vivo → claim → pagar → comisión al curador → badges → adaptive cards.
+3. **Fase 4 (resto):** predictive commerce (necesita historial de compras de consumibles), AI transformation tracking (peso/fotos/medidas → progress score + body trend), drops sugeridos por el adaptive engine.
+4. **Fase 5 — Community Layer:** leaderboards sociales (rachas/adherencia/transformaciones), guilds/teams, retos de temporada ("Summer Cut Challenge"), social feed.
+5. **Pendientes finos:** marcar `coach_feed_entries.is_read` al abrir el feed (hoy el nudge "coach te escribió" depende de is_read); UI de waiting room más inmersiva; comisión por conversión configurable por tier (hoy fija 10%); `founder` achievement no tiene trigger automático (otorgar manual a los primeros).
+
 ## Qué está funcionando al 100%
 
 - ✅ **Auth** — Login local + Google OAuth + roles + multi-tenant

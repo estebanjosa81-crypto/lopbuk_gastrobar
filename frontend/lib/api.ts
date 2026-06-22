@@ -6,6 +6,11 @@ class ApiService {
   // Token kept only in memory (not localStorage). The httpOnly cookie is the
   // authoritative auth credential sent automatically by the browser.
   private token: string | null = null
+  // Separate in-memory token for the Coach portal (trainer auth). Sent as a
+  // Bearer fallback; the httpOnly `trainerToken` cookie is authoritative.
+  private trainerToken: string | null = null
+  // Idem para el portal de Promotor/Curador (affiliate auth).
+  private affiliateToken: string | null = null
 
   setToken(token: string | null) {
     this.token = token
@@ -416,6 +421,93 @@ class ApiService {
   }
   async adminGetEventStats(days = 30) {
     return this.request<any>(`/consumer-plans/admin/events?days=${days}`)
+  }
+  // ── Coach Economy (catálogo público) ──
+  async getPublicTrainers() {
+    return this.request<any[]>('/trainers/public/trainers')
+  }
+  async getPublicTrainer(idOrHandle: string) {
+    return this.request<any>(`/trainers/public/trainers/${encodeURIComponent(idOrHandle)}`)
+  }
+  async createTrainerBooking(offerId: string) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return this.request<any>('/trainers/bookings', { method: 'POST', body: JSON.stringify({ offerId, origin }) })
+  }
+  async getActiveProgram() {
+    return this.request<any>('/trainers/bookings/active')
+  }
+  async getMyTrainerBookings() {
+    return this.request<any>('/trainers/bookings/mine')
+  }
+  async getBookingFeed(bookingId: string) {
+    return this.request<any[]>(`/trainers/bookings/${bookingId}/feed`)
+  }
+  async replyBookingFeed(bookingId: string, body: string) {
+    return this.request<any>(`/trainers/bookings/${bookingId}/feed`, { method: 'POST', body: JSON.stringify({ body }) })
+  }
+  async getCoachRanking(limit = 10) {
+    return this.request<any[]>(`/trainers/public/ranking?limit=${limit}`)
+  }
+  async getTrainerReviews(trainerId: string, limit = 20) {
+    return this.request<any[]>(`/trainers/public/trainers/${trainerId}/reviews?limit=${limit}`)
+  }
+  async getReviewableBookings() {
+    return this.request<any[]>('/trainers/bookings/reviewable')
+  }
+  async createTrainerReview(body: { bookingId: string; rating: number; comment?: string }) {
+    return this.request<any>('/trainers/reviews', { method: 'POST', body: JSON.stringify(body) })
+  }
+  // ── Vault / Access Ecosystem (V1) ──
+  async redeemVaultKey(code: string, data?: any) {
+    return this.request<{ label: string; unlocks: string[]; message: string | null; alreadyRedeemed: boolean }>(
+      '/vault/redeem', { method: 'POST', body: JSON.stringify({ code, data }) })
+  }
+  async getVaultUnlocks() {
+    return this.request<string[]>('/vault/me/unlocks')
+  }
+  async getVaultUnlockTypes() {
+    return this.request<string[]>('/vault/unlock-types')
+  }
+  async adminListVaultKeys() {
+    return this.request<any[]>('/vault/admin/keys')
+  }
+  async adminCreateVaultKey(body: { label: string; unlocks: string[] | { keys: string[]; message?: string }; keyType?: string; code?: string; maxRedemptions?: number | null; expiresAt?: string | null }) {
+    return this.request<any>('/vault/admin/keys', { method: 'POST', body: JSON.stringify(body) })
+  }
+  async adminUpdateVaultKey(id: string, patch: { status?: 'active' | 'disabled'; label?: string; maxRedemptions?: number | null; expiresAt?: string | null }) {
+    return this.request<any>(`/vault/admin/keys/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+  // ── Drops (V2) ──
+  async getDrops() {
+    return this.request<any[]>('/vault/drops')
+  }
+  async getDrop(id: string) {
+    return this.request<any>(`/vault/drops/${id}`)
+  }
+  async claimDrop(id: string) {
+    return this.request<{ claimed: boolean; alreadyClaimed: boolean; slotsTaken: number; totalSlots: number; soldOut: boolean; productRef?: any }>(
+      `/vault/drops/${id}/claim`, { method: 'POST' })
+  }
+  async checkoutDrop(id: string) {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    return this.request<{ checkoutUrl: string }>(`/vault/drops/${id}/checkout`, { method: 'POST', body: JSON.stringify({ origin }) })
+  }
+  async adminListDrops() {
+    return this.request<any[]>('/vault/admin/drops')
+  }
+  async adminCreateDrop(body: { title: string; subtitle?: string; imageUrl?: string; requiresUnlock?: string | null; startsAt: string; endsAt: string; totalSlots: number; productRef?: any }) {
+    return this.request<any>('/vault/admin/drops', { method: 'POST', body: JSON.stringify(body) })
+  }
+  async adminUpdateDrop(id: string, patch: any) {
+    return this.request<any>(`/vault/admin/drops/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+  // ── Logros (V3) ──
+  async getMyAchievements() {
+    return this.request<any[]>('/achievements/me')
+  }
+  // ── Adaptive OS (F4.1) ──
+  async getAdaptiveNudges() {
+    return this.request<any[]>('/adaptive/me')
   }
   // ── Consumer Plans (superadmin) ──
   async adminCreatePlanCode(body: { tier?: string; durationValue: number; durationUnit: 'day' | 'month'; stackPolicy?: 'extend' | 'replace' | 'block'; maxRedemptions?: number | null; validUntil?: string | null; scope?: 'global' | 'tenant'; tenantId?: string | null; code?: string }) {
@@ -3075,10 +3167,113 @@ class ApiService {
     return this.request<any>(`/superadmin/analytics/heatmap?days=${days}`)
   }
 
+  // ── Promotor / Curador portal (affiliate auth, V4) ─────────────────────────
+  setAffiliateToken(token: string | null) { this.affiliateToken = token }
+  private async requestAsAffiliate<T>(
+    endpoint: string, options: RequestInit = {}
+  ): Promise<{ success: boolean; data?: T; error?: string }> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as any || {}) }
+    if (this.affiliateToken) headers['Authorization'] = `Bearer ${this.affiliateToken}`
+    try {
+      const res = await fetch(`${API_URL}${endpoint}`, { ...options, headers, credentials: 'include' })
+      const data = await res.json()
+      if (!res.ok) return { success: false, error: data.message || data.error || 'Error en la solicitud' }
+      return data
+    } catch { return { success: false, error: 'Error de conexión con el servidor' } }
+  }
+  async affiliateRegister(body: { name: string; email: string; password: string; phone?: string; handle?: string }) {
+    const r = await this.requestAsAffiliate<{ affiliate: any; token: string }>('/affiliates/register', { method: 'POST', body: JSON.stringify(body) })
+    if (r.success && r.data?.token) this.setAffiliateToken(r.data.token)
+    return r
+  }
+  async affiliateLogin(email: string, password: string) {
+    const r = await this.requestAsAffiliate<{ affiliate: any; token: string }>('/affiliates/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+    if (r.success && r.data?.token) this.setAffiliateToken(r.data.token)
+    return r
+  }
+  async affiliateLogout() { const r = await this.requestAsAffiliate('/affiliates/logout', { method: 'POST' }); this.setAffiliateToken(null); return r }
+  async getAffiliateMe() { return this.requestAsAffiliate<any>('/affiliates/me') }
+  async getAffiliateLeaderboard() { return this.requestAsAffiliate<any[]>('/affiliates/leaderboard') }
+  async getAffiliateCommissions() { return this.requestAsAffiliate<any[]>('/affiliates/me/commissions') }
+  async getAffiliateWithdrawals() { return this.requestAsAffiliate<any[]>('/affiliates/me/withdrawals') }
+  async requestAffiliateWithdrawal(body: { amountCop: number; paymentMethod: string }) { return this.requestAsAffiliate<any>('/affiliates/withdrawals', { method: 'POST', body: JSON.stringify(body) }) }
+  async getAffiliateVaultKeys() { return this.requestAsAffiliate<any[]>('/affiliates/me/vault-keys') }
+  async createAffiliateVaultKey(body: { label: string; unlocks: string[] | { keys: string[]; message?: string }; keyType?: string; maxRedemptions?: number | null }) {
+    return this.requestAsAffiliate<any>('/affiliates/me/vault-keys', { method: 'POST', body: JSON.stringify(body) })
+  }
+
   /** Returns the base URL for constructing SSE endpoints */
   getSseUrl(path: string): string {
     const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
     return `${base}${path}`
+  }
+
+  // ── Coach Portal (auth propia del entrenador, T6) ──────────────────────────
+  setTrainerToken(token: string | null) { this.trainerToken = token }
+  getTrainerToken() { return this.trainerToken }
+
+  /** request() pero con el Bearer del coach en vez del usuario. */
+  private async requestAsTrainer<T>(
+    endpoint: string, options: RequestInit = {}
+  ): Promise<{ success: boolean; data?: T; error?: string; message?: string }> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as any || {}) }
+    if (this.trainerToken) headers['Authorization'] = `Bearer ${this.trainerToken}`
+    try {
+      const res = await fetch(`${API_URL}${endpoint}`, { ...options, headers, credentials: 'include' })
+      const data = await res.json()
+      if (!res.ok) return { success: false, error: data.message || data.error || 'Error en la solicitud' }
+      return data
+    } catch {
+      return { success: false, error: 'Error de conexión con el servidor' }
+    }
+  }
+
+  // Auth
+  async trainerRegister(body: { name: string; email: string; password: string; handle?: string; bio?: string; specialties?: string[] }) {
+    const r = await this.requestAsTrainer<{ trainer: any; token: string }>('/trainers/register', { method: 'POST', body: JSON.stringify(body) })
+    if (r.success && r.data?.token) this.setTrainerToken(r.data.token)
+    return r
+  }
+  async trainerLogin(email: string, password: string) {
+    const r = await this.requestAsTrainer<{ trainer: any; token: string }>('/trainers/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+    if (r.success && r.data?.token) this.setTrainerToken(r.data.token)
+    return r
+  }
+  async trainerLogout() {
+    const r = await this.requestAsTrainer('/trainers/logout', { method: 'POST' })
+    this.setTrainerToken(null)
+    return r
+  }
+  async getTrainerMe() { return this.requestAsTrainer<any>('/trainers/me') }
+  async updateTrainerProfile(patch: any) { return this.requestAsTrainer<any>('/trainers/me', { method: 'PATCH', body: JSON.stringify(patch) }) }
+
+  // Programas (ofertas)
+  async getTrainerOffers() { return this.requestAsTrainer<any[]>('/trainers/me/offers') }
+  async createTrainerOffer(body: any) { return this.requestAsTrainer<any>('/trainers/me/offers', { method: 'POST', body: JSON.stringify(body) }) }
+  async updateTrainerOffer(id: string, patch: any) { return this.requestAsTrainer<any>(`/trainers/me/offers/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }) }
+  async deleteTrainerOffer(id: string) { return this.requestAsTrainer<any>(`/trainers/me/offers/${id}`, { method: 'DELETE' }) }
+
+  // Clientes + feed (coach → cliente)
+  async getCoachClients() { return this.requestAsTrainer<any[]>('/trainers/me/clients') }
+  async getCoachClientFeed(bookingId: string) { return this.requestAsTrainer<any[]>(`/trainers/me/clients/${bookingId}/feed`) }
+  async postCoachClientFeed(bookingId: string, body: { kind?: string; body?: string; mediaUrl?: string }) {
+    return this.requestAsTrainer<any>(`/trainers/me/clients/${bookingId}/feed`, { method: 'POST', body: JSON.stringify(body) })
+  }
+
+  // Wallet / payouts
+  async getTrainerWallet() { return this.requestAsTrainer<any>('/trainers/me/wallet') }
+  async getTrainerCommissions() { return this.requestAsTrainer<any[]>('/trainers/me/commissions') }
+  async getTrainerWithdrawals() { return this.requestAsTrainer<any[]>('/trainers/me/withdrawals') }
+  async requestTrainerWithdrawal(body: { amountCop: number; paymentMethod: string }) {
+    return this.requestAsTrainer<any>('/trainers/me/withdrawals', { method: 'POST', body: JSON.stringify(body) })
+  }
+
+  // Superadmin: retiros de coaches
+  async adminListTrainerWithdrawals(status?: string) {
+    return this.request<any[]>(`/trainers/admin/withdrawals${status ? `?status=${status}` : ''}`)
+  }
+  async adminProcessTrainerWithdrawal(id: string, status: 'processing' | 'paid' | 'rejected', note?: string) {
+    return this.request<any>(`/trainers/admin/withdrawals/${id}`, { method: 'PATCH', body: JSON.stringify({ status, note }) })
   }
 }
 

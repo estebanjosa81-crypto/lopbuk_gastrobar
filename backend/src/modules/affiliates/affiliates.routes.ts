@@ -13,6 +13,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../../config';
 import { authenticate, authorize, AuthRequest } from '../../common/middleware';
 import { affiliatesService } from './affiliates.service';
+import { vaultService } from '../vault/vault.service';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -125,5 +126,9 @@ router.post('/missions/:id/submit', authenticateAffiliate, async (req: AffReq, r
 router.get('/packages', authenticateAffiliate, async (_req, res) => { try { ok(res, await affiliatesService.listActivePackages()); } catch (e) { fail(res, e); } });
 router.get('/me/package-orders', authenticateAffiliate, async (req: AffReq, res) => { try { ok(res, await affiliatesService.listMyPackageOrders(req.affiliateId!)); } catch (e) { fail(res, e); } });
 router.patch('/me/package-orders/:id/deliver', authenticateAffiliate, async (req: AffReq, res) => { try { ok(res, await affiliatesService.deliverPackageContent(req.affiliateId!, req.params.id, req.body?.urls)); } catch (e) { fail(res, e); } });
+
+// Curador (V4): el promotor emite Vault Keys que desbloquean interfaces ocultas.
+router.get('/me/vault-keys', authenticateAffiliate, async (req: AffReq, res) => { try { ok(res, await vaultService.listAffiliateKeys(req.affiliateId!)); } catch (e) { fail(res, e); } });
+router.post('/me/vault-keys', authenticateAffiliate, async (req: AffReq, res) => { try { ok(res, await vaultService.createKeyAsAffiliate(req.affiliateId!, req.body || {}), 201); } catch (e) { fail(res, e); } });
 
 export default router;

@@ -347,14 +347,14 @@ router.get('/superadmin/integrations', authenticate, async (req: Request, res: R
     }
 
     const [rows] = await pool.query(
-      "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('cloudinary_cloud_name','cloudinary_upload_preset','ai_gemini_key','ai_openai_key','ai_groq_key','ai_default_provider','ai_openai_base_url','ai_openai_model')"
+      "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('cloudinary_cloud_name','cloudinary_upload_preset','ai_gemini_key','ai_openai_key','ai_groq_key','ai_opencode_go_key','ai_opencode_go_model','ai_default_provider','ai_openai_base_url','ai_openai_model')"
     ) as any;
 
     const settings: Record<string, string> = {};
     for (const row of (rows as any[])) {
       const val = row.setting_value || '';
       // Decrypt AI keys (Cloudinary values are plaintext)
-      if (['ai_gemini_key', 'ai_openai_key', 'ai_groq_key'].includes(row.setting_key)) {
+      if (['ai_gemini_key', 'ai_openai_key', 'ai_groq_key', 'ai_opencode_go_key'].includes(row.setting_key)) {
         try { settings[row.setting_key] = decrypt(val); }
         catch { settings[row.setting_key] = val; }
       } else {
@@ -372,10 +372,13 @@ router.get('/superadmin/integrations', authenticate, async (req: Request, res: R
         geminiApiKey:           settings['ai_gemini_key'] ? '••••••' + settings['ai_gemini_key'].slice(-4) : '',
         openaiApiKey:           settings['ai_openai_key'] ? '••••••' + settings['ai_openai_key'].slice(-4) : '',
         groqApiKey:             settings['ai_groq_key']   ? '••••••' + settings['ai_groq_key'].slice(-4)   : '',
+        opencodeGoApiKey:       settings['ai_opencode_go_key'] ? '••••••' + settings['ai_opencode_go_key'].slice(-4) : '',
         geminiApiKeySet:        !!settings['ai_gemini_key'],
         openaiApiKeySet:        !!settings['ai_openai_key'],
         groqApiKeySet:          !!settings['ai_groq_key'],
-        defaultAiProvider:      settings['ai_default_provider']        || 'openai',
+        opencodeGoApiKeySet:    !!settings['ai_opencode_go_key'],
+        opencodeGoModel:        settings['ai_opencode_go_model']        || 'opencode-go/deepseek-v4-flash',
+        defaultAiProvider:      settings['ai_default_provider']        || 'opencode_go',
         openaiBaseUrl:          settings['ai_openai_base_url']         || '',
         openaiModel:            settings['ai_openai_model']            || '',
       },
@@ -395,7 +398,7 @@ router.get('/superadmin/integrations/reveal/:provider', authenticate, async (req
       res.status(403).json({ success: false, error: 'Solo superadmin' });
       return;
     }
-    const map: Record<string, string> = { gemini: 'ai_gemini_key', openai: 'ai_openai_key', groq: 'ai_groq_key' };
+    const map: Record<string, string> = { gemini: 'ai_gemini_key', openai: 'ai_openai_key', groq: 'ai_groq_key', opencode_go: 'ai_opencode_go_key' };
     const settingKey = map[req.params.provider];
     if (!settingKey) {
       res.status(400).json({ success: false, error: 'Proveedor inválido' });
@@ -424,15 +427,16 @@ router.put('/superadmin/integrations', authenticate, async (req: Request, res: R
       return;
     }
 
-    const { cloudinaryCloudName, cloudinaryUploadPreset, geminiApiKey, openaiApiKey, groqApiKey, defaultAiProvider, openaiBaseUrl, openaiModel } = req.body;
+    const { cloudinaryCloudName, cloudinaryUploadPreset, geminiApiKey, openaiApiKey, groqApiKey, opencodeGoApiKey, opencodeGoModel, defaultAiProvider, openaiBaseUrl, openaiModel } = req.body;
 
     const updates: [string, string][] = [
       ['cloudinary_cloud_name',    cloudinaryCloudName    || ''],
       ['cloudinary_upload_preset', cloudinaryUploadPreset || ''],
-      ['ai_default_provider',      defaultAiProvider      || 'openai'],
     ];
+    if (defaultAiProvider !== undefined) updates.push(['ai_default_provider', String(defaultAiProvider || 'opencode_go')]);
     if (openaiBaseUrl !== undefined) updates.push(['ai_openai_base_url', String(openaiBaseUrl || '')]);
     if (openaiModel !== undefined)   updates.push(['ai_openai_model',    String(openaiModel || '')]);
+    if (opencodeGoModel !== undefined) updates.push(['ai_opencode_go_model', String(opencodeGoModel || 'opencode-go/deepseek-v4-flash')]);
 
     // Solo se actualiza una AI key si llega un valor REAL (no el enmascarado con •).
     // Así el GET puede devolver las keys ofuscadas sin que un guardado las pise con la máscara.
@@ -445,6 +449,7 @@ router.put('/superadmin/integrations', authenticate, async (req: Request, res: R
     pushKey('ai_gemini_key', geminiApiKey);
     pushKey('ai_openai_key', openaiApiKey);
     pushKey('ai_groq_key',   groqApiKey);
+    pushKey('ai_opencode_go_key', opencodeGoApiKey);
 
     for (const [key, value] of updates) {
       await pool.query(

@@ -281,8 +281,12 @@ export async function runPlatformAssistant(
   message: string,
   history: { role: string; content: string }[] = [],
 ): Promise<{ reply: string }> {
-  const apiKey = await getAssistantKey();
-  if (!apiKey) return { reply: 'El asistente no está configurado todavía. Agrega una clave de Gemini (AIza…) o Groq (gsk_…) en Integraciones.' };
+  const allKeys = await getAIKeys();
+  const apiKey = allKeys.defaultProvider === 'gemini' ? allKeys.geminiKey
+    : allKeys.defaultProvider === 'groq' ? allKeys.groqKey
+    : allKeys.defaultProvider === 'opencode_go' ? allKeys.opencodeGoKey
+    : allKeys.openaiKey;
+  if (!apiKey) return { reply: 'El asistente no está configurado todavía. Agrega una clave de IA en Integraciones.' };
 
   const isSuper = user.role === 'superadmin';
   const tools       = isSuper ? SUPERADMIN_TOOLS : MERCHANT_TOOLS;
@@ -292,14 +296,14 @@ export async function runPlatformAssistant(
   if (apiKey.startsWith('gsk_')) {
     return runWithOpenAICompat(apiKey, systemPrompt, tools, history, message, exec, GROQ_URL, GROQ_MODEL);
   }
-  if (apiKey.startsWith('sk-')) {
-    const k = await getAIKeys();
-    return runWithOpenAICompat(apiKey, systemPrompt, tools, history, message, exec, k.openaiBaseUrl + '/chat/completions', k.openaiModel);
-  }
   if (apiKey.startsWith('AIza')) {
     return runWithGemini(apiKey, systemPrompt, tools, history, message, exec);
   }
-  return { reply: 'La clave de IA configurada no es compatible. Usa una clave de Google AI Studio (AIza…), Groq (gsk_…) u OpenAI (sk-…).' };
+  // sk- keys: OpenAI u OpenCode Go
+  if (allKeys.defaultProvider === 'opencode_go') {
+    return runWithOpenAICompat(apiKey, systemPrompt, tools, history, message, exec, 'https://opencode.ai/zen/go/v1/chat/completions', allKeys.opencodeGoModel);
+  }
+  return runWithOpenAICompat(apiKey, systemPrompt, tools, history, message, exec, allKeys.openaiBaseUrl + '/chat/completions', allKeys.openaiModel);
 }
 
 export async function isPlatformAssistantEnabled(): Promise<boolean> {
@@ -317,15 +321,39 @@ export async function runPublicAssistant(
   message: string,
   history: { role: string; content: string }[] = [],
 ): Promise<{ reply: string }> {
-  const apiKey = await getAssistantKey();
+  const allKeys = await getAIKeys();
+  const apiKey = allKeys.defaultProvider === 'gemini' ? allKeys.geminiKey
+    : allKeys.defaultProvider === 'groq' ? allKeys.groqKey
+    : allKeys.defaultProvider === 'opencode_go' ? allKeys.opencodeGoKey
+    : allKeys.openaiKey;
   if (!apiKey) return { reply: 'El asistente aún no está configurado. Vuelve pronto. 🙂' };
 
-  // Groq u OpenAI (ambos OpenAI-compatible)
-  if (apiKey.startsWith('gsk_') || apiKey.startsWith('sk-')) {
-    const isGroq = apiKey.startsWith('gsk_');
-    const k = isGroq ? null : await getAIKeys();
-    const url = isGroq ? GROQ_URL : (k!.openaiBaseUrl + '/chat/completions');
-    const model = isGroq ? GROQ_MODEL : k!.openaiModel;
+  // Groq
+  if (apiKey.startsWith('gsk_')) {
+    const messages = [
+      { role: 'system', content: PUBLIC_PROMPT },
+      ...history.slice(-8).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+      { role: 'user', content: message },
+    ];
+    const r = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: 220, temperature: 0.7 }),
+    });
+    if (!r.ok) {
+      if (r.status === 429) return { reply: 'Muchas consultas a la vez, intenta en unos segundos. 🙏' };
+      return { reply: 'No pude responder en este momento, intenta de nuevo.' };
+    }
+    const d = await r.json() as any;
+    return { reply: d.choices?.[0]?.message?.content || 'No pude procesar tu mensaje.' };
+  }
+
+  // OpenAI o OpenCode Go (ambos son OpenAI-compatible, keys empiezan con sk-)
+  if (apiKey.startsWith('sk-')) {
+    const url = allKeys.defaultProvider === 'opencode_go'
+      ? 'https://opencode.ai/zen/go/v1/chat/completions'
+      : allKeys.openaiBaseUrl + '/chat/completions';
+    const model = allKeys.defaultProvider === 'opencode_go' ? allKeys.opencodeGoModel : allKeys.openaiModel;
     const messages = [
       { role: 'system', content: PUBLIC_PROMPT },
       ...history.slice(-8).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
@@ -366,5 +394,5 @@ export async function runPublicAssistant(
     return { reply: d.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || 'No pude procesar tu mensaje.' };
   }
 
-  return { reply: 'La clave de IA configurada no es compatible. Usa Gemini (AIza…), Groq (gsk_…) u OpenAI (sk-…).' };
+  return { reply: 'La clave de IA configurada no es compatible. Usa Gemini (AIza…), Groq (gsk_…), OpenAI (sk-…) u OpenCode Go (sk-…).' };
 }

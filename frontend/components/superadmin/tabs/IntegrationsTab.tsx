@@ -1,6 +1,6 @@
 'use client'
 
-import { Bot, Check, Eye, EyeOff, ImageIcon, RefreshCw, Save, Sparkles, Brain, Cpu } from 'lucide-react'
+import { Bot, Check, Eye, EyeOff, ImageIcon, RefreshCw, Rocket, Save, Sparkles, Brain, Cpu } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label'
 import { useIntegrations } from '../hooks/useIntegrations'
 
 const PROVIDERS = [
-  { value: 'gemini', label: 'Gemini', icon: Sparkles },
+  { value: 'opencode_go', label: 'OpenCode Go', icon: Rocket },
   { value: 'openai', label: 'OpenAI', icon: Brain },
+  { value: 'gemini', label: 'Gemini', icon: Sparkles },
   { value: 'groq', label: 'Groq', icon: Cpu },
 ] as const
 
@@ -19,6 +20,7 @@ export function IntegrationsTab() {
     showGeminiKey, setShowGeminiKey,
     showOpenAIKey, setShowOpenAIKey,
     showGroqKey, setShowGroqKey,
+    showOpenCodeGoKey, setShowOpenCodeGoKey,
     showUploadPreset, setShowUploadPreset,
     isSavingIntegrations, integrationsMsg, handleSaveIntegrations,
     platformAssistant, togglingAssistant, toggleAssistant,
@@ -107,6 +109,7 @@ export function IntegrationsTab() {
           <CardDescription>
             Pega la API Key de cualquier proveedor y el agente la usa automáticamente. Si configuras
             varios, manda el que elijas como default. Las claves se almacenan cifradas (AES-256-CBC).
+            OpenCode Go funciona con una sola clave para todo.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -232,15 +235,58 @@ export function IntegrationsTab() {
                 </button>
               </div>
             </div>
+
+            {/* OpenCode Go */}
+            <div className="border-t border-border pt-4 space-y-3">
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <Rocket className="h-4 w-4 text-indigo-500" />
+                OpenCode Go (recomendado)
+              </Label>
+              <p className="text-xs text-muted-foreground -mt-2">
+                Una sola clave para todos los módulos IA. Endpoint: <code className="text-[11px] bg-secondary px-1 rounded">https://opencode.ai/zen/go/v1</code>
+              </p>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  API Key
+                  {integrations.opencodeGoApiKey && (
+                    <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-600 font-normal">Configurado</span>
+                  )}
+                </Label>
+                <div className="relative">
+                  <Input
+                    type={showOpenCodeGoKey ? 'text' : 'password'}
+                    placeholder="sk-... (OpenCode Go)"
+                    value={integrations.opencodeGoApiKey}
+                    onChange={e => set('opencodeGoApiKey', e.target.value)}
+                    className="font-mono text-sm pr-10"
+                  />
+                  <button type="button" onClick={() => { if (!showOpenCodeGoKey && integrations.opencodeGoApiKey.includes('•')) revealKey('opencode_go'); setShowOpenCodeGoKey(v => !v) }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showOpenCodeGoKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Modelo (por defecto deepseek-v4-flash)</Label>
+                <Input list="dz-go-models" value={integrations.opencodeGoModel} onChange={e => set('opencodeGoModel', e.target.value)} placeholder="opencode-go/deepseek-v4-flash" className="font-mono text-sm" />
+                <datalist id="dz-go-models">
+                  <option value="opencode-go/deepseek-v4-flash" />
+                  <option value="opencode-go/deepseek-v4-flash-free" />
+                  <option value="opencode-go/deepseek-v3.1" />
+                  <option value="opencode-go/qwen3-coder" />
+                </datalist>
+                <p className="text-[11px] text-muted-foreground">Deja el modelo por defecto o elige otro del plan Go. El endpoint se configura automáticamente.</p>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 p-2.5 rounded-lg bg-secondary/40 text-sm">
             <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              integrations.geminiApiKey || integrations.openaiApiKey || integrations.groqApiKey
+              integrations.geminiApiKey || integrations.openaiApiKey || integrations.groqApiKey || integrations.opencodeGoApiKey
                 ? 'bg-green-500' : 'bg-amber-400'
             }`} />
             <span className="text-muted-foreground text-xs">
-              {integrations.geminiApiKey || integrations.openaiApiKey || integrations.groqApiKey
+              {integrations.geminiApiKey || integrations.openaiApiKey || integrations.groqApiKey || integrations.opencodeGoApiKey
                 ? `Al menos un proveedor configurado — default: ${integrations.defaultAiProvider}`
                 : 'Sin configurar — el chatbot no funcionará'}
             </span>

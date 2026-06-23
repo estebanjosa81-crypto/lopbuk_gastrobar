@@ -1,18 +1,20 @@
 'use client'
 
 /**
- * consumer-routine.tsx
- * Vista "Mi Rutina" del usuario final (cliente logueado). Overlay full-screen
- * que NO modifica las secciones existentes del marketplace; se abre como el
- * carrito. Cross-comercio: los datos pertenecen al usuario, no a un tenant.
+ * consumer-routine.tsx — Shell móvil del Consumer OS (rediseño premium).
  *
- * Pestañas: Hoy · Rutina · Cocina (despensa+recetas) · Plan · Compras · Gym(*)
+ * Filosofía mobile: 1 objetivo visible por bloque de scroll.
+ * 3 capas: Priority (hero sin scroll) → Context (comidas/coach) → Meta (gamificación).
+ *
+ * Tabs reducidos a 4: Hoy · Plan · Coach · Más
+ * "Más" abre un drawer con: Rutina, Cocina, Compras, Planes, Explore, Gym.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   X, Home, ChefHat, CalendarDays, ShoppingBasket, Plus, Trash2, Check, Clock,
   AlertTriangle, Sparkles, Loader2, Dumbbell, Flame, TrendingUp, Settings,
   Droplet, Target, Carrot, ListChecks, Utensils, Repeat, QrCode, ShieldCheck, ShieldX, ShieldAlert, Crown, Compass, Award, KeyRound,
+  MoreHorizontal, ChevronDown, ChevronUp, ChevronRight,
 } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@/lib/api'
@@ -44,62 +46,156 @@ const GOAL_LABEL: Record<string, string> = {
   bajar_peso: 'Bajar de peso', subir_masa: 'Subir masa', mantener: 'Mantener', salud_general: 'Salud general',
 }
 
+// ── 4 tabs principales (móvil) ──
+const MAIN_TABS: { k: ConsumerTab; icon: any; label: string }[] = [
+  { k: 'hoy', icon: Home, label: 'Hoy' },
+  { k: 'plan', icon: CalendarDays, label: 'Plan' },
+  { k: 'coach', icon: Award, label: 'Coach' },
+]
+
+// ── Tabs overflow (dentro de "Más") ──
+function getOverflowTabs(hasGym: boolean): { k: ConsumerTab; icon: any; label: string }[] {
+  const base = [
+    { k: 'rutina' as ConsumerTab, icon: Repeat, label: 'Rutina' },
+    { k: 'cocina' as ConsumerTab, icon: ChefHat, label: 'Cocina' },
+    { k: 'compras' as ConsumerTab, icon: ShoppingBasket, label: 'Compras' },
+    { k: 'planes' as ConsumerTab, icon: Crown, label: 'Planes' },
+    { k: 'explore' as ConsumerTab, icon: Compass, label: 'Explore' },
+  ]
+  if (hasGym) base.push({ k: 'gym' as ConsumerTab, icon: Dumbbell, label: 'Gym' })
+  return base
+}
+
 export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
-  // Core de datos compartido (C1). La UI móvil de abajo queda idéntica.
   const {
     tab, setTab, today, loading,
-    assistantOn, hasGym, legend, setLegend, legendCfg, streak, activeProgram,
+    assistantOn, hasGym, legend, setLegend, legendCfg, planState, streak, activeProgram,
     resumen, despensa, recetas, puedoHacer, rutinas, plan, compras, gym,
     load,
   } = useConsumerData('hoy')
 
-  // Estado de UI propio del shell móvil (no es data → se queda aquí)
   const [showPerfil, setShowPerfil] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [showReveal, setShowReveal] = useState(false)
+  const [showMas, setShowMas] = useState(false)
+  const [showMacros, setShowMacros] = useState(false)
 
-  const tabs = [
-    { k: 'hoy', icon: Home, label: 'Hoy' },
-    { k: 'rutina', icon: Repeat, label: 'Rutina' },
-    { k: 'cocina', icon: ChefHat, label: 'Cocina' },
-    { k: 'plan', icon: CalendarDays, label: 'Plan' },
-    { k: 'compras', icon: ShoppingBasket, label: 'Compras' },
-    { k: 'coach', icon: Award, label: 'Coach' },
-    { k: 'planes', icon: Crown, label: 'Planes' },
-    ...(hasGym ? [{ k: 'gym', icon: Dumbbell, label: 'Gym' }] : []),
-  ] as const
+  const overflowTabs = getOverflowTabs(hasGym)
+
+  const handleOverflowSelect = (k: ConsumerTab) => {
+    setShowMas(false)
+    setTab(k)
+  }
+
+  const n = resumen?.nutricion
+  const target = resumen?.perfil?.dailyCalorieTarget || 0
+  const consumed = Number(n?.caloriasConsumidas || 0)
+  const remaining = Math.max(0, target - consumed)
+  const proteinPct = n?.proteinaPlan > 0 ? Math.round((Number(n?.proteinaConsumida || 0) / Number(n?.proteinaPlan)) * 100) : 0
+
+  const isLegend = !!legend
 
   return (
     <div className="fixed inset-0 z-[80] bg-neutral-50 text-neutral-900 flex flex-col md:hidden">
-      {/* Header con degradado (cambia a LEGEND dorado si el plan está activo) */}
+      {/* ═══ COMPACT HERO HEADER ═══ */}
       <div
-        className={`relative overflow-hidden flex-shrink-0 text-white px-4 pt-4 pb-5 ${legend ? '' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}
-        style={legend ? { background: 'linear-gradient(135deg, #1a1a1a 0%, #2a2410 55%, #4a3a0c 100%)' } : undefined}
+        className="relative overflow-hidden flex-shrink-0 text-white"
+        style={isLegend ? { background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a0d 55%, #2a1a05 100%)' } : { background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)' }}
       >
-        {legend && <LegendShine />}
-        <div className="flex items-center justify-between">
+        {isLegend && <LegendShine />}
+        {/* Top bar */}
+        <div className="flex items-center justify-between px-4 pt-4 pb-1">
           <div className="flex items-center gap-2">
-            {legend ? <Crown className="w-5 h-5" style={{ color: '#D4AF37' }} /> : <Sparkles className="w-5 h-5" />}
-            <span className="text-sm font-semibold tracking-wide uppercase" style={legend ? { color: '#D4AF37' } : undefined}>{legend ? 'LEGEND' : 'Mi Rutina'}</span>
-            {streak > 1 && <span className="text-[11px] font-bold bg-white/20 rounded-full px-2 py-0.5">🔥 {streak}</span>}
+            {isLegend ? <Crown className="w-5 h-5" style={{ color: '#D4AF37' }} /> : <Sparkles className="w-5 h-5 text-white/70" />}
+            <span className="text-sm font-semibold tracking-wide uppercase" style={isLegend ? { color: '#D4AF37' } : { color: 'rgba(255,255,255,0.8)' }}>
+              {isLegend ? 'LEGEND' : 'Mi Rutina'}
+            </span>
+            {streak > 1 && (
+              <span className="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">🔥 {streak}</span>
+            )}
           </div>
           <div className="flex items-center gap-1">
-            {assistantOn && <button onClick={() => setShowAssistant(true)} className="px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-semibold" style={legend ? { background: 'rgba(212,175,55,0.25)', color: '#D4AF37' } : { background: 'rgba(255,255,255,0.2)' }} title={legend ? 'AI Coach LEGEND' : 'Asistente IA'}>{legend ? <Crown className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}{legend ? 'AI Coach' : 'IA'}</button>}
-            <CartButton className="p-2 rounded-full hover:bg-white/20" />
-            <button onClick={() => setTab('vault')} className="p-2 rounded-full hover:bg-white/20" title="The Vault"><KeyRound className="w-5 h-5" /></button>
-            <button onClick={() => setShowPerfil(true)} className="p-2 rounded-full hover:bg-white/20" title="Mi perfil"><Settings className="w-5 h-5" /></button>
-            <button onClick={onClose} className="p-2 rounded-full hover:bg-white/20"><X className="w-5 h-5" /></button>
+            {assistantOn && (
+              <button onClick={() => setShowAssistant(true)} className="p-2 rounded-full hover:bg-white/10" title={isLegend ? 'AI Coach LEGEND' : 'Asistente IA'}>
+                {isLegend ? <Crown className="w-4 h-4" style={{ color: '#D4AF37' }} /> : <Sparkles className="w-4 h-4" />}
+              </button>
+            )}
+            <CartButton className="p-2 rounded-full hover:bg-white/10" />
+            <button onClick={() => setTab('vault')} className="p-2 rounded-full hover:bg-white/10" title="The Vault">
+              <KeyRound className="w-4 h-4" />
+            </button>
+            <button onClick={() => setShowPerfil(true)} className="p-2 rounded-full hover:bg-white/10" title="Mi perfil">
+              <Settings className="w-4 h-4" />
+            </button>
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
-        {tab === 'hoy' && <HeaderRings resumen={resumen} />}
+
+        {/* Compact nutrition line (solo en tab Hoy) */}
+        {tab === 'hoy' && (
+          <button onClick={() => setShowMacros(!showMacros)} className="w-full px-4 py-3 flex items-center gap-3">
+            <div className="flex-1 text-left">
+              <div className="text-[26px] font-black tracking-tight">
+                {target ? `${remaining}` : (n?.caloriasPlan || '—')}
+                <span className="text-sm font-medium text-white/60 ml-1">{target ? 'kcal rest.' : 'kcal plan'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-white/60 mt-0.5">
+                {target > 0 && <span>{consumed}/{target} kcal</span>}
+                {proteinPct > 0 && <span>· Proteína {proteinPct}%</span>}
+                {showMacros ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+            </div>
+            {/* Mini ring */}
+            <CompactRing value={consumed} max={target || 1} color="#fff" />
+          </button>
+        )}
+
+        {/* Expandable macros */}
+        {tab === 'hoy' && showMacros && (
+          <div className="px-4 pb-3 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+            <MacroBar label="Proteína" value={n?.proteinaConsumida || 0} max={n?.proteinaPlan || 0} color="#34d399" />
+            <MacroBar label="Carbos" value={n?.carbsConsumidos || 0} max={n?.carbsPlan || 0} color="#fbbf24" />
+            <MacroBar label="Grasa" value={n?.grasaConsumida || 0} max={n?.grasaPlan || 0} color="#f472b6" />
+          </div>
+        )}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-20">
+      {/* ═══ CONTENT ═══ */}
+      <div className="flex-1 overflow-y-auto pb-16">
         {loading && <div className="flex justify-center py-12 text-neutral-300"><Loader2 className="w-7 h-7 animate-spin" /></div>}
-        {!loading && tab === 'hoy' && activeProgram && <div className="p-4 pb-0"><ActiveProgramBanner program={activeProgram} onOpen={() => setTab('coach')} /></div>}
-        {!loading && tab === 'hoy' && <AdaptiveCards onGoTo={setTab} />}
-        {!loading && tab === 'hoy' && <HoyView resumen={resumen} plan={plan} rutinas={rutinas} onReload={() => load('hoy')} onGoTo={setTab} />}
+
+        {/* ── HOY (3-capas) ── */}
+        {!loading && tab === 'hoy' && (
+          <div className="pb-4">
+            {/* CAPA 1 — PRIORITY: CTA principal del día (sin scroll) */}
+            {activeProgram && (
+              <div className="px-4 pt-3">
+                <ActiveProgramBanner program={activeProgram} onOpen={() => setTab('coach')} />
+              </div>
+            )}
+            {!activeProgram && streak === 0 && legend && (
+              <div className="px-4 pt-3">
+                <CTAStreak onGoTo={() => setTab('planes')} />
+              </div>
+            )}
+
+            {/* Adaptive nudges compactos */}
+            <AdaptiveCards onGoTo={setTab} />
+
+            {/* CAPA 2 — CONTEXTO: Comidas + Día */}
+            <HoyViewCompact resumen={resumen} plan={plan} rutinas={rutinas} onReload={() => load('hoy')} onGoTo={setTab} />
+
+            {/* CAPA 3 — META/GAMIFICACIÓN: Nudges, streak, progreso */}
+            {isLegend && (
+              <div className="px-4 pt-1">
+                <LegendStatusCard planState={planState} streak={streak} onGoTo={() => setTab('planes')} />
+              </div>
+            )}
+          </div>
+        )}
+
         {!loading && tab === 'rutina' && <RutinaView rutinas={rutinas} onReload={() => load('rutina')} />}
         {!loading && tab === 'cocina' && <CocinaView despensa={despensa} recetas={recetas} puedoHacer={puedoHacer} onReload={() => load('cocina')} />}
         {!loading && tab === 'plan' && <PlanView plan={plan} recetas={recetas} onReload={() => load('plan')} today={today} />}
@@ -111,27 +207,133 @@ export default function ConsumerRoutine({ onClose }: { onClose: () => void }) {
         {!loading && tab === 'gym' && <GymView data={gym} onReload={() => load('gym')} />}
       </div>
 
-      {/* Tab bar */}
-      <div className="absolute bottom-0 left-0 right-0 h-16 border-t border-black/10 bg-white flex items-center justify-around shadow-[0_-2px_10px_rgba(0,0,0,0.04)]" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-        {tabs.map(({ k, icon: Icon, label }) => (
-          <button key={k} onClick={() => setTab(k as Tab)}
-            className={`flex flex-col items-center gap-0.5 flex-1 h-full justify-center transition-colors ${tab === k ? (legend ? '' : 'text-orange-600') : 'text-neutral-400'}`}
-            style={tab === k && legend ? { color: '#D4AF37' } : undefined}>
+      {/* ═══ TAB BAR (4 tabs) ═══ */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-16 border-t border-black/10 bg-white flex items-center shadow-[0_-2px_10px_rgba(0,0,0,0.04)]"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
+        {MAIN_TABS.map(({ k, icon: Icon, label }) => (
+          <button
+            key={k}
+            onClick={() => setTab(k as Tab)}
+            className={`flex flex-col items-center gap-0.5 flex-1 h-full justify-center transition-colors ${
+              tab === k ? (isLegend ? '' : 'text-neutral-900') : 'text-neutral-400'
+            }`}
+            style={tab === k && isLegend ? { color: '#D4AF37' } : undefined}
+          >
             <Icon className="w-5 h-5" />
             <span className="text-[10px] font-medium">{label}</span>
           </button>
         ))}
-        {/* Explore = marketplace modular dentro del OS (tab inline) */}
-        <button onClick={() => setTab('explore')} className={`flex flex-col items-center gap-0.5 flex-1 h-full justify-center transition-colors ${tab === 'explore' ? (legend ? '' : 'text-orange-600') : 'text-neutral-400'}`} style={tab === 'explore' && legend ? { color: '#D4AF37' } : undefined}>
-          <Compass className="w-5 h-5" />
-          <span className="text-[10px] font-medium">Explore</span>
+        {/* Botón "Más" */}
+        <button
+          onClick={() => setShowMas(true)}
+          className={`flex flex-col items-center gap-0.5 flex-1 h-full justify-center transition-colors ${
+            showMas || overflowTabs.some(t => t.k === tab) ? (isLegend ? '' : 'text-neutral-900') : 'text-neutral-400'
+          }`}
+          style={showMas || overflowTabs.some(t => t.k === tab) && isLegend ? { color: '#D4AF37' } : undefined}
+        >
+          <MoreHorizontal className="w-5 h-5" />
+          <span className="text-[10px] font-medium">Más</span>
         </button>
       </div>
 
+      {/* ═══ MÁS DRAWER ═══ */}
+      {showMas && (
+        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowMas(false)} />
+          <div
+            className="relative bg-white rounded-t-3xl shadow-2xl animate-in slide-in-from-bottom duration-300"
+            style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}
+          >
+            <div className="flex items-center justify-between px-5 h-14 border-b border-black/5">
+              <h3 className="font-bold text-sm">Más</h3>
+              <button onClick={() => setShowMas(false)} className="text-neutral-400 hover:text-neutral-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-3 grid grid-cols-3 gap-2">
+              {overflowTabs.map(({ k, icon: Icon, label }) => (
+                <button
+                  key={k}
+                  onClick={() => handleOverflowSelect(k)}
+                  className="flex flex-col items-center gap-2 py-4 rounded-2xl hover:bg-neutral-50 transition-colors"
+                >
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                    tab === k
+                      ? isLegend ? 'bg-amber-100' : 'bg-neutral-900'
+                      : 'bg-neutral-100'
+                  }`}>
+                    <Icon
+                      className="w-5 h-5"
+                      style={tab === k && isLegend ? { color: '#D4AF37' } : tab === k ? { color: '#fff' } : { color: '#737373' }}
+                    />
+                  </div>
+                  <span className={`text-[11px] font-medium ${tab === k ? 'text-neutral-900' : 'text-neutral-500'}`}>
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODALES ═══ */}
       {showPerfil && <PerfilModal onClose={() => setShowPerfil(false)} onSaved={() => { setShowPerfil(false); load('hoy') }} />}
       {showAssistant && <ChatAssistant onClose={() => setShowAssistant(false)} onChanged={() => load(tab)} />}
       {showReveal && <LegendReveal config={legendCfg} onDone={() => setShowReveal(false)} />}
     </div>
+  )
+}
+
+// ═══════════════════ COMPACT RING (hero) ═══════════════════
+function CompactRing({ value, max, color = '#fff' }: { value: number; max: number; color?: string }) {
+  const size = 44, stroke = 4
+  const r = (size - stroke) / 2
+  const c = 2 * Math.PI * r
+  const pct = max > 0 ? Math.min(1, value / max) : 0
+  return (
+    <div className="relative flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          strokeDasharray={c} strokeDashoffset={c * (1 - pct)} strokeLinecap="round" />
+      </svg>
+      <div className="absolute text-[10px] font-bold leading-none">{Math.round(pct * 100)}%</div>
+    </div>
+  )
+}
+
+// ═══════════════════ CTA STREAK ═══════════════════
+function CTAStreak({ onGoTo }: { onGoTo: () => void }) {
+  return (
+    <button onClick={onGoTo} className="w-full rounded-xl px-4 py-3 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-200 text-left flex items-center justify-between">
+      <div>
+        <p className="text-sm font-bold text-amber-700">🔥 Retoma tu racha</p>
+        <p className="text-xs text-amber-600/70">Registra tu actividad de hoy.</p>
+      </div>
+      <ChevronRight className="w-4 h-4 text-amber-500" />
+    </button>
+  )
+}
+
+// ═══════════════════ LEGEND STATUS CARD (compacto) ═══════════════════
+function LegendStatusCard({ planState, streak, onGoTo }: { planState: any; streak: number; onGoTo: () => void }) {
+  const powerDays = planState?.powerDays
+  return (
+    <button onClick={onGoTo} className="w-full rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #1a1a1a 0%, #2a2a0a 100%)', border: '1px solid rgba(212,175,55,0.15)' }}>
+      <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(212,175,55,0.15)' }}>
+        <Crown className="w-4 h-4" style={{ color: '#D4AF37' }} />
+      </div>
+      <div className="flex-1 text-left min-w-0">
+        <p className="text-xs font-bold text-white/90">LEGEND Activo</p>
+        {powerDays != null && <p className="text-[11px] text-white/50">{powerDays} días de poder{streak > 1 ? ` · Racha ${streak}` : ''}</p>}
+        {powerDays == null && streak > 1 && <p className="text-[11px] text-white/50">{streak} días seguidos · Ver logros</p>}
+        {powerDays == null && streak <= 1 && <p className="text-[11px] text-white/50">Mantén tu racha para desbloquear logros</p>}
+      </div>
+      <ChevronRight className="w-4 h-4 text-amber-500/50" />
+    </button>
   )
 }
 
@@ -167,7 +369,8 @@ function ChatAssistant({ onClose, onChanged }: any) {
 
   return (
     <div className="fixed inset-0 z-[95] bg-white flex flex-col">
-      <div className={`flex items-center justify-between px-4 h-14 border-b border-black/10 text-white flex-shrink-0 ${advanced ? '' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`} style={advanced ? { background: 'linear-gradient(135deg, #1a1a1a 0%, #3a2f0a 100%)' } : undefined}>
+      <div className="flex items-center justify-between px-4 h-14 border-b border-black/10 text-white flex-shrink-0"
+        style={advanced ? { background: 'linear-gradient(135deg, #0a0a0a 0%, #1a1a0d 100%)' } : { background: 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)' }}>
         <div className="flex items-center gap-2">
           {advanced ? <Crown className="w-5 h-5" style={{ color: '#D4AF37' }} /> : <Sparkles className="w-5 h-5" />}
           <span className="font-semibold" style={advanced ? { color: '#D4AF37' } : undefined}>{advanced ? 'AI Coach LEGEND' : 'Asistente de bienestar'}</span>
@@ -178,7 +381,7 @@ function ChatAssistant({ onClose, onChanged }: any) {
       <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-50">
         {msgs.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${m.role === 'user' ? 'bg-orange-500 text-white' : 'bg-white border border-black/5 shadow-sm'}`}>
+            <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${m.role === 'user' ? 'bg-neutral-900 text-white' : 'bg-white border border-black/5 shadow-sm'}`}>
               <div className="whitespace-pre-wrap">{m.content}</div>
               {m.products?.length > 0 && (
                 <div className="mt-2 space-y-1.5">
@@ -198,82 +401,148 @@ function ChatAssistant({ onClose, onChanged }: any) {
             </div>
           </div>
         ))}
-        {sending && <div className="flex justify-start"><div className="bg-white border border-black/5 rounded-2xl px-3.5 py-2.5"><Loader2 className="w-4 h-4 animate-spin text-orange-500" /></div></div>}
+        {sending && <div className="flex justify-start"><div className="bg-white border border-black/5 rounded-2xl px-3.5 py-2.5"><Loader2 className="w-4 h-4 animate-spin text-neutral-600" /></div></div>}
         <div ref={endRef} />
       </div>
 
       <div className="p-3 border-t border-black/10 bg-white flex gap-2 flex-shrink-0" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)' }}>
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
           placeholder="Escribe tu mensaje…" className={inputCls} />
-        <button onClick={send} disabled={sending} className="bg-orange-500 text-white rounded-xl px-4 flex-shrink-0 disabled:opacity-50 font-medium text-sm">Enviar</button>
+        <button onClick={send} disabled={sending} className="bg-neutral-900 text-white rounded-xl px-4 flex-shrink-0 disabled:opacity-50 font-medium text-sm">Enviar</button>
       </div>
     </div>
   )
 }
 
 // ═══════════════════ UI helpers ═══════════════════
-function Ring({ value, max, size = 88, stroke = 9, color = '#ea580c', label, sub }: any) {
-  const r = (size - stroke) / 2
-  const c = 2 * Math.PI * r
-  const pct = max > 0 ? Math.min(1, value / max) : 0
-  return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth={stroke} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-          strokeDasharray={c} strokeDashoffset={c * (1 - pct)} strokeLinecap="round" />
-      </svg>
-      <div className="absolute text-center leading-none">
-        <div className="text-lg font-bold">{label}</div>
-        {sub && <div className="text-[9px] opacity-80 mt-0.5">{sub}</div>}
-      </div>
-    </div>
-  )
-}
 function MacroBar({ label, value, max, color }: any) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
   return (
-    <div className="flex-1">
-      <div className="flex justify-between text-[10px] mb-1 opacity-90"><span>{label}</span><span>{Math.round(value)}{max ? `/${Math.round(max)}` : ''}g</span></div>
-      <div className="h-1.5 rounded-full bg-white/30 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
+    <div>
+      <div className="flex justify-between text-[10px] mb-1 opacity-70"><span>{label}</span><span>{Math.round(value)}{max ? `/${Math.round(max)}` : ''}g</span></div>
+      <div className="h-1 rounded-full bg-white/15 overflow-hidden"><div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} /></div>
     </div>
   )
 }
 function Section({ title, action, children }: any) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-neutral-800">{title}</h3>{action}</div>
+      <div className="flex items-center justify-between mb-2"><h3 className="text-xs font-bold text-neutral-500 uppercase tracking-wide">{title}</h3>{action}</div>
       {children}
     </div>
   )
 }
 function Empty({ icon: Icon, text }: any) {
-  return <div className="text-center py-8 text-neutral-400"><Icon className="w-8 h-8 mx-auto mb-2 opacity-40" /><p className="text-xs">{text}</p></div>
+  return <div className="text-center py-6 text-neutral-300"><Icon className="w-6 h-6 mx-auto mb-1.5 opacity-30" /><p className="text-xs">{text}</p></div>
 }
 function Card({ children, className = '' }: any) {
-  return <div className={`rounded-2xl bg-white border border-black/5 shadow-sm ${className}`}>{children}</div>
+  return <div className={`rounded-xl bg-white border border-black/5 shadow-sm ${className}`}>{children}</div>
 }
-const inputCls = 'w-full bg-neutral-100 border border-transparent focus:border-orange-400 focus:bg-white rounded-xl px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-neutral-400'
+const inputCls = 'w-full bg-neutral-100 border border-transparent focus:border-neutral-400 focus:bg-white rounded-xl px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-neutral-400'
 
-// ═══════════════════ HEADER RINGS (Hoy) ═══════════════════
-function HeaderRings({ resumen }: any) {
-  const n = resumen?.nutricion
-  const target = resumen?.perfil?.dailyCalorieTarget || 0
-  const consumed = n?.caloriasConsumidas || 0
-  const remaining = Math.max(0, target - consumed)
+// ═══════════════════ HOY VIEW (compacta, 3-capas) ═══════════════════
+function HoyViewCompact({ resumen, plan, rutinas, onReload, onGoTo }: any) {
+  const dow = new Date().getDay()
+  const todayActs = (rutinas || []).flatMap((r: any) =>
+    (r.activities || []).filter((a: any) => a.dayOfWeek === null || a.dayOfWeek === dow).map((a: any) => ({ ...a, rutina: r.name }))
+  ).sort((a: any, b: any) => (a.startTime || '').localeCompare(b.startTime || ''))
+
+  // Solo mostrar comidas pendientes (más relevante)
+  const pendingMeals = (plan || []).filter((m: any) => !m.isDone).slice(0, 3)
+  const hasMore = (plan || []).length > pendingMeals.length || (plan || []).some((m: any) => m.isDone)
+
   return (
-    <div className="mt-4 flex items-center gap-4">
-      <Ring value={consumed} max={target || 1} label={target ? remaining : (n?.caloriasPlan || 0)} sub={target ? 'kcal rest.' : 'kcal plan'} color="#fff" />
-      <div className="flex-1 space-y-2">
-        <MacroBar label="Proteína" value={n?.proteinaConsumida || 0} max={n?.proteinaPlan || 0} color="#34d399" />
-        <MacroBar label="Carbos" value={n?.carbsConsumidos || 0} max={n?.carbsPlan || 0} color="#fbbf24" />
-        <MacroBar label="Grasa" value={n?.grasaConsumida || 0} max={n?.grasaPlan || 0} color="#f472b6" />
+    <div className="px-4 space-y-4 pt-4">
+      {/* CAPA 2: Comidas pendientes (lo más accionable) */}
+      {pendingMeals.length > 0 && (
+        <Section title="Comidas pendientes" action={
+          <button onClick={() => onGoTo('plan')} className="text-[11px] text-neutral-900 font-medium">Ver plan</button>
+        }>
+          <div className="space-y-1.5">
+            {pendingMeals.map((m: any) => (
+              <button
+                key={m.id}
+                onClick={async () => { await api.togglePlanComida(m.id); onReload() }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white border border-black/5 shadow-sm text-left"
+              >
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 border-neutral-300`} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{m.title || 'Comida'}</div>
+                  <div className="text-[11px] text-neutral-400 capitalize">
+                    {String(m.mealType).replace('_', ' ')}{m.calories ? ` · ${m.calories} kcal` : ''}
+                  </div>
+                </div>
+              </button>
+            ))}
+            {hasMore && (
+              <button onClick={() => onGoTo('plan')} className="w-full text-[11px] text-neutral-500 py-1 text-center">
+                + {(plan || []).length - pendingMeals.length} más
+              </button>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* CAPA 2: Actividades de hoy (compactas) */}
+      <Section title="Tu día" action={
+        <button onClick={() => onGoTo('rutina')} className="text-[11px] text-neutral-900 font-medium">Rutina</button>
+      }>
+        {todayActs.length > 0 ? (
+          <div className="space-y-1.5">
+            {todayActs.slice(0, 4).map((a: any) => (
+              <div key={a.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white border border-black/5 shadow-sm">
+                <div className="text-[11px] font-bold text-neutral-400 w-10 shrink-0">{a.startTime ? a.startTime.slice(0, 5) : '—'}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{a.title}</div>
+                  <div className="text-[11px] text-neutral-400 capitalize">{a.type} · {a.rutina}</div>
+                </div>
+              </div>
+            ))}
+            {todayActs.length > 4 && (
+              <button onClick={() => onGoTo('rutina')} className="w-full text-[11px] text-neutral-500 py-1 text-center">
+                + {todayActs.length - 4} actividades más
+              </button>
+            )}
+          </div>
+        ) : (
+          <Empty icon={ListChecks} text="Sin actividades para hoy. Crea tu rutina." />
+        )}
+      </Section>
+
+      {/* CAPA 2: Coach insight (si hay coach) */}
+      {resumen?.coachInsight && (
+        <div className="rounded-xl bg-gradient-to-r from-sky-50 to-cyan-50 border border-sky-100 px-4 py-3">
+          <p className="text-xs font-medium text-sky-800">{resumen.coachInsight}</p>
+        </div>
+      )}
+
+      {/* Stat chips compactos (al final, secundarios) */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { icon: Carrot, label: 'Despensa', value: resumen?.despensaCount ?? 0, color: 'text-emerald-600 bg-emerald-50' },
+          { icon: AlertTriangle, label: 'Por vencer', value: resumen?.porVencerCount ?? 0, color: 'text-orange-600 bg-orange-50' },
+          { icon: ShoppingBasket, label: 'Comprar', value: resumen?.comprasPendientes ?? 0, color: 'text-neutral-600 bg-neutral-100' },
+        ].map(c => (
+          <button
+            key={c.label}
+            onClick={() => onGoTo(c.label === 'Comprar' ? 'compras' : 'cocina')}
+            className="rounded-xl bg-white border border-black/5 shadow-sm p-3 text-left flex items-center gap-2.5"
+          >
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${c.color}`}>
+              <c.icon className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-base font-bold">{c.value}</div>
+              <div className="text-[10px] text-neutral-400">{c.label}</div>
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   )
 }
 
-// ═══════════════════ HOY ═══════════════════
+// ═══════════════════ HOY VIEW ORIGINAL (mantenida para export) ═══════════════════
 function HoyView({ resumen, plan, rutinas, onReload, onGoTo }: any) {
   const dow = new Date().getDay()
   const todayActs = (rutinas || []).flatMap((r: any) =>
@@ -290,7 +559,6 @@ function HoyView({ resumen, plan, rutinas, onReload, onGoTo }: any) {
 
   return (
     <div className="p-4 space-y-5">
-      {/* Chips de objetivos */}
       {(water || (weight && tgt) || resumen?.perfil?.goal) && (
         <div className="flex gap-2 flex-wrap">
           {resumen?.perfil?.goal && <span className="text-xs px-3 py-1.5 rounded-full bg-violet-50 text-violet-700 flex items-center gap-1"><Target className="w-3.5 h-3.5" />{GOAL_LABEL[resumen.perfil.goal] || resumen.perfil.goal}</span>}
@@ -299,7 +567,6 @@ function HoyView({ resumen, plan, rutinas, onReload, onGoTo }: any) {
         </div>
       )}
 
-      {/* Stat chips */}
       <div className="grid grid-cols-3 gap-3">
         {chips.map(c => (
           <button key={c.label} onClick={() => onGoTo(c.label === 'Comprar' ? 'compras' : 'cocina')} className="rounded-2xl bg-white border border-black/5 shadow-sm p-3 text-left">
@@ -310,7 +577,6 @@ function HoyView({ resumen, plan, rutinas, onReload, onGoTo }: any) {
         ))}
       </div>
 
-      {/* Comidas de hoy */}
       <Section title="Comidas de hoy" action={<button onClick={() => onGoTo('plan')} className="text-xs text-orange-600 font-medium">Ver plan</button>}>
         {plan?.length ? (
           <div className="space-y-2">
@@ -329,7 +595,6 @@ function HoyView({ resumen, plan, rutinas, onReload, onGoTo }: any) {
         ) : <Empty icon={Utensils} text="Sin comidas planeadas para hoy." />}
       </Section>
 
-      {/* Actividades de hoy */}
       <Section title="Tu día" action={<button onClick={() => onGoTo('rutina')} className="text-xs text-orange-600 font-medium">Editar rutina</button>}>
         {todayActs.length ? (
           <div className="space-y-2">
@@ -364,19 +629,19 @@ function RutinaView({ rutinas, onReload }: any) {
 
       <div className="flex gap-2">
         <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nueva rutina (ej: Mañanas)" className={inputCls} />
-        <button onClick={crear} className="bg-orange-500 text-white rounded-xl px-3 flex-shrink-0"><Plus className="w-5 h-5" /></button>
+        <button onClick={crear} className="bg-neutral-900 text-white rounded-xl px-3 flex-shrink-0"><Plus className="w-5 h-5" /></button>
       </div>
 
       {rutinas?.length ? rutinas.map((r: any) => (
         <Card key={r.id} className="p-4">
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2"><Repeat className="w-4 h-4 text-orange-500" /><span className="font-semibold">{r.name}</span></div>
+            <div className="flex items-center gap-2"><Repeat className="w-4 h-4 text-neutral-600" /><span className="font-semibold">{r.name}</span></div>
             <button onClick={async () => { await api.deleteRutina(r.id); onReload() }} className="text-neutral-300 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
           </div>
           <div className="space-y-1.5">
             {(r.activities || []).map((a: any) => (
               <div key={a.id} className="flex items-center gap-2 text-sm bg-neutral-50 rounded-lg px-3 py-2">
-                <span className="text-[11px] font-bold text-orange-600 w-10">{a.startTime ? a.startTime.slice(0, 5) : '—'}</span>
+                <span className="text-[11px] font-bold text-neutral-600 w-10">{a.startTime ? a.startTime.slice(0, 5) : '—'}</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-600">{a.dayOfWeek === null ? 'Diario' : DAYS[a.dayOfWeek]}</span>
                 <span className="flex-1 truncate">{a.title}</span>
                 <button onClick={async () => { await api.deleteActividad(a.id); onReload() }} className="text-neutral-300 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
@@ -385,7 +650,7 @@ function RutinaView({ rutinas, onReload }: any) {
           </div>
           {addingTo === r.id
             ? <ActividadForm rutinaId={r.id} onDone={() => { setAddingTo(null); onReload() }} onCancel={() => setAddingTo(null)} />
-            : <button onClick={() => setAddingTo(r.id)} className="mt-2 text-xs text-orange-600 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />Agregar actividad</button>}
+            : <button onClick={() => setAddingTo(r.id)} className="mt-2 text-xs text-neutral-900 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />Agregar actividad</button>}
         </Card>
       )) : <Empty icon={Repeat} text="Crea tu primera rutina para organizar tu día." />}
     </div>
@@ -429,7 +694,7 @@ function WeekStrip({ rutinas }: any) {
       <div className="grid grid-cols-7 gap-1">
         {week.map((w, i) => (
           <button key={w.date} onClick={() => setSel(i)}
-            className={`flex flex-col items-center py-2 rounded-xl transition-colors ${i === sel ? 'bg-orange-500 text-white' : w.date === todayStr ? 'bg-orange-50 text-orange-600' : 'text-neutral-500'}`}>
+            className={`flex flex-col items-center py-2 rounded-xl transition-colors ${i === sel ? 'bg-neutral-900 text-white' : w.date === todayStr ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-500'}`}>
             <span className="text-[9px] uppercase">{DAYS[w.dow]}</span>
             <span className="text-sm font-bold">{w.date.slice(8, 10)}</span>
             <span className={`w-1.5 h-1.5 rounded-full mt-0.5 ${attDays.has(w.date) ? (i === sel ? 'bg-white' : 'bg-violet-500') : 'bg-transparent'}`} />
@@ -476,7 +741,7 @@ function ActividadForm({ rutinaId, onDone, onCancel }: any) {
         </select>
       </div>
       <div className="flex gap-2">
-        <button onClick={save} className="flex-1 bg-orange-500 text-white rounded-xl py-2 text-sm font-medium">Guardar</button>
+        <button onClick={save} className="flex-1 bg-neutral-900 text-white rounded-xl py-2 text-sm font-medium">Guardar</button>
         <button onClick={onCancel} className="px-4 text-sm text-neutral-500">Cancelar</button>
       </div>
     </div>
@@ -491,13 +756,13 @@ function CocinaView({ despensa, recetas, puedoHacer, onReload }: any) {
     <div className="p-4 space-y-4">
       <div className="flex bg-neutral-100 rounded-xl p-1">
         {([['despensa', 'Despensa'], ['recetas', 'Recetas']] as const).map(([k, l]) => (
-          <button key={k} onClick={() => setSub(k)} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${sub === k ? 'bg-white shadow-sm text-orange-600' : 'text-neutral-500'}`}>{l}</button>
+          <button key={k} onClick={() => setSub(k)} className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${sub === k ? 'bg-white shadow-sm text-neutral-900' : 'text-neutral-500'}`}>{l}</button>
         ))}
       </div>
 
       {sub === 'despensa' ? <DespensaView items={despensa} onReload={onReload} /> : (
         <div className="space-y-5">
-          <button onClick={() => setShowRecipe(true)} className="w-full bg-orange-500 text-white rounded-xl py-2.5 text-sm font-medium flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Nueva receta</button>
+          <button onClick={() => setShowRecipe(true)} className="w-full bg-neutral-900 text-white rounded-xl py-2.5 text-sm font-medium flex items-center justify-center gap-2"><Plus className="w-4 h-4" />Nueva receta</button>
           <Section title="Puedo cocinar ahora">
             {puedoHacer?.length ? (
               <div className="space-y-2">
@@ -511,7 +776,7 @@ function CocinaView({ despensa, recetas, puedoHacer, onReload }: any) {
                     {r.missing?.length > 0 && (
                       <div className="mt-1.5 flex items-center justify-between">
                         <span className="text-[11px] text-neutral-400 truncate">Falta: {r.missing.join(', ')}</span>
-                        <button onClick={async () => { await api.recetaALista(r.id); alert('Agregado a tu lista de compras') }} className="text-[11px] text-sky-600 flex-shrink-0 ml-2 font-medium">+ Lista</button>
+                        <button onClick={async () => { await api.recetaALista(r.id); alert('Agregado a tu lista de compras') }} className="text-[11px] text-neutral-900 flex-shrink-0 ml-2 font-medium">+ Lista</button>
                       </div>
                     )}
                   </Card>
@@ -567,7 +832,7 @@ function DespensaView({ items, onReload }: any) {
         </div>
         <div className="flex gap-2">
           <input type="date" value={f.expiresAt} onChange={e => setF({ ...f, expiresAt: e.target.value })} className={inputCls} />
-          <button onClick={add} disabled={saving} className="bg-orange-500 text-white rounded-xl px-4 flex-shrink-0 disabled:opacity-50"><Plus className="w-5 h-5" /></button>
+          <button onClick={add} disabled={saving} className="bg-neutral-900 text-white rounded-xl px-4 flex-shrink-0 disabled:opacity-50"><Plus className="w-5 h-5" /></button>
         </div>
       </Card>
       {items?.length ? items.map((it: any) => (
@@ -635,10 +900,10 @@ function RecipeModal({ onClose, onSaved }: any) {
               </div>
             ))}
           </div>
-          <button onClick={() => setIngs([...ings, { name: '', quantity: '', unit: '' }])} className="mt-2 text-xs text-orange-600 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />Ingrediente</button>
+          <button onClick={() => setIngs([...ings, { name: '', quantity: '', unit: '' }])} className="mt-2 text-xs text-neutral-900 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />Ingrediente</button>
         </div>
         <textarea value={f.instructions} onChange={e => setF({ ...f, instructions: e.target.value })} placeholder="Preparación (opcional)" rows={2} className={inputCls} />
-        <button onClick={save} disabled={saving} className="w-full bg-orange-500 text-white rounded-xl py-2.5 text-sm font-medium disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar receta'}</button>
+        <button onClick={save} disabled={saving} className="w-full bg-neutral-900 text-white rounded-xl py-2.5 text-sm font-medium disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar receta'}</button>
       </div>
     </Modal>
   )
@@ -655,7 +920,7 @@ function PlanView({ plan, onReload, today }: any) {
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div className="text-sm font-bold">Hoy · {today}</div>
-        <button onClick={() => setOpen(true)} className="text-xs bg-orange-500 text-white rounded-full px-3 py-1.5 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />Comida</button>
+        <button onClick={() => setOpen(true)} className="text-xs bg-neutral-900 text-white rounded-full px-3 py-1.5 flex items-center gap-1"><Plus className="w-3.5 h-3.5" />Comida</button>
       </div>
 
       <Card className="p-4 grid grid-cols-4 gap-2 text-center">
@@ -711,7 +976,7 @@ function PlanModal({ today, onClose, onSaved }: any) {
           <LabeledInput label="Carb" value={f.carbsG} onChange={(v: string) => setF({ ...f, carbsG: v })} />
           <LabeledInput label="Grasa" value={f.fatG} onChange={(v: string) => setF({ ...f, fatG: v })} />
         </div>
-        <button onClick={save} className="w-full bg-orange-500 text-white rounded-xl py-2.5 text-sm font-medium">Agregar</button>
+        <button onClick={save} className="w-full bg-neutral-900 text-white rounded-xl py-2.5 text-sm font-medium">Agregar</button>
       </div>
     </Modal>
   )
@@ -737,7 +1002,7 @@ function ComprasView({ items, onReload }: any) {
     <div className="p-4 space-y-4">
       <div className="flex gap-2">
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Leche, huevos…" className={inputCls} />
-        <button onClick={add} className="bg-orange-500 text-white rounded-xl px-4 flex-shrink-0"><Plus className="w-5 h-5" /></button>
+        <button onClick={add} className="bg-neutral-900 text-white rounded-xl px-4 flex-shrink-0"><Plus className="w-5 h-5" /></button>
       </div>
       {pend.length ? <div className="space-y-2">{pend.map(Row)}</div> : <Empty icon={ShoppingBasket} text="Tu lista está vacía." />}
       {done.length > 0 && <Section title={`Comprados (${done.length})`}><div className="space-y-2">{done.map(Row)}</div></Section>}
@@ -745,7 +1010,7 @@ function ComprasView({ items, onReload }: any) {
   )
 }
 
-// ═══════════════════ GYM (miembro) ═══════════════════
+// ═══════════════════ GYM ═══════════════════
 function GymView({ data, onReload }: any) {
   const { membresias, plan, progreso, asistencia, acceso } = data
   const [showQR, setShowQR] = useState(false)
@@ -754,7 +1019,6 @@ function GymView({ data, onReload }: any) {
   const doCheckIn = async (tenantId: string) => { await api.miGymCheckIn(tenantId); onReload?.() }
   const doCheckOut = async () => { await api.miGymCheckOut(); onReload?.() }
 
-  // Estado de acceso principal (primera membresía)
   const acc = acceso?.memberships?.[0] || null
   const accCfg: Record<string, any> = {
     permitido: { icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', label: 'Acceso permitido' },
@@ -765,7 +1029,6 @@ function GymView({ data, onReload }: any) {
 
   return (
     <div className="p-4 space-y-5">
-      {/* Tarjeta de acceso QR */}
       {acceso && (
         <Card className={`p-4 border ${cfg ? cfg.bg : 'border-black/5'}`}>
           <div className="flex items-center gap-3">
@@ -888,7 +1151,7 @@ function PerfilModal({ onClose, onSaved }: any) {
             <option value="">Nivel de actividad</option><option value="sedentario">Sedentario</option><option value="ligero">Ligero</option><option value="moderado">Moderado</option><option value="activo">Activo</option><option value="muy_activo">Muy activo</option>
           </select>
           <input value={f.city} onChange={e => setF({ ...f, city: e.target.value })} placeholder="Ciudad" className={inputCls} />
-          <button onClick={save} disabled={saving} className="w-full bg-orange-500 text-white rounded-xl py-2.5 text-sm font-medium disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar perfil'}</button>
+          <button onClick={save} disabled={saving} className="w-full bg-neutral-900 text-white rounded-xl py-2.5 text-sm font-medium disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar perfil'}</button>
           <div className="pt-3 border-t border-black/5"><AchievementShelf compact /></div>
         </div>
       )}
@@ -920,10 +1183,27 @@ function LabeledInput({ label, value, onChange }: any) {
   )
 }
 
-// ── Secciones reutilizables por los shells del Consumer OS (C2) ──
-// Las exporta para que el DesktopShell las componga distinto (sin duplicar UI).
+// ── Secciones reutilizables por DesktopShell ──
 export {
   HoyView, RutinaView, CocinaView, PlanView, ComprasView, GymView,
   HeaderRings, PerfilModal, ChatAssistant, WeekStrip, ActividadForm, PlanModal,
   DespensaView, RecipeModal,
+}
+
+// HeaderRings (versión legacy para compatibilidad desktop)
+function HeaderRings({ resumen }: any) {
+  const n = resumen?.nutricion
+  const target = resumen?.perfil?.dailyCalorieTarget || 0
+  const consumed = n?.caloriasConsumidas || 0
+  const remaining = Math.max(0, target - consumed)
+  return (
+    <div className="mt-4 flex items-center gap-4">
+      <CompactRing value={consumed} max={target || 1} color="#fff" />
+      <div className="flex-1 space-y-2">
+        <MacroBar label="Proteína" value={n?.proteinaConsumida || 0} max={n?.proteinaPlan || 0} color="#34d399" />
+        <MacroBar label="Carbos" value={n?.carbsConsumidos || 0} max={n?.carbsPlan || 0} color="#fbbf24" />
+        <MacroBar label="Grasa" value={n?.grasaConsumida || 0} max={n?.grasaPlan || 0} color="#f472b6" />
+      </div>
+    </div>
+  )
 }

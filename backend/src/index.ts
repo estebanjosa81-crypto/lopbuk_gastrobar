@@ -60,6 +60,8 @@ import trainersRoutes from './modules/trainers/trainers.routes';
 import vaultRoutes from './modules/vault/vault.routes';
 import achievementsRoutes from './modules/achievements/achievements.routes';
 import adaptiveRoutes from './modules/adaptive/adaptive.routes';
+import progressRoutes from './modules/progress/progress.routes';
+import arenaRoutes from './modules/arena/arena.routes';
 import paymentsRoutes from './modules/payments/payments.routes';
 import suppliersRoutes from './modules/suppliers/suppliers.routes';
 import { gymRoutes } from './modules/gym';
@@ -184,6 +186,8 @@ app.use(`${apiPrefix}/trainers`, trainersRoutes);
 app.use(`${apiPrefix}/vault`, vaultRoutes);
 app.use(`${apiPrefix}/achievements`, achievementsRoutes);
 app.use(`${apiPrefix}/adaptive`, adaptiveRoutes);
+app.use(`${apiPrefix}/progress`, progressRoutes);
+app.use(`${apiPrefix}/arena`, arenaRoutes);
 app.use(`${apiPrefix}/payments`, paymentsRoutes);
 app.use(`${apiPrefix}/daimuz-chat`, daimuzChatRoutes);
 app.use(`${apiPrefix}/finances`, financesRoutes);
@@ -1027,6 +1031,47 @@ const startServer = async () => {
         unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE INDEX idx_ach_unique (user_id, achievement_code),
         INDEX idx_ach_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Transformation tracking (F4.3): registro de peso/medidas/fotos → progress score.
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS consumer_body_logs (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        logged_on DATE NOT NULL,
+        weight_kg DECIMAL(6,2) NULL,
+        body_fat DECIMAL(5,2) NULL,
+        measurements JSON NULL,
+        photo_url VARCHAR(800) NULL,
+        note VARCHAR(300) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_bl_unique (user_id, logged_on),
+        INDEX idx_bl_user (user_id, logged_on)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Retos de temporada (F5.1): community challenges + participantes.
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS seasonal_challenges (
+        id VARCHAR(36) PRIMARY KEY,
+        title VARCHAR(200) NOT NULL,
+        description VARCHAR(500) NULL,
+        metric ENUM('streak','drops','achievements') NOT NULL DEFAULT 'streak',
+        goal_value INT NOT NULL DEFAULT 7,
+        reward VARCHAR(200) NULL,
+        starts_at DATETIME NOT NULL,
+        ends_at DATETIME NOT NULL,
+        status ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+        created_by VARCHAR(36) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_sc_window (starts_at, ends_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS challenge_participants (
+        id VARCHAR(36) PRIMARY KEY,
+        challenge_id VARCHAR(36) NOT NULL,
+        user_id VARCHAR(36) NOT NULL,
+        joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_cp_unique (challenge_id, user_id),
+        INDEX idx_cp_user (user_id),
+        FOREIGN KEY (challenge_id) REFERENCES seasonal_challenges(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
     } catch (e: any) { console.warn('[migration vault]', e?.message); }
 

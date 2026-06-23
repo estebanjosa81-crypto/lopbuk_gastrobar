@@ -11,7 +11,9 @@ export interface IntegrationsState {
   geminiApiKey: string
   openaiApiKey: string
   groqApiKey: string
-  defaultAiProvider: 'gemini' | 'openai' | 'groq'
+  opencodeGoApiKey: string
+  opencodeGoModel: string
+  defaultAiProvider: 'gemini' | 'openai' | 'groq' | 'opencode_go'
   openaiBaseUrl: string
   openaiModel: string
 }
@@ -22,7 +24,9 @@ const INITIAL_INTEGRATIONS: IntegrationsState = {
   geminiApiKey: '',
   openaiApiKey: '',
   groqApiKey: '',
-  defaultAiProvider: 'openai',
+  opencodeGoApiKey: '',
+  opencodeGoModel: 'opencode-go/deepseek-v4-flash',
+  defaultAiProvider: 'opencode_go',
   openaiBaseUrl: '',
   openaiModel: '',
 }
@@ -32,6 +36,7 @@ export function useIntegrations() {
   const [showGeminiKey, setShowGeminiKey] = useState(false)
   const [showOpenAIKey, setShowOpenAIKey] = useState(false)
   const [showGroqKey, setShowGroqKey] = useState(false)
+  const [showOpenCodeGoKey, setShowOpenCodeGoKey] = useState(false)
   const [showUploadPreset, setShowUploadPreset] = useState(false)
   const [isSavingIntegrations, setIsSavingIntegrations] = useState(false)
   const [integrationsMsg, setIntegrationsMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null)
@@ -54,7 +59,9 @@ export function useIntegrations() {
         geminiApiKey: result.data.geminiApiKey || '',
         openaiApiKey: result.data.openaiApiKey || '',
         groqApiKey: result.data.groqApiKey || '',
-        defaultAiProvider: result.data.defaultAiProvider || 'openai',
+        opencodeGoApiKey: result.data.opencodeGoApiKey || '',
+        opencodeGoModel: result.data.opencodeGoModel || 'opencode-go/deepseek-v4-flash',
+        defaultAiProvider: result.data.defaultAiProvider || 'opencode_go',
         openaiBaseUrl: result.data.openaiBaseUrl || '',
         openaiModel: result.data.openaiModel || '',
       })
@@ -109,8 +116,8 @@ export function useIntegrations() {
   }
 
   // Trae la AI key en claro bajo demanda (solo al pulsar "ver") y la pone en el campo.
-  const revealKey = async (provider: 'gemini' | 'openai' | 'groq') => {
-    const field = provider === 'gemini' ? 'geminiApiKey' : provider === 'openai' ? 'openaiApiKey' : 'groqApiKey'
+  const revealKey = async (provider: 'gemini' | 'openai' | 'groq' | 'opencode_go') => {
+    const field = provider === 'gemini' ? 'geminiApiKey' : provider === 'openai' ? 'openaiApiKey' : provider === 'groq' ? 'groqApiKey' : 'opencodeGoApiKey'
     const r = await api.revealIntegrationKey(provider)
     if (r.success && r.data) setIntegrations(prev => ({ ...prev, [field]: (r.data as any).key }))
   }
@@ -120,6 +127,7 @@ export function useIntegrations() {
     showGeminiKey, setShowGeminiKey,
     showOpenAIKey, setShowOpenAIKey,
     showGroqKey, setShowGroqKey,
+    showOpenCodeGoKey, setShowOpenCodeGoKey,
     showUploadPreset, setShowUploadPreset,
     isSavingIntegrations, integrationsMsg, handleSaveIntegrations,
     platformAssistant, togglingAssistant, toggleAssistant,

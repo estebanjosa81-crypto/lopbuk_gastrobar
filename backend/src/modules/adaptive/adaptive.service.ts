@@ -10,7 +10,7 @@ import { RowDataPacket } from 'mysql2';
 
 export interface Nudge {
   id: string;
-  kind: 'coach' | 'streak' | 'drop' | 'membership' | 'achievement' | 'program';
+  kind: 'coach' | 'streak' | 'drop' | 'membership' | 'achievement' | 'program' | 'predictive';
   priority: number; // mayor = más arriba
   emoji: string;
   title: string;
@@ -20,6 +20,49 @@ export interface Nudge {
 
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try { return await fn(); } catch { return fallback; }
+}
+
+/**
+ * Predictive commerce: estima la próxima recompra de un consumible por la
+ * CADENCIA real del usuario (intervalo medio entre compras del mismo producto).
+ * Historial vía customer_phone ↔ users.phone (mismo enlace que Explore).
+ */
+async function predictiveNudge(userId: string): Promise<Nudge | null> {
+  const [u] = await db.execute<RowDataPacket[]>('SELECT phone FROM users WHERE id = ? LIMIT 1', [userId]);
+  const phone = (u[0] as any)?.phone ? String((u[0] as any).phone).replace(/\D/g, '') : '';
+  if (phone.length < 7) return null;
+  const [rows] = await db.execute<RowDataPacket[]>(
+    `SELECT p.name AS name, COUNT(*) AS buys,
+            DATEDIFF(NOW(), MAX(o.created_at)) AS daysSinceLast,
+            DATEDIFF(MAX(o.created_at), MIN(o.created_at)) AS spanDays
+       FROM storefront_order_items oi
+       JOIN storefront_orders o ON o.id = oi.order_id
+       LEFT JOIN products p ON p.id = oi.product_id
+      WHERE REPLACE(REPLACE(o.customer_phone,' ',''),'+','') LIKE ?
+      GROUP BY oi.product_id, p.name
+     HAVING buys >= 2 AND spanDays > 0
+      LIMIT 50`, [`%${phone}`]
+  );
+  let best: { name: string; daysLeft: number; ratio: number } | null = null;
+  for (const r of rows as any[]) {
+    if (!r.name) continue;
+    const buys = Number(r.buys), span = Number(r.spanDays), since = Number(r.daysSinceLast);
+    const avgInterval = span / (buys - 1);
+    if (!(avgInterval > 0)) continue;
+    const ratio = since / avgInterval;            // ≥1 = ya debería haber recomprado
+    if (ratio < 0.7) continue;                     // aún tiene producto
+    const daysLeft = Math.max(0, Math.round(avgInterval - since));
+    if (!best || ratio > best.ratio) best = { name: r.name, daysLeft, ratio };
+  }
+  if (!best) return null;
+  const body = best.daysLeft <= 0
+    ? `Según tu ritmo, ya se te debió acabar. ¿Reabastecer?`
+    : `Probablemente te quede${best.daysLeft === 1 ? '' : 'n'} ~${best.daysLeft} día${best.daysLeft === 1 ? '' : 's'}. Ve sobre seguro.`;
+  return {
+    id: 'predictive-reorder', kind: 'predictive', priority: 50, emoji: '🛒',
+    title: `Reabastece tu ${best.name}`, body,
+    action: { type: 'tab', target: 'explore', label: 'Comprar' },
+  };
 }
 
 class AdaptiveService {
@@ -82,7 +125,11 @@ class AdaptiveService {
         action: { type: 'tab', target: 'vault' } });
     }
 
-    // 5) Membresía.
+    // 5) Predictive commerce (recompra de consumible).
+    const predictive = await safe(() => predictiveNudge(userId), null as Nudge | null);
+    if (predictive) nudges.push(predictive);
+
+    // 6) Membresía.
     const isLegend = tier && !tier.isExpired && tier.tier === 'legend';
     if (!isLegend) {
       nudges.push({ id: 'membership', kind: 'membership', priority: 30, emoji: '👑',

@@ -1945,7 +1945,7 @@ class ApiService {
     return this.request<any>('/chatbot/superadmin/integrations')
   }
 
-  async revealIntegrationKey(provider: 'gemini' | 'openai' | 'groq') {
+  async revealIntegrationKey(provider: 'gemini' | 'openai' | 'groq' | 'opencode_go') {
     return this.request<{ key: string }>(`/chatbot/superadmin/integrations/reveal/${provider}`)
   }
 
@@ -1955,6 +1955,8 @@ class ApiService {
     geminiApiKey?: string;
     openaiApiKey?: string;
     groqApiKey?: string;
+    opencodeGoApiKey?: string;
+    opencodeGoModel?: string;
     defaultAiProvider?: string;
     openaiBaseUrl?: string;
     openaiModel?: string;

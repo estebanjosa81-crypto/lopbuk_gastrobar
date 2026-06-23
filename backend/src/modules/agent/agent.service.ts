@@ -51,12 +51,14 @@ export async function getAIKeys(): Promise<{
   geminiKey: string;
   openaiKey: string;
   groqKey: string;
-  defaultProvider: 'gemini' | 'openai' | 'groq';
+  opencodeGoKey: string;
+  opencodeGoModel: string;
+  defaultProvider: 'gemini' | 'openai' | 'groq' | 'opencode_go';
   openaiBaseUrl: string;
   openaiModel: string;
 }> {
   const [rows] = await pool.query(
-    "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('ai_gemini_key','ai_openai_key','ai_groq_key','ai_default_provider','ai_openai_base_url','ai_openai_model')"
+    "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('ai_gemini_key','ai_openai_key','ai_groq_key','ai_opencode_go_key','ai_opencode_go_model','ai_default_provider','ai_openai_base_url','ai_openai_model')"
   ) as any;
 
   const settings: Record<string, string> = {};
@@ -68,21 +70,30 @@ export async function getAIKeys(): Promise<{
   const geminiKey = settings['ai_gemini_key'] || process.env.GEMINI_API_KEY || '';
   const openaiKey = settings['ai_openai_key'] || process.env.OPENAI_API_KEY || '';
   const groqKey = settings['ai_groq_key'] || process.env.GROQ_API_KEY || '';
+  const opencodeGoKey = settings['ai_opencode_go_key'] || process.env.OPENCODE_GO_API_KEY || '';
 
-  const rawProvider = (settings['ai_default_provider'] || process.env.AI_DEFAULT_PROVIDER || 'openai').trim().toLowerCase();
-  let defaultProvider: 'gemini' | 'openai' | 'groq' = ['gemini', 'openai', 'groq'].includes(rawProvider) ? rawProvider as any : 'openai';
+  const rawProvider = (settings['ai_default_provider'] || process.env.AI_DEFAULT_PROVIDER || 'opencode_go').trim().toLowerCase();
+  const validProviders = ['gemini', 'openai', 'groq', 'opencode_go'];
+  let defaultProvider: 'gemini' | 'openai' | 'groq' | 'opencode_go' = validProviders.includes(rawProvider) ? rawProvider as any : 'opencode_go';
 
   // "Solo pegar la clave": si el proveedor elegido NO tiene clave configurada,
-  // usa automáticamente el primero que sí la tenga (Groq → Gemini → OpenAI/OpenCode).
-  const hasKey: Record<'gemini' | 'openai' | 'groq', boolean> = { gemini: !!geminiKey, openai: !!openaiKey, groq: !!groqKey };
+  // usa automáticamente el primero que sí la tenga (OpenCode Go → Groq → Gemini → OpenAI/OpenCode).
+  const hasKey: Record<string, boolean> = {
+    opencode_go: !!opencodeGoKey,
+    groq: !!groqKey,
+    gemini: !!geminiKey,
+    openai: !!openaiKey,
+  };
   if (!hasKey[defaultProvider]) {
-    defaultProvider = (['groq', 'gemini', 'openai'] as const).find(p => hasKey[p]) || defaultProvider;
+    defaultProvider = (['opencode_go', 'groq', 'gemini', 'openai'] as const).find(p => hasKey[p]) as any || defaultProvider;
   }
 
   return {
     geminiKey,
     openaiKey,
     groqKey,
+    opencodeGoKey,
+    opencodeGoModel: settings['ai_opencode_go_model'] || process.env.OPENCODE_GO_MODEL || 'opencode-go/deepseek-v4-flash',
     defaultProvider,
     // Por defecto usamos OpenCode Zen (plan del cliente): así basta con pegar la key sk- de OpenCode.
     // Si alguien quiere OpenAI oficial u otro compatible, pone su Base URL/modelo en el panel.
@@ -97,6 +108,7 @@ export async function getAIKey(): Promise<string> {
   switch (keys.defaultProvider) {
     case 'gemini': return keys.geminiKey;
     case 'groq':   return keys.groqKey;
+    case 'opencode_go': return keys.opencodeGoKey;
     default:       return keys.openaiKey;
   }
 }
@@ -590,8 +602,8 @@ export async function processAgentMessage(
   const systemPrompt        = buildEnrichedSystemPrompt(config, dynamicCtx, matchedProducts);
   const conversationMessages = [...historyMessages, { role: 'user', content: message }];
 
-  const { geminiKey, openaiKey, groqKey, defaultProvider, openaiBaseUrl, openaiModel } = await getAIKeys();
-  const apiKey = defaultProvider === 'gemini' ? geminiKey : defaultProvider === 'groq' ? groqKey : openaiKey;
+  const { geminiKey, openaiKey, groqKey, opencodeGoKey, opencodeGoModel, defaultProvider, openaiBaseUrl, openaiModel } = await getAIKeys();
+  const apiKey = defaultProvider === 'gemini' ? geminiKey : defaultProvider === 'groq' ? groqKey : defaultProvider === 'opencode_go' ? opencodeGoKey : openaiKey;
   if (!apiKey) throw new Error('Servicio de IA no configurado');
 
   let rawReply: string;
@@ -604,6 +616,8 @@ export async function processAgentMessage(
     rawReply = await callGeminiWithTools(geminiKey, systemPrompt, conversationMessages, tools, tenantId, sessionId);
   } else if (defaultProvider === 'groq') {
     rawReply = await callGroq(groqKey, systemPrompt, conversationMessages);
+  } else if (defaultProvider === 'opencode_go') {
+    rawReply = await callOpenAI(opencodeGoKey, systemPrompt, conversationMessages, 'https://opencode.ai/zen/go/v1', opencodeGoModel);
   } else {
     rawReply = await callOpenAI(openaiKey, systemPrompt, conversationMessages, openaiBaseUrl, openaiModel);
   }

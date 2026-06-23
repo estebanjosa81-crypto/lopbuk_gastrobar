@@ -120,12 +120,26 @@ function actionLabel(tool: string, args: any): string {
 }
 
 // ─────────── LLM OpenAI-compatible (OpenAI / Groq) ───────────
-type Keys = { openaiKey: string; groqKey: string; defaultProvider: string; openaiBaseUrl: string; openaiModel: string; geminiKey: string };
+type Keys = { openaiKey: string; groqKey: string; opencodeGoKey: string; opencodeGoModel: string; defaultProvider: string; openaiBaseUrl: string; openaiModel: string; geminiKey: string };
 async function llmCall(messages: any[], keys: Keys) {
+  const useOpenCodeGo = keys.defaultProvider === 'opencode_go';
   const useGroq = keys.defaultProvider === 'groq' || (!keys.openaiKey && !!keys.groqKey);
-  const url = useGroq ? 'https://api.groq.com/openai/v1/chat/completions' : (keys.openaiBaseUrl + '/chat/completions');
-  const model = useGroq ? (process.env.GROQ_MODEL || 'llama-3.3-70b-versatile') : keys.openaiModel;
-  const apiKey = useGroq ? keys.groqKey : keys.openaiKey;
+  let url: string;
+  let model: string;
+  let apiKey: string;
+  if (useOpenCodeGo) {
+    url = 'https://opencode.ai/zen/go/v1/chat/completions';
+    model = keys.opencodeGoModel;
+    apiKey = keys.opencodeGoKey;
+  } else if (useGroq) {
+    url = 'https://api.groq.com/openai/v1/chat/completions';
+    model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    apiKey = keys.groqKey;
+  } else {
+    url = keys.openaiBaseUrl + '/chat/completions';
+    model = keys.openaiModel;
+    apiKey = keys.openaiKey;
+  }
   if (!apiKey) throw new Error('NO_OPENAI_COMPAT');
   const r = await fetch(url, {
     method: 'POST',
@@ -224,7 +238,7 @@ router.post('/restbar', authenticate, authorize(...ROLES), async (req: AuthReque
     }
     return ok(res, { reply: 'Necesito que me lo digas de otra forma 🙂', pendingAction: null });
   } catch (e: any) {
-    if (e?.message === 'NO_OPENAI_COMPAT') return bad(res, 'No hay una clave OpenAI/Groq configurada para el modo Chat Daimuz.', 400);
+    if (e?.message === 'NO_OPENAI_COMPAT') return bad(res, 'No hay una clave OpenAI/OpenCode Go/Groq configurada para el modo Chat Daimuz.', 400);
     bad(res, e?.message || 'Error del asistente', 500);
   }
 });

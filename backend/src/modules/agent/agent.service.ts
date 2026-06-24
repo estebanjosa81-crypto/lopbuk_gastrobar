@@ -430,6 +430,8 @@ export function buildEnrichedSystemPrompt(
     `Avanza paso a paso: una cosa a la vez.\n\n` +
     `## REGLAS\n` +
     `NUNCA inventes información ni precios; usa solo lo que está en tu contexto.\n` +
+    `Habla SIEMPRE en lenguaje natural y conversacional. Haz UNA sola pregunta por mensaje (nunca dos o tres juntas).\n` +
+    `JAMÁS escribas llamados de herramientas como texto: nada de etiquetas tipo <function...>, <tool_call>, ni JSON de pedidos en el mensaje. El sistema ejecuta las herramientas por su cuenta. Si te falta un dato para registrar un pedido (nombre, teléfono, etc.), pídelo con naturalidad, de a uno.\n` +
     `CRÍTICO: NUNCA digas que un producto NO existe o no está disponible a menos que ` +
     `aparezca explícitamente en "PRODUCTOS QUE COINCIDEN CON LA CONSULTA" con stock 0. ` +
     `Si el cliente pide algo que no ves en tu contexto, dile que lo verificas y que puede confirmar con el negocio, ` +
@@ -656,6 +658,14 @@ export async function processAgentMessage(
   // negocio (reservas/leads/pedidos). Antes solo Gemini ejecutaba herramientas; ahora el
   // bot registra pedidos con la IA configurada (OpenCode Go, etc.), con respaldo y
   // telemetría centralizados. Import dinámico para evitar ciclo de módulos.
+  // Sugerencias de producto: solo coincidencias reales con la consulta (sin relleno al azar)
+  // y excluyendo lo que el cliente ya está pidiendo (no repetir su tarjeta). Se calcula
+  // ANTES del LLM para poder devolverlas incluso si la IA falla (rate limit, etc.).
+  const exclude = new Set((excludeProductIds || []).map(String));
+  const suggestedProducts: ProductMatch[] = matchedProducts
+    .filter(p => !exclude.has(String(p.id)))
+    .slice(0, 3);
+
   const { agentLoop } = await import('../ai/orchestrator.service');
   const toolDecls = [
     ...(dynamicCtx.reservationsEnabled ? RESERVATION_TOOL_DECLARATIONS : []),
@@ -688,19 +698,33 @@ export async function processAgentMessage(
     });
     rawReply = result.reply;
   } catch (e: any) {
-    if (String(e?.message || '') === 'NO_AI_KEY') throw new Error('Servicio de IA no configurado');
-    throw e;
+    const msg = String(e?.message || '');
+    if (msg === 'NO_AI_KEY') throw new Error('Servicio de IA no configurado');
+    // Errores de IA (rate limit del proveedor, caída temporal): respuesta amable, NUNCA 500.
+    // El front muestra el texto y conserva las tarjetas de producto que ya encontramos.
+    if (msg.includes('429') || /rate.?limit|tokens per minute|\bTPM\b|quota/i.test(msg)) {
+      return { reply: 'Estoy recibiendo muchas consultas ahora mismo 🙏 Dame unos segundos y vuelve a escribirme.', suggestedProducts };
+    }
+    console.warn('[chatbot] Error de IA:', msg.slice(0, 200));
+    return { reply: 'Tuve un problemita para responder. Intenta de nuevo en un momento. 🙂', suggestedProducts };
   }
 
-  const reply = rawReply.replace(/\[COMPRAR:[^\]]+\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
-
-  // Solo mostramos tarjetas de productos que el cliente realmente pidió (coincidencias
-  // con su consulta). NO hay relleno con destacados: nunca ofrecemos productos al azar.
-  // Y excluimos los que el cliente ya está pidiendo (no repetir su tarjeta).
-  const exclude = new Set((excludeProductIds || []).map(String));
-  const suggestedProducts: ProductMatch[] = matchedProducts
-    .filter(p => !exclude.has(String(p.id)))
-    .slice(0, 3);
-
-  return { reply, suggestedProducts };
+  // Limpieza: algunos modelos (cuando el tool-calling nativo no engancha) escriben el
+  // llamado de la herramienta COMO TEXTO (<function=...>{...}</function>, <tool_call>…,
+  // JSON suelto). Eso NUNCA debe verse en el chat → se elimina.
+  let cleaned = rawReply
+    .replace(/<function[^>]*>[\s\S]*?<\/function>/gi, '')   // <function=...>{...}</function> completo
+    .replace(/<function[\s\S]*$/i, '')                       // etiqueta sin cerrar: corta de ahí al final (con su JSON)
+    .replace(/<\/?function[^>]*>/gi, '')                     // etiquetas <function ...> sueltas
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')       // <tool_call>{...}</tool_call> completo
+    .replace(/<\/?tool_call[^>]*>/gi, '')                    // etiquetas <tool_call> sueltas
+    .replace(/<\|[^>]*\|>/g, '')                             // tokens especiales tipo <|...|>
+    .replace(/\[COMPRAR:[^\]]+\]/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  // Si tras limpiar no quedó nada útil (la respuesta era solo el llamado), damos un texto amable.
+  if (!cleaned || cleaned.length < 2) {
+    cleaned = '¿Te ayudo a completar tu pedido? Cuéntame qué deseas. 🙂';
+  }
+  return { reply: cleaned, suggestedProducts };
 }

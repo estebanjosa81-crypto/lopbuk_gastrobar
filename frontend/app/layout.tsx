@@ -25,8 +25,8 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://daimuz.alexsters.w
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: 'DAIMUZ - !Bienvenido al epicentro digital de colombia!',
-  description: 'Sistema completo de gestión de inventario para tiendas',
+  title: 'DAIMUZ — Tu ecosistema digital con IA',
+  description: 'Ingresa a DAIMUZ: compra en tus comercios favoritos, haz pedidos y entra a tu OS. ¿Tienes un negocio? Véndelo y gestiónalo con un asistente de IA 24/7.',
   generator: 'v0.app',
   manifest: '/manifest.json',
   applicationName: 'DAIMUZ',
@@ -36,8 +36,8 @@ export const metadata: Metadata = {
     apple: BRAND_ICON,
   },
   openGraph: {
-    title: 'DAIMUZ — Epicentro digital de Colombia',
-    description: 'Plataforma de comercios, catálogo y gestión.',
+    title: 'DAIMUZ — Bienvenido a tu ecosistema digital',
+    description: 'Entra al OS de DAIMUZ: descubre comercios, compra y haz pedidos. Y para negocios, un asistente de IA que atiende, vende y gestiona 24/7.',
     type: 'website',
     url: SITE_URL,
     siteName: 'DAIMUZ',
@@ -45,8 +45,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary',
-    title: 'DAIMUZ',
-    description: 'Plataforma de comercios, catálogo y gestión.',
+    title: 'DAIMUZ — Tu ecosistema digital con IA',
+    description: 'Entra a tu OS: compra, pide y vive DAIMUZ. Y si tienes negocio, vende y gestiona con IA 24/7.',
     images: [BRAND_ICON],
   },
 }

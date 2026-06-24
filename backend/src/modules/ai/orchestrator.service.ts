@@ -177,7 +177,9 @@ function providerChain(keys: any): AiProvider[] {
   const has: Record<AiProvider, boolean> = {
     opencode_go: !!keys.opencodeGoKey, groq: !!keys.groqKey, gemini: !!keys.geminiKey, openai: !!keys.openaiKey,
   };
-  const rest: AiProvider[] = ['opencode_go', 'groq', 'gemini', 'openai'];
+  // Groq va de ÚLTIMO recurso: su free tier (12k TPM) se satura rápido. OpenCode Go
+  // (plan con suscripción, alta capacidad) y los demás se prefieren antes que Groq.
+  const rest: AiProvider[] = ['opencode_go', 'gemini', 'openai', 'groq'];
   const ordered = [keys.defaultProvider, ...rest.filter(p => p !== keys.defaultProvider)] as AiProvider[];
   return ordered.filter(p => has[p]);
 }
@@ -516,6 +518,9 @@ export async function agentLoop(req: AgentRequest): Promise<AgentResult> {
       return { reply: res.text, rounds: res.rounds, usedProvider: p };
     } catch (e) {
       lastErr = e;
+      // Diagnóstico: registra POR QUÉ falló cada proveedor (clave para ver si Go
+      // rechaza el function-calling y por eso cae a Groq). Truncado para no inundar.
+      console.warn(`[ai] agente: proveedor "${p}" (${model}) falló → ${String((e as any)?.message || e).slice(0, 220)}`);
       void logUsage(p, model, 'agent', ZERO_USAGE, req.tenantId, false);
       if (flag.executed) break; // ya hubo efectos: no reintentar en otro proveedor
     }

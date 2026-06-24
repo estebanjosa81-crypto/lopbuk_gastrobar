@@ -37,20 +37,30 @@ function leagueFromWeekly(weeklyXp: number) {
 }
 
 class GamificationService {
-  /** Suma XP por una acción. Defensivo: nunca lanza al flujo origen. */
+  /** Suma XP por una acción. Defensivo: nunca lanza al flujo origen. Notifica al subir de nivel. */
   async awardXp(userId: string, reason: string, amountOverride?: number): Promise<void> {
     const amount = amountOverride ?? XP_REWARDS[reason];
     if (!userId || !amount || amount <= 0) return;
     try {
+      const [before] = await db.execute<RowDataPacket[]>('SELECT COALESCE(SUM(amount),0) AS xp FROM consumer_xp_log WHERE user_id = ?', [userId]);
+      const prevXp = Number((before[0] as any)?.xp) || 0;
       await db.execute('INSERT INTO consumer_xp_log (id, user_id, amount, reason) VALUES (?, ?, ?, ?)', [uuidv4(), userId, amount, reason]);
+      const prevLevel = levelFromXp(prevXp).level;
+      const newLevel = levelFromXp(prevXp + amount).level;
+      if (newLevel > prevLevel) {
+        try { const { pushService } = await import('../push/push.service'); await pushService.sendToUser(userId, { title: `¡Nivel ${newLevel}! ⚡`, body: 'Subiste de nivel. Sigue así.', url: '/', tag: 'levelup' }); } catch { /* no bloquear */ }
+      }
     } catch { /* tabla aún no migrada: ignorar */ }
   }
 
   async getXpProfile(userId: string) {
-    const [tot] = await db.execute<RowDataPacket[]>('SELECT COALESCE(SUM(amount),0) AS xp FROM consumer_xp_log WHERE user_id = ?', [userId]);
-    const [wk] = await db.execute<RowDataPacket[]>("SELECT COALESCE(SUM(amount),0) AS xp FROM consumer_xp_log WHERE user_id = ? AND created_at >= (NOW() - INTERVAL 7 DAY)", [userId]);
-    const totalXp = Number((tot[0] as any)?.xp) || 0;
-    const weeklyXp = Number((wk[0] as any)?.xp) || 0;
+    let totalXp = 0, weeklyXp = 0;
+    try {
+      const [tot] = await db.execute<RowDataPacket[]>('SELECT COALESCE(SUM(amount),0) AS xp FROM consumer_xp_log WHERE user_id = ?', [userId]);
+      const [wk] = await db.execute<RowDataPacket[]>("SELECT COALESCE(SUM(amount),0) AS xp FROM consumer_xp_log WHERE user_id = ? AND created_at >= (NOW() - INTERVAL 7 DAY)", [userId]);
+      totalXp = Number((tot[0] as any)?.xp) || 0;
+      weeklyXp = Number((wk[0] as any)?.xp) || 0;
+    } catch (e) { console.warn('[gamification] getXpProfile:', (e as any)?.message); }
     const lv = levelFromXp(totalXp);
     return {
       totalXp, weeklyXp,
@@ -63,13 +73,17 @@ class GamificationService {
   /** Liga semanal: top usuarios por XP de los últimos 7 días + mi posición. */
   async getLeagueBoard(userId: string, limit = 20) {
     const lim = Math.min(100, Math.max(1, Math.floor(limit) || 20));
-    const [rows] = await db.execute<RowDataPacket[]>(
-      `SELECT x.user_id, u.name, SUM(x.amount) AS xp
-         FROM consumer_xp_log x LEFT JOIN users u ON u.id = x.user_id
-        WHERE x.created_at >= (NOW() - INTERVAL 7 DAY)
-        GROUP BY x.user_id, u.name
-        ORDER BY xp DESC LIMIT 200`
-    );
+    let rows: any[] = [];
+    try {
+      const [r] = await db.execute<RowDataPacket[]>(
+        `SELECT x.user_id, u.name, SUM(x.amount) AS xp
+           FROM consumer_xp_log x LEFT JOIN users u ON u.id = x.user_id
+          WHERE x.created_at >= (NOW() - INTERVAL 7 DAY)
+          GROUP BY x.user_id, u.name
+          ORDER BY xp DESC LIMIT 200`
+      );
+      rows = r as any[];
+    } catch (e) { console.warn('[gamification] getLeagueBoard:', (e as any)?.message); return { top: [], me: null, total: 0 }; }
     const ranked = (rows as any[]).map((r, i) => ({
       rank: i + 1, id: r.user_id, name: (r.name || 'Atleta').split(' ')[0],
       xp: Number(r.xp) || 0, league: leagueFromWeekly(Number(r.xp) || 0).label, isMe: r.user_id === userId,

@@ -1,10 +1,12 @@
 'use client'
 
-import { Bot, Check, Eye, EyeOff, ImageIcon, RefreshCw, Rocket, Save, Sparkles, Brain, Cpu } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Bot, Check, Eye, EyeOff, ImageIcon, RefreshCw, Rocket, Save, Sparkles, Brain, Cpu, Gauge } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { api } from '@/lib/api'
 import { useIntegrations } from '../hooks/useIntegrations'
 
 const PROVIDERS = [
@@ -13,6 +15,88 @@ const PROVIDERS = [
   { value: 'gemini', label: 'Gemini', icon: Sparkles },
   { value: 'groq', label: 'Groq', icon: Cpu },
 ] as const
+
+// Visión: solo proveedores multimodales (OpenCode Go no ve imágenes).
+const VISION_PROVIDERS = [
+  { value: 'gemini', label: 'Gemini', icon: Sparkles },
+  { value: 'openai', label: 'OpenAI', icon: Brain },
+  { value: 'groq', label: 'Groq', icon: Cpu },
+] as const
+
+const usd = (n: number) => `$${(Number(n) || 0).toFixed(2)}`
+
+// Consumo de IA (IA6): gasto estimado de OpenCode Go en ventanas móviles + desglose.
+function AiUsageCard() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    const r = await api.getSuperadminAiUsage()
+    if (r.success) setData(r.data)
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [])
+
+  const win = (label: string, spend: number, limit: number) => {
+    const pct = limit > 0 ? Math.min(100, (spend / limit) * 100) : 0
+    const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-green-500'
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground">{label}</span>
+          <span className="font-mono">{usd(spend)} <span className="text-muted-foreground">/ {usd(limit)}</span></span>
+        </div>
+        <div className="h-2 rounded-full bg-secondary overflow-hidden">
+          <div className={`h-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Card className="border-border bg-card">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Gauge className="h-5 w-5 text-muted-foreground" />
+            Consumo de IA (OpenCode Go)
+          </CardTitle>
+          <CardDescription>
+            Gasto estimado por ventana. Al llegar al 80% el sistema degrada automáticamente las tareas a modelo barato; al 100% cae a otro proveedor.
+          </CardDescription>
+        </div>
+        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!data ? (
+          <p className="text-sm text-muted-foreground text-center py-4">{loading ? 'Cargando…' : 'Sin datos de consumo todavía'}</p>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {win('Últimas 5 horas', data.spend5h, data.limit5h)}
+              {win('Últimos 7 días', data.spendWeek, data.limitWeek)}
+              {win('Últimos 30 días', data.spendMonth, data.limitMonth)}
+            </div>
+            <p className="text-[11px] text-muted-foreground">{data.calls30d || 0} llamadas en 30 días. Costos estimados con tarifas aproximadas.</p>
+            {Array.isArray(data.breakdown) && data.breakdown.length > 0 && (
+              <div className="border-t border-border pt-3 space-y-1.5">
+                {data.breakdown.slice(0, 8).map((b: any, i: number) => (
+                  <div key={i} className="flex items-center justify-between text-xs">
+                    <span className="font-mono truncate mr-2">{b.provider}<span className="text-muted-foreground"> · {b.model || '—'}</span></span>
+                    <span className="flex-shrink-0 text-muted-foreground">{b.calls} · {(b.tokens / 1000).toFixed(0)}k tok · <span className="text-foreground font-medium">{usd(b.cost)}</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
 
 export function IntegrationsTab() {
   const {
@@ -277,6 +361,34 @@ export function IntegrationsTab() {
                 </datalist>
                 <p className="text-[11px] text-muted-foreground">Deja el modelo por defecto o elige otro del plan Go. El endpoint se configura automáticamente.</p>
               </div>
+
+              {/* Tiering (IA5): main vs small para optimizar consumo */}
+              <div className="border-t border-border pt-3 space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  <strong>Tiers de consumo (opcional).</strong> El sistema usa <b>main</b> para chat/agente complejo y <b>small</b> para
+                  tareas livianas (respuestas cortas, clasificación). Déjalos vacíos para usar el modelo de arriba en todo.
+                </p>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Modelo main (chat/agente)</Label>
+                    <Input list="dz-go-models-main" value={integrations.textModelMain} onChange={e => set('textModelMain', e.target.value)} placeholder="opencode-go/glm-5.2" className="font-mono text-sm" />
+                    <datalist id="dz-go-models-main">
+                      <option value="opencode-go/glm-5.2" />
+                      <option value="opencode-go/kimi-k2.7" />
+                      <option value="opencode-go/deepseek-v4-flash" />
+                    </datalist>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Modelo small (tareas baratas)</Label>
+                    <Input list="dz-go-models-small" value={integrations.textModelSmall} onChange={e => set('textModelSmall', e.target.value)} placeholder="opencode-go/deepseek-v4-flash" className="font-mono text-sm" />
+                    <datalist id="dz-go-models-small">
+                      <option value="opencode-go/deepseek-v4-flash" />
+                      <option value="opencode-go/deepseek-v4-flash-free" />
+                      <option value="opencode-go/mimo-v2.5" />
+                    </datalist>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -293,6 +405,77 @@ export function IntegrationsTab() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Visión (IA3): proveedor que convierte imagen→texto. Nunca es OpenCode Go. */}
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+            Visión — Imagen a texto
+          </CardTitle>
+          <CardDescription>
+            Los modelos de OpenCode Go no ven imágenes. Aquí eliges quién <strong>transcribe las imágenes a texto</strong> (una
+            sola vez, con caché por imagen); ese texto se lo pasa luego al modelo de texto barato. Usa la API Key del proveedor de arriba.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Proveedor de visión</Label>
+            <div className="flex gap-2">
+              {VISION_PROVIDERS.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => set('visionProvider', value)}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                    integrations.visionProvider === value
+                      ? 'border-primary bg-primary/10 text-primary shadow-sm'
+                      : 'border-border bg-card text-muted-foreground hover:border-primary/40'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Modelo (opcional · por defecto el recomendado del proveedor)</Label>
+            <Input
+              list="dz-vision-models"
+              value={integrations.visionModel}
+              onChange={e => set('visionModel', e.target.value)}
+              placeholder={integrations.visionProvider === 'gemini' ? 'gemini-flash-latest' : integrations.visionProvider === 'openai' ? 'gpt-4o' : 'meta-llama/llama-4-scout-17b-16e-instruct'}
+              className="font-mono text-sm"
+            />
+            <datalist id="dz-vision-models">
+              <option value="gemini-flash-latest" />
+              <option value="gemini-2.0-flash" />
+              <option value="gpt-4o" />
+              <option value="gpt-4o-mini" />
+              <option value="meta-llama/llama-4-scout-17b-16e-instruct" />
+            </datalist>
+          </div>
+          <div className="flex items-center gap-2 p-2.5 rounded-lg bg-secondary/40 text-sm">
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              (integrations.visionProvider === 'gemini' && integrations.geminiApiKey)
+              || (integrations.visionProvider === 'openai' && integrations.openaiApiKey)
+              || (integrations.visionProvider === 'groq' && integrations.groqApiKey)
+                ? 'bg-green-500' : 'bg-amber-400'
+            }`} />
+            <span className="text-muted-foreground text-xs">
+              {(integrations.visionProvider === 'gemini' && integrations.geminiApiKey)
+              || (integrations.visionProvider === 'openai' && integrations.openaiApiKey)
+              || (integrations.visionProvider === 'groq' && integrations.groqApiKey)
+                ? `Visión activa con ${integrations.visionProvider}`
+                : `Falta la API Key de ${integrations.visionProvider} arriba para que la visión funcione`}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Consumo de IA (IA6) */}
+      <AiUsageCard />
 
       <Button onClick={handleSaveIntegrations} disabled={isSavingIntegrations} className="gap-2">
         {isSavingIntegrations ? <RefreshCw className="h-4 w-4 animate-spin" /> : integrationsMsg?.type === 'ok' ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}

@@ -11,6 +11,7 @@ import { api } from '@/lib/api'
 import { useVaultUnlocks, refreshVaultUnlocks } from '../hooks/useVaultUnlocks'
 import AccessGate from '../AccessGate'
 import DropsSection from './DropsSection'
+import CoachSection from './CoachSection'
 import AchievementShelf from '../AchievementShelf'
 
 export const UNLOCK_META: Record<string, { label: string; emoji: string; desc: string }> = {
@@ -106,6 +107,20 @@ export default function VaultSection() {
       <div className="rounded-2xl border border-black/[0.06] bg-white p-4">
         <AchievementShelf />
       </div>
+
+      {/* Sala de coach (interfaz oculta tras el unlock `coach_room`) */}
+      <AccessGate
+        requires="coach_room"
+        teaserTitle="🥷 Sala de coach"
+        teaserText="Coaching privado de élite. Consigue su Vault Key para entrar."
+      >
+        <div>
+          <h3 className="text-sm font-bold text-neutral-800 mb-2 flex items-center gap-1.5">🥷 Sala de coach</h3>
+          <div className="rounded-2xl border border-black/[0.06] bg-white overflow-hidden">
+            <CoachSection />
+          </div>
+        </div>
+      </AccessGate>
 
       {/* Drops (V2): interfaz oculta tras el unlock `drops` */}
       <AccessGate

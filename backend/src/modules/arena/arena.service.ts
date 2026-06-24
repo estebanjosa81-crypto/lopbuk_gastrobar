@@ -18,19 +18,23 @@ class ArenaService {
   // ── Leaderboard global ─────────────────────────────────────────────────────
   async getLeaderboard(userId: string, limit = 20) {
     const lim = Math.min(100, Math.max(1, Math.floor(limit) || 20));
-    const [rows] = await db.execute<RowDataPacket[]>(
-      `SELECT u.id, u.name,
-              (SELECT COUNT(*) FROM consumer_streak_days s WHERE s.user_id = u.id AND s.day >= (CURDATE() - INTERVAL 30 DAY)) AS activeDays,
-              (SELECT COUNT(*) FROM consumer_achievements a WHERE a.user_id = u.id) AS achievements,
-              (SELECT COUNT(*) FROM drop_claims d WHERE d.user_id = u.id) AS drops
-         FROM users u
-        WHERE (
-          EXISTS (SELECT 1 FROM consumer_streak_days s WHERE s.user_id = u.id) OR
-          EXISTS (SELECT 1 FROM consumer_achievements a WHERE a.user_id = u.id) OR
-          EXISTS (SELECT 1 FROM drop_claims d WHERE d.user_id = u.id)
-        )
-        LIMIT 1000`
-    );
+    let rows: any[] = [];
+    try {
+      const [r] = await db.execute<RowDataPacket[]>(
+        `SELECT u.id, u.name,
+                (SELECT COUNT(*) FROM consumer_streak_days s WHERE s.user_id = u.id AND s.day >= (CURDATE() - INTERVAL 30 DAY)) AS activeDays,
+                (SELECT COUNT(*) FROM consumer_achievements a WHERE a.user_id = u.id) AS achievements,
+                (SELECT COUNT(*) FROM drop_claims d WHERE d.user_id = u.id) AS drops
+           FROM users u
+          WHERE (
+            EXISTS (SELECT 1 FROM consumer_streak_days s WHERE s.user_id = u.id) OR
+            EXISTS (SELECT 1 FROM consumer_achievements a WHERE a.user_id = u.id) OR
+            EXISTS (SELECT 1 FROM drop_claims d WHERE d.user_id = u.id)
+          )
+          LIMIT 1000`
+      );
+      rows = r as any[];
+    } catch (e) { console.warn('[arena] getLeaderboard:', (e as any)?.message); return { top: [], me: null, total: 0 }; }
     const ranked = (rows as any[])
       .map(r => ({
         id: r.id, name: firstName(r.name),
@@ -66,23 +70,32 @@ class ArenaService {
     return {
       id: c.id, title: c.title, description: c.description ?? null, metric: c.metric,
       goalValue: Number(c.goal_value) || 0, reward: c.reward ?? null, rewardUnlock: c.reward_unlock ?? null,
+      scope: c.scope || 'individual',
       startsAt: c.starts_at, endsAt: c.ends_at, status: c.status, settledAt: c.settled_at ?? null, createdAt: c.created_at,
     };
   }
 
   async listActive(userId: string) {
-    const [rows] = await db.execute<RowDataPacket[]>(
-      `SELECT * FROM seasonal_challenges WHERE status = 'active' AND ends_at > NOW() ORDER BY ends_at ASC LIMIT 30`
-    );
-    const out: any[] = [];
-    for (const c of rows as any[]) {
-      const [[p]]: any = await db.execute('SELECT id FROM challenge_participants WHERE challenge_id = ? AND user_id = ? LIMIT 1', [c.id, userId]);
-      const [[cnt]]: any = await db.execute('SELECT COUNT(*) AS n FROM challenge_participants WHERE challenge_id = ?', [c.id]);
-      const joined = !!p;
-      const progress = joined ? await this.userProgress(userId, c) : 0;
-      out.push({ ...this.mapChallenge(c), joined, progress, participants: Number(cnt?.n) || 0, now: new Date().toISOString() });
-    }
-    return out;
+    // Defensivo: si falta alguna tabla/columna (migración no aplicada en la BD),
+    // degradar a vacío en vez de 500. Cada paso aislado.
+    try {
+      const [rows] = await db.execute<RowDataPacket[]>(
+        `SELECT * FROM seasonal_challenges WHERE status = 'active' AND ends_at > NOW() ORDER BY ends_at ASC LIMIT 30`
+      );
+      const out: any[] = [];
+      for (const c of rows as any[]) {
+        let joined = false, participants = 0, progress = 0;
+        try {
+          const [pr] = await db.execute<RowDataPacket[]>('SELECT id FROM challenge_participants WHERE challenge_id = ? AND user_id = ? LIMIT 1', [c.id, userId]);
+          joined = !!pr[0];
+          const [cn] = await db.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM challenge_participants WHERE challenge_id = ?', [c.id]);
+          participants = Number((cn[0] as any)?.n) || 0;
+          if (joined) progress = await this.userProgress(userId, c).catch(() => 0);
+        } catch { /* participante/progreso no disponible */ }
+        out.push({ ...this.mapChallenge(c), joined, progress, participants, now: new Date().toISOString() });
+      }
+      return out;
+    } catch (e) { console.warn('[arena] listActive:', (e as any)?.message); return []; }
   }
 
   async join(userId: string, challengeId: string) {
@@ -100,6 +113,25 @@ class ArenaService {
     const [rows] = await db.execute<RowDataPacket[]>("SELECT * FROM seasonal_challenges WHERE id = ? LIMIT 1", [challengeId]);
     const c = rows[0] as any;
     if (!c) throw new AppError('Reto no encontrado', 404);
+    // Guild vs guild: suma el progreso de los miembros por guild.
+    if (c.scope === 'guild') {
+      const [parts] = await db.execute<RowDataPacket[]>(
+        `SELECT p.user_id, g.id AS guild_id, g.name AS guild_name, g.emoji
+           FROM challenge_participants p
+           JOIN guild_members gm ON gm.user_id = p.user_id
+           JOIN guilds g ON g.id = gm.guild_id
+          WHERE p.challenge_id = ? LIMIT 1000`, [challengeId]
+      );
+      const byGuild = new Map<string, { name: string; emoji: string; progress: number; members: number }>();
+      for (const p of parts as any[]) {
+        const prog = await this.userProgress(p.user_id, c);
+        const g = byGuild.get(p.guild_id) || { name: p.guild_name, emoji: p.emoji || '🛡️', progress: 0, members: 0 };
+        g.progress += prog; g.members += 1; byGuild.set(p.guild_id, g);
+      }
+      const board = Array.from(byGuild.values()).sort((a, b) => b.progress - a.progress).slice(0, lim).map((r, i) => ({ rank: i + 1, name: `${r.emoji} ${r.name}`, progress: r.progress, members: r.members }));
+      return { challenge: this.mapChallenge(c), scope: 'guild', board };
+    }
+
     const [parts] = await db.execute<RowDataPacket[]>(
       `SELECT p.user_id, u.name FROM challenge_participants p LEFT JOIN users u ON u.id = p.user_id WHERE p.challenge_id = ? LIMIT 500`, [challengeId]
     );
@@ -109,7 +141,7 @@ class ArenaService {
       scored.push({ name: firstName(p.name), progress });
     }
     return {
-      challenge: this.mapChallenge(c),
+      challenge: this.mapChallenge(c), scope: 'individual',
       board: scored.sort((a, b) => b.progress - a.progress).slice(0, lim).map((r, i) => ({ ...r, rank: i + 1 })),
     };
   }
@@ -125,11 +157,12 @@ class ArenaService {
     if (endsAt.getTime() <= startsAt.getTime()) throw new AppError('El fin debe ser después del inicio', 400);
     const goalValue = Math.max(1, Math.floor(Number(data?.goalValue) || 7));
     const rewardUnlock = data?.rewardUnlock ? String(data.rewardUnlock).trim() : null;
+    const scope = data?.scope === 'guild' ? 'guild' : 'individual';
     const id = uuidv4();
     await db.execute(
-      `INSERT INTO seasonal_challenges (id, title, description, metric, goal_value, reward, reward_unlock, starts_at, ends_at, status, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
-      [id, title, data?.description?.trim() || null, metric, goalValue, data?.reward?.trim() || null, rewardUnlock, startsAt, endsAt, createdBy || null]
+      `INSERT INTO seasonal_challenges (id, title, description, metric, goal_value, reward, reward_unlock, scope, starts_at, ends_at, status, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+      [id, title, data?.description?.trim() || null, metric, goalValue, data?.reward?.trim() || null, rewardUnlock, scope, startsAt, endsAt, createdBy || null]
     );
     const [rows] = await db.execute<RowDataPacket[]>('SELECT * FROM seasonal_challenges WHERE id = ? LIMIT 1', [id]);
     return this.mapChallenge(rows[0]);
@@ -175,6 +208,8 @@ class ArenaService {
         await achievementsService.award(p.user_id, 'challenge_champion', 'challenge');
         const { gamificationService } = await import('../gamification/gamification.service');
         await gamificationService.awardXp(p.user_id, 'challenge_won');
+        const { pushService } = await import('../push/push.service');
+        await pushService.sendToUser(p.user_id, { title: '¡Ganaste un reto! 🏆', body: `Completaste "${c.title}". Reclama tu recompensa.`, url: '/', tag: 'challenge' });
       } catch { /* no bloquear */ }
       await this.autoFeed(p.user_id, 'challenge', `🏆 completó el reto "${c.title}"`, { challengeId });
     }
@@ -229,9 +264,13 @@ class ArenaService {
 
   async listGuilds(userId: string, limit = 20) {
     const lim = Math.min(50, Math.max(1, Math.floor(limit) || 20));
-    const [rows] = await db.execute<RowDataPacket[]>('SELECT * FROM guilds ORDER BY members_count DESC LIMIT 200');
-    const [mine] = await db.execute<RowDataPacket[]>('SELECT guild_id FROM guild_members WHERE user_id = ? LIMIT 1', [userId]);
-    const myGuildId = (mine[0] as any)?.guild_id || null;
+    let rows: any[] = [], myGuildId: string | null = null;
+    try {
+      const [r] = await db.execute<RowDataPacket[]>('SELECT * FROM guilds ORDER BY members_count DESC LIMIT 200');
+      rows = r as any[];
+      const [mine] = await db.execute<RowDataPacket[]>('SELECT guild_id FROM guild_members WHERE user_id = ? LIMIT 1', [userId]);
+      myGuildId = (mine[0] as any)?.guild_id || null;
+    } catch (e) { console.warn('[arena] listGuilds:', (e as any)?.message); return { guilds: [], myGuildId: null }; }
     // score del guild = suma de scores de sus miembros (limitado a guilds con miembros)
     const out: any[] = [];
     for (const g of rows as any[]) {
@@ -245,10 +284,13 @@ class ArenaService {
   }
 
   async getMyGuild(userId: string) {
-    const [mine] = await db.execute<RowDataPacket[]>(
-      `SELECT g.* FROM guild_members gm JOIN guilds g ON g.id = gm.guild_id WHERE gm.user_id = ? LIMIT 1`, [userId]
-    );
-    const g = mine[0] as any;
+    let g: any = null;
+    try {
+      const [mine] = await db.execute<RowDataPacket[]>(
+        `SELECT g.* FROM guild_members gm JOIN guilds g ON g.id = gm.guild_id WHERE gm.user_id = ? LIMIT 1`, [userId]
+      );
+      g = mine[0] as any;
+    } catch (e) { console.warn('[arena] getMyGuild:', (e as any)?.message); return null; }
     if (!g) return null;
     const [mem] = await db.execute<RowDataPacket[]>(
       `SELECT m.user_id, u.name FROM guild_members m LEFT JOIN users u ON u.id = m.user_id WHERE m.guild_id = ? LIMIT 100`, [g.id]
@@ -280,12 +322,16 @@ class ArenaService {
 
   async listFeed(userId: string, limit = 30) {
     const lim = Math.min(80, Math.max(1, Math.floor(limit) || 30));
-    const [rows] = await db.execute<RowDataPacket[]>(
-      `SELECT f.id, f.user_id, f.kind, f.body, f.photo_url, f.likes, f.comments_count, f.created_at, u.name,
-              EXISTS(SELECT 1 FROM arena_feed_likes l WHERE l.feed_id = f.id AND l.user_id = ?) AS liked
-         FROM arena_feed f LEFT JOIN users u ON u.id = f.user_id
-        ORDER BY f.created_at DESC LIMIT ${lim}`, [userId]
-    );
+    let rows: any[] = [];
+    try {
+      const [r] = await db.execute<RowDataPacket[]>(
+        `SELECT f.id, f.user_id, f.kind, f.body, f.photo_url, f.likes, f.comments_count, f.created_at, u.name,
+                EXISTS(SELECT 1 FROM arena_feed_likes l WHERE l.feed_id = f.id AND l.user_id = ?) AS liked
+           FROM arena_feed f LEFT JOIN users u ON u.id = f.user_id
+          ORDER BY f.created_at DESC LIMIT ${lim}`, [userId]
+      );
+      rows = r as any[];
+    } catch (e) { console.warn('[arena] listFeed:', (e as any)?.message); return []; }
     return (rows as any[]).map(r => ({
       id: r.id, kind: r.kind, body: r.body, photoUrl: r.photo_url, likes: Number(r.likes) || 0,
       commentsCount: Number(r.comments_count) || 0,

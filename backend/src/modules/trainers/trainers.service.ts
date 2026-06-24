@@ -412,6 +412,12 @@ class TrainersService {
       `INSERT INTO coach_feed_entries (id, booking_id, author, kind, body, media_url) VALUES (?, ?, 'coach', ?, ?, ?)`,
       [id, bookingId, kind, data.body?.trim() || null, data.mediaUrl || null]
     );
+    // Push al cliente: tu coach te escribió.
+    try {
+      const [br] = await db.execute<RowDataPacket[]>('SELECT user_id FROM trainer_bookings WHERE id = ? LIMIT 1', [bookingId]);
+      const uid = (br[0] as any)?.user_id;
+      if (uid) { const { pushService } = await import('../push/push.service'); await pushService.sendToUser(uid, { title: 'Tu coach te escribió 🥋', body: data.body?.trim()?.slice(0, 80) || 'Tienes un nuevo mensaje en tu programa.', url: '/', tag: 'coach' }); }
+    } catch { /* no bloquear */ }
     return { id };
   }
 
@@ -603,6 +609,27 @@ class TrainersService {
       trainerBalanceCop: Number(r.trainerBalance) || 0, amountCop: Number(r.amount_cop) || 0,
       paymentMethod: r.payment_method, status: r.status, note: r.note, createdAt: r.created_at,
     }));
+  }
+
+  // ── Admin: gestión de coaches (alta/activación) ───────────────────────────
+  async adminListTrainers() {
+    const [rows] = await db.execute<RowDataPacket[]>(
+      `SELECT id, name, email, handle, status, rating_avg, sessions_count, balance_cop, created_at,
+              (SELECT COUNT(*) FROM trainer_offers o WHERE o.trainer_id = t.id AND o.is_active = 1) AS offersCount
+         FROM trainers t ORDER BY (status = 'pending') DESC, created_at DESC LIMIT 300`
+    );
+    return rows.map((r: any) => ({
+      id: r.id, name: r.name, email: r.email, handle: r.handle, status: r.status,
+      ratingAvg: Number(r.rating_avg) || 0, sessionsCount: Number(r.sessions_count) || 0,
+      balanceCop: Number(r.balance_cop) || 0, offersCount: Number(r.offersCount) || 0, createdAt: r.created_at,
+    }));
+  }
+
+  async adminSetTrainerStatus(id: string, status: 'active' | 'pending' | 'suspended') {
+    const valid = ['active', 'pending', 'suspended'].includes(status) ? status : 'pending';
+    const [r] = await db.execute('UPDATE trainers SET status = ? WHERE id = ?', [valid, id]);
+    if ((r as any).affectedRows === 0) throw new AppError('Coach no encontrado', 404);
+    return { id, status: valid };
   }
 
   async adminProcessWithdrawal(id: string, status: 'processing' | 'paid' | 'rejected', processedBy: string, note?: string) {

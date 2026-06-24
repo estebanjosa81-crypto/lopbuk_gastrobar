@@ -53,12 +53,18 @@ export async function getAIKeys(): Promise<{
   groqKey: string;
   opencodeGoKey: string;
   opencodeGoModel: string;
+  // Tiering (IA5): modelo "main" (chat/agente complejo) y "small" (tareas livianas/baratas).
+  opencodeGoModelMain: string;
+  opencodeGoModelSmall: string;
   defaultProvider: 'gemini' | 'openai' | 'groq' | 'opencode_go';
   openaiBaseUrl: string;
   openaiModel: string;
+  // Visión (IA3): proveedor + modelo para imagen→texto. NUNCA es un modelo de Go.
+  visionProvider: 'gemini' | 'openai' | 'groq';
+  visionModel: string;
 }> {
   const [rows] = await pool.query(
-    "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('ai_gemini_key','ai_openai_key','ai_groq_key','ai_opencode_go_key','ai_opencode_go_model','ai_default_provider','ai_openai_base_url','ai_openai_model')"
+    "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('ai_gemini_key','ai_openai_key','ai_groq_key','ai_opencode_go_key','ai_opencode_go_model','ai_text_model_main','ai_text_model_small','ai_default_provider','ai_openai_base_url','ai_openai_model','ai_vision_provider','ai_vision_model')"
   ) as any;
 
   const settings: Record<string, string> = {};
@@ -88,17 +94,32 @@ export async function getAIKeys(): Promise<{
     defaultProvider = (['opencode_go', 'groq', 'gemini', 'openai'] as const).find(p => hasKey[p]) as any || defaultProvider;
   }
 
+  // Visión: proveedor multimodal (Go NO ve imágenes). Si el guardado trajera 'opencode_go'
+  // o algo inválido, se cae a un proveedor de visión real (preferimos Gemini por costo).
+  const rawVision = (settings['ai_vision_provider'] || process.env.AI_VISION_PROVIDER || 'gemini').trim().toLowerCase();
+  const visionProvider: 'gemini' | 'openai' | 'groq' = (['gemini', 'openai', 'groq'].includes(rawVision) ? rawVision : 'gemini') as any;
+  const visionModel = settings['ai_vision_model'] || process.env.AI_VISION_MODEL || '';
+
+  const opencodeGoModel = settings['ai_opencode_go_model'] || process.env.OPENCODE_GO_MODEL || 'opencode-go/deepseek-v4-flash';
+  // main: por defecto el modelo Go configurado. small: el más barato (DeepSeek Flash).
+  const opencodeGoModelMain = settings['ai_text_model_main'] || process.env.OPENCODE_GO_MODEL_MAIN || opencodeGoModel;
+  const opencodeGoModelSmall = settings['ai_text_model_small'] || process.env.OPENCODE_GO_MODEL_SMALL || 'opencode-go/deepseek-v4-flash';
+
   return {
     geminiKey,
     openaiKey,
     groqKey,
     opencodeGoKey,
-    opencodeGoModel: settings['ai_opencode_go_model'] || process.env.OPENCODE_GO_MODEL || 'opencode-go/deepseek-v4-flash',
+    opencodeGoModel,
+    opencodeGoModelMain,
+    opencodeGoModelSmall,
     defaultProvider,
     // Por defecto usamos OpenCode Zen (plan del cliente): así basta con pegar la key sk- de OpenCode.
     // Si alguien quiere OpenAI oficial u otro compatible, pone su Base URL/modelo en el panel.
     openaiBaseUrl: (settings['ai_openai_base_url'] || process.env.OPENAI_BASE_URL || 'https://opencode.ai/zen/v1').replace(/\/+$/, ''),
     openaiModel: settings['ai_openai_model'] || process.env.OPENAI_MODEL || 'deepseek-v4-flash',
+    visionProvider,
+    visionModel,
   };
 }
 
@@ -602,24 +623,25 @@ export async function processAgentMessage(
   const systemPrompt        = buildEnrichedSystemPrompt(config, dynamicCtx, matchedProducts);
   const conversationMessages = [...historyMessages, { role: 'user', content: message }];
 
-  const { geminiKey, openaiKey, groqKey, opencodeGoKey, opencodeGoModel, defaultProvider, openaiBaseUrl, openaiModel } = await getAIKeys();
+  const { geminiKey, openaiKey, groqKey, opencodeGoKey, defaultProvider } = await getAIKeys();
   const apiKey = defaultProvider === 'gemini' ? geminiKey : defaultProvider === 'groq' ? groqKey : defaultProvider === 'opencode_go' ? opencodeGoKey : openaiKey;
   if (!apiKey) throw new Error('Servicio de IA no configurado');
 
   let rawReply: string;
   if (defaultProvider === 'gemini') {
+    // Gemini conserva su function-calling (reservas/leads/pedidos).
     const tools = [
       ...(dynamicCtx.reservationsEnabled ? RESERVATION_TOOL_DECLARATIONS : []),
       LEAD_TOOL_DECLARATION,
       ORDER_TOOL_DECLARATION,
     ];
     rawReply = await callGeminiWithTools(geminiKey, systemPrompt, conversationMessages, tools, tenantId, sessionId);
-  } else if (defaultProvider === 'groq') {
-    rawReply = await callGroq(groqKey, systemPrompt, conversationMessages);
-  } else if (defaultProvider === 'opencode_go') {
-    rawReply = await callOpenAI(opencodeGoKey, systemPrompt, conversationMessages, 'https://opencode.ai/zen/go/v1', opencodeGoModel);
   } else {
-    rawReply = await callOpenAI(openaiKey, systemPrompt, conversationMessages, openaiBaseUrl, openaiModel);
+    // Resto de proveedores (opencode_go / groq / openai): texto centralizado en el
+    // orchestrator con cadena de respaldo automática (IA4). El chat de tienda por estos
+    // proveedores no usa function-calling. Import dinámico para evitar ciclo de módulos.
+    const { textLLM } = await import('../ai/orchestrator.service');
+    rawReply = await textLLM({ system: systemPrompt, messages: conversationMessages, tier: 'main', tenantId });
   }
 
   const reply = rawReply.replace(/\[COMPRAR:[^\]]+\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();

@@ -347,7 +347,7 @@ router.get('/superadmin/integrations', authenticate, async (req: Request, res: R
     }
 
     const [rows] = await pool.query(
-      "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('cloudinary_cloud_name','cloudinary_upload_preset','ai_gemini_key','ai_openai_key','ai_groq_key','ai_opencode_go_key','ai_opencode_go_model','ai_default_provider','ai_openai_base_url','ai_openai_model')"
+      "SELECT setting_key, setting_value FROM platform_settings WHERE setting_key IN ('cloudinary_cloud_name','cloudinary_upload_preset','ai_gemini_key','ai_openai_key','ai_groq_key','ai_opencode_go_key','ai_opencode_go_model','ai_text_model_main','ai_text_model_small','ai_default_provider','ai_openai_base_url','ai_openai_model','ai_vision_provider','ai_vision_model')"
     ) as any;
 
     const settings: Record<string, string> = {};
@@ -378,14 +378,60 @@ router.get('/superadmin/integrations', authenticate, async (req: Request, res: R
         groqApiKeySet:          !!settings['ai_groq_key'],
         opencodeGoApiKeySet:    !!settings['ai_opencode_go_key'],
         opencodeGoModel:        settings['ai_opencode_go_model']        || 'opencode-go/deepseek-v4-flash',
+        textModelMain:          settings['ai_text_model_main']          || '',
+        textModelSmall:         settings['ai_text_model_small']         || '',
         defaultAiProvider:      settings['ai_default_provider']        || 'opencode_go',
         openaiBaseUrl:          settings['ai_openai_base_url']         || '',
         openaiModel:            settings['ai_openai_model']            || '',
+        visionProvider:         settings['ai_vision_provider']         || 'gemini',
+        visionModel:            settings['ai_vision_model']            || '',
       },
     });
   } catch (error) {
     console.error('Integrations GET error:', error);
     res.status(500).json({ success: false, error: 'Error al obtener integraciones' });
+  }
+});
+
+// =============================================
+// SUPERADMIN: telemetría de consumo de IA (IA6)
+// GET /api/chatbot/superadmin/ai-usage
+// =============================================
+router.get('/superadmin/ai-usage', authenticate, async (req: Request, res: Response) => {
+  try {
+    if ((req as any).user.role !== 'superadmin') {
+      res.status(403).json({ success: false, error: 'Solo superadmin' });
+      return;
+    }
+    const { getUsageStats } = await import('../ai/orchestrator.service');
+    const stats = await getUsageStats();
+
+    // Desglose por proveedor/modelo en los últimos 30 días.
+    let breakdown: any[] = [];
+    let calls30d = 0;
+    try {
+      const [rows] = await pool.query(
+        `SELECT provider, model,
+                COUNT(*) AS calls,
+                COALESCE(SUM(total_tokens),0) AS tokens,
+                COALESCE(SUM(est_cost),0) AS cost
+         FROM ai_usage_log
+         WHERE created_at >= NOW() - INTERVAL 30 DAY
+         GROUP BY provider, model
+         ORDER BY cost DESC
+         LIMIT 30`
+      ) as any;
+      breakdown = (rows as any[]).map(r => ({
+        provider: r.provider, model: r.model,
+        calls: Number(r.calls), tokens: Number(r.tokens), cost: Number(r.cost),
+      }));
+      calls30d = breakdown.reduce((s, r) => s + r.calls, 0);
+    } catch { /* tabla aún no migrada */ }
+
+    res.json({ success: true, data: { ...stats, calls30d, breakdown } });
+  } catch (error) {
+    console.error('AI usage GET error:', error);
+    res.status(500).json({ success: false, error: 'Error al obtener el consumo de IA' });
   }
 });
 
@@ -427,7 +473,7 @@ router.put('/superadmin/integrations', authenticate, async (req: Request, res: R
       return;
     }
 
-    const { cloudinaryCloudName, cloudinaryUploadPreset, geminiApiKey, openaiApiKey, groqApiKey, opencodeGoApiKey, opencodeGoModel, defaultAiProvider, openaiBaseUrl, openaiModel } = req.body;
+    const { cloudinaryCloudName, cloudinaryUploadPreset, geminiApiKey, openaiApiKey, groqApiKey, opencodeGoApiKey, opencodeGoModel, textModelMain, textModelSmall, defaultAiProvider, openaiBaseUrl, openaiModel, visionProvider, visionModel } = req.body;
 
     const updates: [string, string][] = [
       ['cloudinary_cloud_name',    cloudinaryCloudName    || ''],
@@ -437,6 +483,15 @@ router.put('/superadmin/integrations', authenticate, async (req: Request, res: R
     if (openaiBaseUrl !== undefined) updates.push(['ai_openai_base_url', String(openaiBaseUrl || '')]);
     if (openaiModel !== undefined)   updates.push(['ai_openai_model',    String(openaiModel || '')]);
     if (opencodeGoModel !== undefined) updates.push(['ai_opencode_go_model', String(opencodeGoModel || 'opencode-go/deepseek-v4-flash')]);
+    // Tiering (IA5): modelos main/small de texto. Vacío = usa el default.
+    if (textModelMain !== undefined)  updates.push(['ai_text_model_main',  String(textModelMain  || '')]);
+    if (textModelSmall !== undefined) updates.push(['ai_text_model_small', String(textModelSmall || '')]);
+    // Visión (IA3): el proveedor de visión nunca es Go; si llegara algo inválido se cae a gemini.
+    if (visionProvider !== undefined) {
+      const vp = String(visionProvider || 'gemini').toLowerCase();
+      updates.push(['ai_vision_provider', ['gemini', 'openai', 'groq'].includes(vp) ? vp : 'gemini']);
+    }
+    if (visionModel !== undefined) updates.push(['ai_vision_model', String(visionModel || '')]);
 
     // Solo se actualiza una AI key si llega un valor REAL (no el enmascarado con •).
     // Así el GET puede devolver las keys ofuscadas sin que un guardado las pise con la máscara.

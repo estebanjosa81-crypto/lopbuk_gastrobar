@@ -13,6 +13,7 @@ import pool from '../../config/database';
 import { authenticate, authorize, AuthRequest } from '../../common/middleware';
 import { UserRole } from '../../common/types';
 import { getAIKeys } from '../agent/agent.service';
+import { resolveTextProvider } from '../ai/orchestrator.service';
 import { restbarService } from '../restbar/restbar.service';
 import { productsService } from '../products/products.service';
 import { salesService } from '../sales/sales.service';
@@ -122,25 +123,10 @@ function actionLabel(tool: string, args: any): string {
 // ─────────── LLM OpenAI-compatible (OpenAI / Groq) ───────────
 type Keys = { openaiKey: string; groqKey: string; opencodeGoKey: string; opencodeGoModel: string; defaultProvider: string; openaiBaseUrl: string; openaiModel: string; geminiKey: string };
 async function llmCall(messages: any[], keys: Keys) {
-  const useOpenCodeGo = keys.defaultProvider === 'opencode_go';
-  const useGroq = keys.defaultProvider === 'groq' || (!keys.openaiKey && !!keys.groqKey);
-  let url: string;
-  let model: string;
-  let apiKey: string;
-  if (useOpenCodeGo) {
-    url = 'https://opencode.ai/zen/go/v1/chat/completions';
-    model = keys.opencodeGoModel;
-    apiKey = keys.opencodeGoKey;
-  } else if (useGroq) {
-    url = 'https://api.groq.com/openai/v1/chat/completions';
-    model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
-    apiKey = keys.groqKey;
-  } else {
-    url = keys.openaiBaseUrl + '/chat/completions';
-    model = keys.openaiModel;
-    apiKey = keys.openaiKey;
-  }
-  if (!apiKey) throw new Error('NO_OPENAI_COMPAT');
+  // Selección de proveedor OpenAI-compatible centralizada en el orchestrator (IA4).
+  // Gemini usa su propio formato (no function-calling OpenAI), así que aquí no aplica.
+  const { provider, url, model, apiKey } = resolveTextProvider(keys, 'main');
+  if (provider === 'gemini' || !apiKey) throw new Error('NO_OPENAI_COMPAT');
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },

@@ -19,6 +19,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/auth-store'
+import { enablePush, pushPermissionState } from '@/lib/push'
 import PlanesView from '@/components/consumer-plans-view'
 import LegendReveal from '@/components/legend-reveal'
 import { useConsumerData, type ConsumerTab } from '@/components/consumer/hooks/useConsumerData'
@@ -1160,6 +1161,7 @@ function PerfilModal({ onClose, onSaved }: any) {
           </select>
           <input value={f.city} onChange={e => setF({ ...f, city: e.target.value })} placeholder="Ciudad" className={inputCls} />
           <button onClick={save} disabled={saving} className="w-full bg-neutral-900 text-white rounded-xl py-2.5 text-sm font-medium disabled:opacity-50">{saving ? 'Guardando…' : 'Guardar perfil'}</button>
+          <PushToggle />
           <div className="pt-3 border-t border-black/5"><AchievementShelf compact /></div>
           <button onClick={() => { if (confirm('¿Cerrar sesión?')) useAuthStore.getState().logout() }} className="w-full flex items-center justify-center gap-2 text-sm font-medium text-red-500 hover:bg-red-50 rounded-xl py-2.5 mt-1">
             <LogOut className="w-4 h-4" /> Cerrar sesión
@@ -1167,6 +1169,21 @@ function PerfilModal({ onClose, onSaved }: any) {
         </div>
       )}
     </Modal>
+  )
+}
+
+// Activar notificaciones push (Web Push)
+function PushToggle() {
+  const [state, setState] = useState<'default' | 'granted' | 'denied' | 'unsupported'>('default')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setState(pushPermissionState()) }, [])
+  if (state === 'unsupported') return null
+  if (state === 'granted') return <p className="text-[11px] text-emerald-600 text-center flex items-center justify-center gap-1">🔔 Notificaciones activadas</p>
+  const enable = async () => { setBusy(true); const r = await enablePush(); setBusy(false); setState(pushPermissionState()); if (!r.ok && r.error) alert(r.error) }
+  return (
+    <button onClick={enable} disabled={busy} className="w-full flex items-center justify-center gap-2 text-sm font-medium text-sky-600 border border-sky-200 hover:bg-sky-50 rounded-xl py-2.5 disabled:opacity-50">
+      🔔 {busy ? 'Activando…' : 'Activar notificaciones'}
+    </button>
   )
 }
 

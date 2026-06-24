@@ -13,9 +13,13 @@ export interface IntegrationsState {
   groqApiKey: string
   opencodeGoApiKey: string
   opencodeGoModel: string
+  textModelMain: string
+  textModelSmall: string
   defaultAiProvider: 'gemini' | 'openai' | 'groq' | 'opencode_go'
   openaiBaseUrl: string
   openaiModel: string
+  visionProvider: 'gemini' | 'openai' | 'groq'
+  visionModel: string
 }
 
 const INITIAL_INTEGRATIONS: IntegrationsState = {
@@ -26,9 +30,13 @@ const INITIAL_INTEGRATIONS: IntegrationsState = {
   groqApiKey: '',
   opencodeGoApiKey: '',
   opencodeGoModel: 'opencode-go/deepseek-v4-flash',
+  textModelMain: '',
+  textModelSmall: '',
   defaultAiProvider: 'opencode_go',
   openaiBaseUrl: '',
   openaiModel: '',
+  visionProvider: 'gemini',
+  visionModel: '',
 }
 
 export function useIntegrations() {
@@ -61,9 +69,13 @@ export function useIntegrations() {
         groqApiKey: result.data.groqApiKey || '',
         opencodeGoApiKey: result.data.opencodeGoApiKey || '',
         opencodeGoModel: result.data.opencodeGoModel || 'opencode-go/deepseek-v4-flash',
+        textModelMain: result.data.textModelMain || '',
+        textModelSmall: result.data.textModelSmall || '',
         defaultAiProvider: result.data.defaultAiProvider || 'opencode_go',
         openaiBaseUrl: result.data.openaiBaseUrl || '',
         openaiModel: result.data.openaiModel || '',
+        visionProvider: result.data.visionProvider || 'gemini',
+        visionModel: result.data.visionModel || '',
       })
     }
     const pa = await api.getPlatformAssistant()

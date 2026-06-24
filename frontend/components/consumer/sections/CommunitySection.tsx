@@ -123,6 +123,7 @@ function Challenges() {
               <p className="font-bold text-neutral-900">{m.emoji} {c.title}</p>
               <span className="text-[11px] text-neutral-400 flex items-center gap-1"><Users className="w-3 h-3" />{c.participants} · {fmtLeft(c.endsAt)}</span>
             </div>
+            {c.scope === 'guild' && <span className="inline-block text-[10px] font-bold text-indigo-600 bg-indigo-50 rounded-full px-2 py-0.5 mt-1">🛡️ Guild vs Guild</span>}
             {c.description && <p className="text-sm text-neutral-500 mt-0.5">{c.description}</p>}
             <p className="text-[11px] text-neutral-500 mt-1">Meta: {c.goalValue} {m.label}{c.reward ? ` · 🎁 ${c.reward}` : ''}</p>
             {c.joined ? (

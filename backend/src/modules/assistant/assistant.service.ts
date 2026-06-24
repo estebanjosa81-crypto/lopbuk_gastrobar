@@ -8,6 +8,7 @@
  */
 import { db } from '../../config';
 import { getAIKey, getAIKeys } from '../agent/agent.service';
+import { textReply } from '../ai/orchestrator.service';
 import { RowDataPacket } from 'mysql2';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
@@ -321,78 +322,14 @@ export async function runPublicAssistant(
   message: string,
   history: { role: string; content: string }[] = [],
 ): Promise<{ reply: string }> {
-  const allKeys = await getAIKeys();
-  const apiKey = allKeys.defaultProvider === 'gemini' ? allKeys.geminiKey
-    : allKeys.defaultProvider === 'groq' ? allKeys.groqKey
-    : allKeys.defaultProvider === 'opencode_go' ? allKeys.opencodeGoKey
-    : allKeys.openaiKey;
-  if (!apiKey) return { reply: 'El asistente aún no está configurado. Vuelve pronto. 🙂' };
-
-  // Groq
-  if (apiKey.startsWith('gsk_')) {
-    const messages = [
-      { role: 'system', content: PUBLIC_PROMPT },
-      ...history.slice(-8).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
-      { role: 'user', content: message },
-    ];
-    const r = await fetch(GROQ_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: 220, temperature: 0.7 }),
-    });
-    if (!r.ok) {
-      if (r.status === 429) return { reply: 'Muchas consultas a la vez, intenta en unos segundos. 🙏' };
-      return { reply: 'No pude responder en este momento, intenta de nuevo.' };
-    }
-    const d = await r.json() as any;
-    return { reply: d.choices?.[0]?.message?.content || 'No pude procesar tu mensaje.' };
+  // IA1: todo pasa por el orchestrator. IA5: tier 'small' (Q&A corto del portafolio → modelo barato).
+  try {
+    const reply = await textReply(PUBLIC_PROMPT, message, history, { maxTokens: 220, temperature: 0.7, historyLimit: 8, tier: 'small' });
+    return { reply: reply || 'No pude procesar tu mensaje.' };
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (msg === 'NO_AI_KEY') return { reply: 'El asistente aún no está configurado. Vuelve pronto. 🙂' };
+    if (msg.includes('429')) return { reply: 'Muchas consultas a la vez, intenta en unos segundos. 🙏' };
+    return { reply: 'No pude responder en este momento, intenta de nuevo.' };
   }
-
-  // OpenAI o OpenCode Go (ambos son OpenAI-compatible, keys empiezan con sk-)
-  if (apiKey.startsWith('sk-')) {
-    const url = allKeys.defaultProvider === 'opencode_go'
-      ? 'https://opencode.ai/zen/go/v1/chat/completions'
-      : allKeys.openaiBaseUrl + '/chat/completions';
-    const model = allKeys.defaultProvider === 'opencode_go' ? allKeys.opencodeGoModel : allKeys.openaiModel;
-    const messages = [
-      { role: 'system', content: PUBLIC_PROMPT },
-      ...history.slice(-8).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
-      { role: 'user', content: message },
-    ];
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, max_tokens: 220, temperature: 0.7 }),
-    });
-    if (!r.ok) {
-      if (r.status === 429) return { reply: 'Muchas consultas a la vez, intenta en unos segundos. 🙏' };
-      return { reply: 'No pude responder en este momento, intenta de nuevo.' };
-    }
-    const d = await r.json() as any;
-    return { reply: d.choices?.[0]?.message?.content || 'No pude procesar tu mensaje.' };
-  }
-
-  // Gemini
-  if (apiKey.startsWith('AIza')) {
-    const contents = [...history.slice(-8), { role: 'user', content: message }]
-      .filter(m => m.role !== 'system')
-      .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-    const r = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: PUBLIC_PROMPT }] },
-        contents,
-        generationConfig: { maxOutputTokens: 220, temperature: 0.7 },
-      }),
-    });
-    if (!r.ok) {
-      if (r.status === 429) return { reply: 'Muchas consultas a la vez, intenta en unos segundos. 🙏' };
-      return { reply: 'No pude responder en este momento, intenta de nuevo.' };
-    }
-    const d = await r.json() as any;
-    return { reply: d.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || 'No pude procesar tu mensaje.' };
-  }
-
-  return { reply: 'La clave de IA configurada no es compatible. Usa Gemini (AIza…), Groq (gsk_…), OpenAI (sk-…) u OpenCode Go (sk-…).' };
 }

@@ -91,9 +91,12 @@ El problema real ya no es features, es **activación/retención**: el usuario nu
 - ✅ **Gamificación profunda**: XP por acción + niveles (curva triangular) + **ligas semanales** (Bronce→Diamante) + `XpWidget` + pestaña Liga + nudge motivacional. Módulo `gamification`.
 - ⏳ Command Center móvil (resumen AI colapsable). Temporadas/seasons de ligas (reset semanal ya implícito por ventana 7d; falta histórico/premios de temporada).
 
-**Pendientes de infraestructura (no críticos)**
-- ⏳ Notificaciones push reales (requiere service worker + VAPID + tabla de subscripciones). Hoy hay nudges in-app (adaptive) en su lugar.
-- ⏳ Retos por guild (guild vs guild): extender `seasonal_challenges` con dimensión de guild + scoring agregado.
+**Pendientes de infraestructura — RESUELTOS**
+- ✅ Notificaciones push reales (`web-push` + VAPID autogenerado + `push_subscriptions` + service worker). Eventos: coach escribe, reto ganado, subir de nivel. ⚠️ requiere `pnpm install` (web-push).
+- ✅ Retos guild vs guild (`scope` en challenges + leaderboard agregado por guild).
+- ✅ Command Center móvil: cubierto por Mission Control + AdaptiveCards + XP en el Today.
+
+> **TODO el plan (Fases 1–5 + Activación + P0/P1/P2 + pendientes de infra) está construido.** Falta solo lo transversal: `pnpm install` (backend, por web-push) + `tsc --noEmit` + push + Komodo Deploy + prueba en vivo.
 - **Predictive commerce:** "Probablemente necesitarás proteína en 4 días".
 - **AI transformation tracking:** peso/fotos/medidas/adherencia → progress score + body trend.
 

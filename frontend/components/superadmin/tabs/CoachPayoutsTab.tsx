@@ -49,6 +49,8 @@ export function CoachPayoutsTab() {
   const totalPending = items.filter(i => ['requested', 'processing'].includes(i.status)).reduce((s, i) => s + (i.amountCop || 0), 0)
 
   return (
+    <div className="space-y-6">
+    <CoachManagement />
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -106,6 +108,81 @@ export function CoachPayoutsTab() {
                       </Button>
                     </div>
                   )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+    </div>
+  )
+}
+
+// ── Gestión / activación de coaches ──
+const T_STATUS: Record<string, { label: string; cls: string }> = {
+  pending: { label: 'Pendiente', cls: 'bg-amber-100 text-amber-700' },
+  active: { label: 'Activo', cls: 'bg-emerald-100 text-emerald-700' },
+  suspended: { label: 'Suspendido', cls: 'bg-red-100 text-red-700' },
+}
+
+function CoachManagement() {
+  const [items, setItems] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const r = await api.adminListTrainers()
+    if (r.success) setItems(r.data || [])
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const setStatus = async (id: string, status: 'active' | 'suspended') => {
+    setBusy(id)
+    const r = await api.adminSetTrainerStatus(id, status)
+    setBusy(null)
+    if (!r.success) { alert(r.error || 'No se pudo actualizar'); return }
+    load()
+  }
+
+  const pending = items.filter(i => i.status === 'pending').length
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2">🥋 Coaches</CardTitle>
+            <CardDescription>Activa o suspende entrenadores. Solo los <b>activos</b> aparecen en el catálogo.{pending > 0 ? ` · ${pending} pendiente(s)` : ''}</CardDescription>
+          </div>
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <div className="flex justify-center py-8"><RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Aún no hay coaches. Que se registren en <code className="bg-muted px-1 rounded">/coach</code>.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map(t => {
+              const st = T_STATUS[t.status] || T_STATUS.pending
+              return (
+                <div key={t.id} className="border rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-foreground">{t.name}</p>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.cls}`}>{st.label}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{t.email}{t.handle ? ` · @${t.handle}` : ''} · {t.offersCount} programa(s) · {t.sessionsCount} ventas</p>
+                  </div>
+                  <div className="shrink-0 flex gap-1.5">
+                    {t.status !== 'active'
+                      ? <Button size="sm" disabled={busy === t.id} onClick={() => setStatus(t.id, 'active')} className="bg-emerald-600 hover:bg-emerald-700"><Check className="h-3.5 w-3.5 mr-1" /> Activar</Button>
+                      : <Button size="sm" variant="outline" disabled={busy === t.id} className="text-red-600" onClick={() => setStatus(t.id, 'suspended')}><X className="h-3.5 w-3.5 mr-1" /> Suspender</Button>}
+                  </div>
                 </div>
               )
             })}

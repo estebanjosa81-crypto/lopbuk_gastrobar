@@ -164,8 +164,15 @@ router.post('/me/withdrawals', authenticateTrainer, async (req: TrReq, res: Resp
   try { ok(res, await trainersService.requestWithdrawal(req.trainerId!, req.body || {}), 201); } catch (e) { fail(res, e); }
 });
 
-// ─────────── Superadmin: retiros de coaches (T5) ───────────
+// ─────────── Superadmin: gestión + retiros de coaches ───────────
 const sa = [authenticate, authorize('superadmin')];
+
+router.get('/admin/trainers', ...sa, async (_req: AuthRequest, res: Response) => {
+  try { ok(res, await trainersService.adminListTrainers()); } catch (e) { fail(res, e); }
+});
+router.patch('/admin/trainers/:id/status', ...sa, async (req: AuthRequest, res: Response) => {
+  try { ok(res, await trainersService.adminSetTrainerStatus(req.params.id, req.body?.status)); } catch (e) { fail(res, e); }
+});
 router.get('/admin/withdrawals', ...sa, async (req: AuthRequest, res: Response) => {
   try { ok(res, await trainersService.adminListWithdrawals(req.query.status as string | undefined)); } catch (e) { fail(res, e); }
 });

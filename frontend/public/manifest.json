@@ -1,7 +1,7 @@
 {
-  "name": "DAIMUZ — Epicentro digital de Colombia",
+  "name": "DAIMUZ — Tu ecosistema digital con IA",
   "short_name": "DAIMUZ",
-  "description": "Plataforma de comercios, catálogo y gestión.",
+  "description": "Ingresa a DAIMUZ: compra en tus comercios favoritos, haz pedidos y entra a tu OS. ¿Tienes un negocio? Véndelo y gestiónalo con un asistente de IA 24/7.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0e1430",

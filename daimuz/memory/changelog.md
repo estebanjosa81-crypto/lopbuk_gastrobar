@@ -5,6 +5,19 @@
 ---
 
 
+## [2026-06-24] — Chatbot: limpiar llamados de herramienta filtrados como texto
+
+- **Síntoma:** el modelo escribía el tool-call COMO TEXTO en el chat (`<function=registrar_pedido>{...}</function>`), visible para el usuario, además de hacer varias preguntas juntas. Pasa cuando el tool-calling nativo del proveedor no engancha y el modelo improvisa el llamado en texto.
+- **Fix determinista:** sanitizador en `processAgentMessage` que elimina `<function...>...</function>` (cerrado y sin cerrar), `<tool_call>…`, tokens `<|...|>` y `[COMPRAR:…]`; si tras limpiar no queda texto útil, responde algo amable. Refuerzo de prompt en `buildEnrichedSystemPrompt`: "habla natural, UNA pregunta por mensaje, JAMÁS escribas etiquetas de herramientas ni JSON de pedidos en el mensaje".
+
+
+## [2026-06-24] — Fix chatbot 500 por rate limit (regresión de IA7) + TS build
+
+- **Causa del 500:** la migración del chatbot de tienda a `agentLoop` (IA7) quitó el manejo amable del 429 que tenían los `callGroq`/`callOpenAI` viejos (devolvían texto en vez de lanzar). Al saturarse Groq (free tier, 12k TPM), el error subía a 500 y el front mostraba "hubo un problema". **Fix:** `processAgentMessage` ahora captura 429/rate-limit/quota y devuelve respuesta amable ("muchas consultas, espera unos segundos") con código 200, conservando las tarjetas de producto ya encontradas. Otros errores de IA → mensaje genérico amable, nunca 500.
+- **Causa raíz real (chatbot + coach caen a Groq):** ambos usan tools; al fallar OpenCode Go (suscripción, alta capacidad) el `agentLoop` caía a Groq (free, 12k TPM) → 429. Mitigaciones: (a) `providerChain` deja a **Groq de ÚLTIMO recurso** (orden `opencode_go → gemini → openai → groq`); (b) **log de diagnóstico** en `agentLoop` (`[ai] agente: proveedor "X" (model) falló → ...`) para ver POR QUÉ falla Go. Sospecha por docs OpenCode: el `model` de la API debe ir **pelado** (`deepseek-v4-flash`), no `opencode-go/deepseek-v4-flash` (el prefijo es solo del config CLI). Pendiente: confirmar con el log real de Go tras redeploy y corregir id/endpoint/tools según corresponda. Warnings `Duplicate key name 'idx_soi_variant'/'idx_si_variant'` son benignos.
+- **TS build:** `lib/push.ts` `applicationServerKey ... as BufferSource` (choque de tipos lib DOM); `rutina.service.ts` `sex: sex ?? undefined` en computeNutrition. Ambos preexistentes.
+
+
 ## [2026-06-24] — Storefront: hora del pedido, checkout Tema 2, imágenes en modificadores
 
 - **Hora del pedido (-5h):** causa = `created_at` es TIMESTAMP (interno UTC) pero la sesión MySQL estaba en hora Colombia y mysql2 sin config de zona → el `Date` quedaba 5h atrás y el front lo mostraba en Colombia (doble desfase). Fix UTC end-to-end: `database.ts` con `timezone:'Z'` + `SET time_zone='+00:00'` en cada conexión nueva; `pedidos.tsx` formatea con `timeZone:'America/Bogota'` (tarjeta + tickets de impresión).

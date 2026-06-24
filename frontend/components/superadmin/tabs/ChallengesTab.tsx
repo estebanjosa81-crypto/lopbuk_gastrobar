@@ -21,7 +21,7 @@ export function ChallengesTab() {
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [err, setErr] = useState('')
-  const [f, setF] = useState({ title: '', description: '', metric: 'streak', goalValue: '7', reward: '', rewardUnlock: '', startsAt: '', endsAt: '' })
+  const [f, setF] = useState({ title: '', description: '', metric: 'streak', goalValue: '7', reward: '', rewardUnlock: '', scope: 'individual', startsAt: '', endsAt: '' })
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -36,12 +36,12 @@ export function ChallengesTab() {
     setCreating(true); setErr('')
     const r = await api.adminCreateChallenge({
       title: f.title.trim(), description: f.description.trim() || undefined, metric: f.metric,
-      goalValue: Number(f.goalValue), reward: f.reward.trim() || undefined, rewardUnlock: f.rewardUnlock || undefined,
+      goalValue: Number(f.goalValue), reward: f.reward.trim() || undefined, rewardUnlock: f.rewardUnlock || undefined, scope: f.scope,
       startsAt: new Date(f.startsAt).toISOString(), endsAt: new Date(f.endsAt).toISOString(),
     } as any)
     setCreating(false)
     if (!r.success) { setErr(r.error || 'No se pudo crear'); return }
-    setF({ title: '', description: '', metric: 'streak', goalValue: '7', reward: '', rewardUnlock: '', startsAt: '', endsAt: '' })
+    setF({ title: '', description: '', metric: 'streak', goalValue: '7', reward: '', rewardUnlock: '', scope: 'individual', startsAt: '', endsAt: '' })
     load()
   }
   const setStatus = async (id: string, status: 'active' | 'cancelled') => { await api.adminUpdateChallenge(id, { status }); load() }
@@ -78,6 +78,13 @@ export function ChallengesTab() {
               </select>
             </div>
             <div><Label className="text-xs">Meta</Label><Input value={f.goalValue} onChange={e => setF({ ...f, goalValue: e.target.value.replace(/[^0-9]/g, '') })} placeholder="21" /></div>
+            <div>
+              <Label className="text-xs">Modo</Label>
+              <select value={f.scope} onChange={e => setF({ ...f, scope: e.target.value })} className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
+                <option value="individual">Individual</option>
+                <option value="guild">Guild vs Guild</option>
+              </select>
+            </div>
             <div className="grid grid-cols-1 gap-1">
               <Label className="text-xs">Inicio / Fin</Label>
               <Input type="datetime-local" value={f.startsAt} onChange={e => setF({ ...f, startsAt: e.target.value })} />

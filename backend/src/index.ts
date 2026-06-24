@@ -63,6 +63,7 @@ import adaptiveRoutes from './modules/adaptive/adaptive.routes';
 import progressRoutes from './modules/progress/progress.routes';
 import arenaRoutes from './modules/arena/arena.routes';
 import gamificationRoutes from './modules/gamification/gamification.routes';
+import pushRoutes from './modules/push/push.routes';
 import paymentsRoutes from './modules/payments/payments.routes';
 import suppliersRoutes from './modules/suppliers/suppliers.routes';
 import { gymRoutes } from './modules/gym';
@@ -190,6 +191,7 @@ app.use(`${apiPrefix}/adaptive`, adaptiveRoutes);
 app.use(`${apiPrefix}/progress`, progressRoutes);
 app.use(`${apiPrefix}/arena`, arenaRoutes);
 app.use(`${apiPrefix}/gamification`, gamificationRoutes);
+app.use(`${apiPrefix}/push`, pushRoutes);
 app.use(`${apiPrefix}/payments`, paymentsRoutes);
 app.use(`${apiPrefix}/daimuz-chat`, daimuzChatRoutes);
 app.use(`${apiPrefix}/finances`, financesRoutes);
@@ -388,6 +390,8 @@ const startServer = async () => {
       await addCol(`ALTER TABLE sale_items ADD INDEX idx_si_variant (variant_id)`);
       // Cupo de preventa por variante (NULL = ilimitado) + contador de preventa vendida
       await addCol(`ALTER TABLE products ADD COLUMN qty_promo TEXT NULL COMMENT 'Promo de cantidad (JSON): {secondUnitPct, tiers:[{minQty,discountPct}]}'`);
+      // Galería de imágenes (JSON array). El storefront la consulta (p.images); en BDs viejas no existía → 500.
+      await addCol(`ALTER TABLE products ADD COLUMN images TEXT NULL COMMENT 'Galería de imágenes (JSON array de URLs)'`);
       await addCol(`ALTER TABLE product_variants ADD COLUMN preorder_limit INT NULL COMMENT 'Cupo máximo de preventa (NULL = ilimitado)'`);
       await addCol(`ALTER TABLE product_variants ADD COLUMN preorder_count INT NOT NULL DEFAULT 0 COMMENT 'Unidades vendidas/reservadas en preventa'`);
 
@@ -1133,6 +1137,43 @@ const startServer = async () => {
         FOREIGN KEY (feed_id) REFERENCES arena_feed(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
 
+      // Suscripciones Web Push (notificaciones reales).
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        endpoint VARCHAR(500) NOT NULL,
+        p256dh VARCHAR(200) NOT NULL,
+        auth VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE INDEX idx_push_endpoint (endpoint),
+        INDEX idx_push_user (user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Cache de transcripción de imágenes (IA2): imagen→texto una sola vez.
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS ai_vision_cache (
+        hash VARCHAR(64) PRIMARY KEY,
+        text MEDIUMTEXT NOT NULL,
+        provider VARCHAR(20) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
+      // Telemetría de consumo de IA (IA6): tokens + costo estimado por llamada.
+      await poolVk.query(`CREATE TABLE IF NOT EXISTS ai_usage_log (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id VARCHAR(36) NULL,
+        provider VARCHAR(20) NOT NULL,
+        model VARCHAR(80) NULL,
+        tier VARCHAR(16) NULL,
+        prompt_tokens INT NOT NULL DEFAULT 0,
+        completion_tokens INT NOT NULL DEFAULT 0,
+        total_tokens INT NOT NULL DEFAULT 0,
+        est_cost DECIMAL(12,6) NOT NULL DEFAULT 0,
+        ok TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_aul_created (created_at),
+        INDEX idx_aul_provider (provider)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+
       // Gamificación profunda (P2): XP log → nivel + liga semanal.
       await poolVk.query(`CREATE TABLE IF NOT EXISTS consumer_xp_log (
         id VARCHAR(36) PRIMARY KEY,
@@ -1158,6 +1199,7 @@ const startServer = async () => {
       const addArenaCol = async (sql: string) => { try { await poolVk.query(sql); } catch (e: any) { if (e?.errno !== 1060 && e?.errno !== 1061) throw e; } };
       await addArenaCol(`ALTER TABLE seasonal_challenges ADD COLUMN reward_unlock VARCHAR(80) NULL`);
       await addArenaCol(`ALTER TABLE seasonal_challenges ADD COLUMN settled_at DATETIME NULL`);
+      await addArenaCol(`ALTER TABLE seasonal_challenges ADD COLUMN scope VARCHAR(12) NOT NULL DEFAULT 'individual'`);
       await addArenaCol(`ALTER TABLE arena_feed ADD COLUMN comments_count INT NOT NULL DEFAULT 0`);
     } catch (e: any) { console.warn('[migration vault]', e?.message); }
 

@@ -5,6 +5,54 @@
 ---
 
 
+## [2026-06-24] — Orquestación de IA: IA6 (telemetría + guardas de límite) — plan IA COMPLETO
+
+**Sin push/deploy — pendiente del usuario** (`pnpm exec tsc --noEmit` backend + redeploy; corre migración `ai_usage_log` al boot).
+
+- Migración idempotente `ai_usage_log` (tenant, provider, model, tier, tokens, `est_cost`, ok, created_at + índices).
+- Orchestrator: las llamadas de proveedor devuelven `{text, usage}`; `logUsage` registra cada llamada (best-effort, nunca rompe). `estCost` con tabla de tarifas aprox por modelo.
+- `getUsageStats()`: gasto estimado de `opencode_go` en ventanas 5h/7d/30d (cache 60s). Límites por env `AI_LIMIT_5H/WEEK/MONTH` (12/30/60).
+- `limitGuard` en `textLLM`: ≥80% del tope degrada `main`→`small`; ≥100% evita Go (cae a Groq/Gemini).
+- Endpoint `GET /chatbot/superadmin/ai-usage` (stats + desglose por modelo 30d) + tarjeta **"Consumo de IA"** en IntegrationsTab. `agent.processAgentMessage` pasa `tenantId` para telemetría por comercio. Visión también se registra (tier `'vision'`).
+
+**Plan de orquestación IA completo (IA1–IA6).** Pendientes futuros menores: migrar `assistant.runAssistant`/`rutina.assistant` (requieren tools en el orchestrator) y compactar historial largo con `small`.
+
+
+## [2026-06-24] — Orquestación de IA: IA5 (tiering main/small)
+
+Continuación. **Sin push/deploy — pendiente del usuario** (`pnpm exec tsc --noEmit` backend + redeploy).
+
+- `getAIKeys()` devuelve `opencodeGoModelMain`/`opencodeGoModelSmall` (settings `ai_text_model_main`/`ai_text_model_small`; default main=modelo Go configurado, small=`deepseek-v4-flash`).
+- Orchestrator: `goModelFor(keys,{tier})` elige el modelo Go; `textLLM`/`textReply`/`run`/`resolveTextProvider` aceptan `tier`.
+- Call sites: `runPublicAssistant`=**small**; chatbot de tienda (`agent.processAgentMessage`) y `daimuz-chat`=**main**.
+- UI: campos main/small bajo OpenCode Go en `IntegrationsTab` + persistencia GET/PUT + `useIntegrations`/`api.ts`.
+- Cache de prompt: el `system` ya va como bloque líder estable (lo que aprovecha el cache de Go). Pendiente futuro: compactar historial con `small` antes de `main`.
+
+
+## [2026-06-24] — Orquestación de IA: IA2 (visión) + IA3 (config visión) + IA4 (centralizar proveedor)
+
+Continuación del plan `context/plan-orquestacion-ia.md`. **Nada se ha hecho push/deploy — pendiente del usuario** (correr `pnpm exec tsc --noEmit` en backend + redeploy; la migración `ai_vision_cache` corre sola al boot).
+
+**IA2 — Visión como rol** (`backend/src/modules/ai/orchestrator.service.ts`):
+- `visionToText(img)` convierte imagen→texto (por `url` o `base64`), **caché por hash SHA-256** en tabla nueva `ai_vision_cache` (no re-OCR la misma imagen). Defensivo: devuelve `''` si falla.
+- `run({ system, message, images })`: transcribe cada imagen y razona TODO con el modelo de texto barato (Go) vía `textReply`. Pipeline imagen→texto→Go.
+- `invoice-ocr` se queda como OCR especializado (JSON); la visión genérica vive en el orchestrator.
+
+**IA3 — Config texto vs visión:**
+- `getAIKeys()` devuelve `visionProvider`/`visionModel` (settings `ai_vision_provider`/`ai_vision_model`); valida que **la visión nunca use Go** (cae a gemini).
+- `visionToText` honra el proveedor configurado (orden: configurado → fallback por key disponible; el modelo configurado solo aplica al proveedor elegido).
+- Persistencia en `chatbot.routes` GET/PUT `superadmin/integrations`.
+- UI: tarjeta **"Visión — Imagen a texto"** en `IntegrationsTab` (selector gemini/openai/groq + modelo + estado de key); `useIntegrations` + `api.ts` extendidos.
+
+**IA4 — Centralizar selección de proveedor:**
+- `resolveTextProvider(keys)` en el orchestrator: devuelve `{provider,url,model,apiKey}` OpenAI-compat para los call sites con function-calling.
+- `daimuz-chat.llmCall` usa el helper (borrado su if-chain duplicado; Gemini sigue por su rama propia con tools).
+- `agent.processAgentMessage`: rama no-Gemini → `textLLM` (import dinámico para evitar ciclo; Gemini conserva sus tools).
+- Sin migrar aún (tool-calling): `assistant.runAssistant`/`runWithOpenAICompat` y `rutina.assistant` → IA5/IA6.
+
+**Archivos:** `ai/orchestrator.service.ts`, `agent/agent.service.ts`, `chatbot/chatbot.routes.ts`, `daimuz-chat/daimuz-chat.routes.ts`, `index.ts` (tabla `ai_vision_cache`), front `IntegrationsTab.tsx` + `hooks/useIntegrations.ts` + `lib/api.ts`.
+
+
 ## [2026-06-22] — Coach Economy T4–T8, Vault/Access Ecosystem (V1–V4), cierres Fase 3 + Adaptive OS (F4.1)
 
 Sesión larga sobre el DAIMUZ Fitness Lifestyle OS. Detalle completo en `context/current-sprint.md`. **Nada se ha hecho push/deploy — pendiente del usuario.**

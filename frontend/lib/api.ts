@@ -526,6 +526,13 @@ class ApiService {
   async toggleDailyCheck(item: string, done: boolean) {
     return this.request<any>('/rutina/check', { method: 'POST', body: JSON.stringify({ item, done }) })
   }
+  // ── Push ──
+  async getPushPublicKey() {
+    return this.request<{ publicKey: string }>('/push/public-key')
+  }
+  async savePushSubscription(subscription: any) {
+    return this.request<any>('/push/subscribe', { method: 'POST', body: JSON.stringify({ subscription }) })
+  }
   // ── Gamificación (P2): XP, nivel, liga ──
   async getXpProfile() {
     return this.request<any>('/gamification/me')
@@ -2043,6 +2050,10 @@ class ApiService {
     return this.request<any>('/chatbot/superadmin/integrations')
   }
 
+  async getSuperadminAiUsage() {
+    return this.request<any>('/chatbot/superadmin/ai-usage')
+  }
+
   async revealIntegrationKey(provider: 'gemini' | 'openai' | 'groq' | 'opencode_go') {
     return this.request<{ key: string }>(`/chatbot/superadmin/integrations/reveal/${provider}`)
   }
@@ -2055,9 +2066,13 @@ class ApiService {
     groqApiKey?: string;
     opencodeGoApiKey?: string;
     opencodeGoModel?: string;
+    textModelMain?: string;
+    textModelSmall?: string;
     defaultAiProvider?: string;
     openaiBaseUrl?: string;
     openaiModel?: string;
+    visionProvider?: string;
+    visionModel?: string;
   }) {
     return this.request<any>('/chatbot/superadmin/integrations', {
       method: 'PUT',
@@ -3368,6 +3383,13 @@ class ApiService {
     return this.requestAsTrainer<any>('/trainers/me/withdrawals', { method: 'POST', body: JSON.stringify(body) })
   }
 
+  // Superadmin: gestión de coaches
+  async adminListTrainers() {
+    return this.request<any[]>('/trainers/admin/trainers')
+  }
+  async adminSetTrainerStatus(id: string, status: 'active' | 'pending' | 'suspended') {
+    return this.request<any>(`/trainers/admin/trainers/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  }
   // Superadmin: retiros de coaches
   async adminListTrainerWithdrawals(status?: string) {
     return this.request<any[]>(`/trainers/admin/withdrawals${status ? `?status=${status}` : ''}`)
